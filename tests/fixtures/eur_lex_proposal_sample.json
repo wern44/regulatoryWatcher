@@ -1,0 +1,13 @@
+{
+  "head": {"vars": ["work", "celex", "title", "date"]},
+  "results": {
+    "bindings": [
+      {
+        "work": {"type": "uri", "value": "http://publications.europa.eu/resource/celex/52021PC0721"},
+        "celex": {"type": "literal", "value": "52021PC0721"},
+        "title": {"type": "literal", "value": "Proposal for a Directive amending AIFMD"},
+        "date": {"type": "literal", "value": "2021-11-25"}
+      }
+    ]
+  }
+}

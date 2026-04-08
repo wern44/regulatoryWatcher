@@ -1,0 +1,19 @@
+{
+  "head": {"vars": ["work", "celex", "title", "date"]},
+  "results": {
+    "bindings": [
+      {
+        "work": {"type": "uri", "value": "http://publications.europa.eu/resource/celex/32024L0927"},
+        "celex": {"type": "literal", "value": "32024L0927"},
+        "title": {"type": "literal", "value": "Directive (EU) 2024/927 amending AIFMD"},
+        "date": {"type": "literal", "value": "2024-03-26"}
+      },
+      {
+        "work": {"type": "uri", "value": "http://publications.europa.eu/resource/celex/32022R2554"},
+        "celex": {"type": "literal", "value": "32022R2554"},
+        "title": {"type": "literal", "value": "Regulation (EU) 2022/2554 DORA"},
+        "date": {"type": "literal", "value": "2022-12-14"}
+      }
+    ]
+  }
+}
