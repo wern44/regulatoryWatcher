@@ -15,6 +15,7 @@ from regwatch.config import load_config
 from regwatch.db.engine import create_app_engine
 from regwatch.db.models import Base
 from regwatch.db.virtual_tables import create_virtual_tables
+from regwatch.ollama.client import OllamaClient
 from regwatch.scheduler.jobs import build_scheduler
 
 _TEMPLATES_DIR = Path(__file__).parent / "web" / "templates"
@@ -49,6 +50,11 @@ def create_app() -> FastAPI:
     app.state.templates = templates
     app.state.config = config
     app.state.session_factory = session_factory
+    app.state.ollama_client = OllamaClient(
+        base_url=config.ollama.base_url,
+        chat_model=config.ollama.chat_model,
+        embedding_model=config.ollama.embedding_model,
+    )
     _STATIC_DIR.mkdir(parents=True, exist_ok=True)
     app.mount(
         "/static", StaticFiles(directory=str(_STATIC_DIR)), name="static"
@@ -56,6 +62,7 @@ def create_app() -> FastAPI:
 
     from regwatch.web.routes import (
         catalog,
+        chat,
         dashboard,
         deadlines,
         drafts,
@@ -71,6 +78,7 @@ def create_app() -> FastAPI:
     app.include_router(drafts.router)
     app.include_router(deadlines.router)
     app.include_router(ict.router)
+    app.include_router(chat.router)
 
     return app
 

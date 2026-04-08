@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}RegWatch — {{ session.title }}{% endblock %}
+{% block content %}
+  <a href="/chat" class="text-sm text-slate-500 hover:underline">← Sessions</a>
+  <h1 class="text-2xl font-bold mt-2 mb-4">{{ session.title }}</h1>
+
+  <div class="bg-white p-4 rounded shadow-sm border mb-4 space-y-3">
+    {% for msg in messages %}
+    <div class="text-sm">
+      <div class="text-xs uppercase text-slate-500">{{ msg.role }}</div>
+      <div class="whitespace-pre-wrap">{{ msg.content }}</div>
+    </div>
+    {% else %}
+    <p class="text-sm text-slate-500">No messages yet.</p>
+    {% endfor %}
+  </div>
+
+  <form method="post" action="/chat/{{ session.session_id }}/ask" class="flex gap-2">
+    <input name="question" required placeholder="Ask a question..."
+           class="border rounded px-2 py-1 flex-1">
+    <button class="px-3 py-1 bg-slate-800 text-white rounded" type="submit">Ask</button>
+  </form>
+{% endblock %}

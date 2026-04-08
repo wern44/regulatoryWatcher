@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}RegWatch — Q&amp;A{% endblock %}
+{% block content %}
+  <h1 class="text-2xl font-bold mb-4">Q&amp;A Chat</h1>
+
+  <form method="post" action="/chat" class="bg-white p-4 rounded shadow-sm border mb-4 flex gap-2">
+    <input name="title" placeholder="Session title..." required
+           class="border rounded px-2 py-1 flex-1">
+    <button class="px-3 py-1 bg-slate-800 text-white rounded" type="submit">New session</button>
+  </form>
+
+  <ul class="bg-white border rounded shadow-sm divide-y">
+    {% for s in sessions %}
+    <li class="p-3 flex justify-between">
+      <a class="hover:underline" href="/chat/{{ s.session_id }}">{{ s.title }}</a>
+      <span class="text-xs text-slate-500">{{ s.created_at.strftime('%Y-%m-%d') }}</span>
+    </li>
+    {% else %}
+    <li class="p-4 text-center text-slate-500">No sessions yet.</li>
+    {% endfor %}
+  </ul>
+{% endblock %}
