@@ -42,7 +42,7 @@ sources:
 
 ollama:
   base_url: "http://localhost:11434"
-  chat_model: "llama3.1:8b"
+  chat_model: "llama3.1:latest"
   embedding_model: "nomic-embed-text"
   embedding_dim: 768
 
