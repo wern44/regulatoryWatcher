@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>European Commission FISMA Newsroom</title>
+    <link>https://ec.europa.eu/newsroom/fisma/feed</link>
+    <description>FISMA news and publications</description>
+    <item>
+      <title>Commission adopts delegated act on sustainable finance</title>
+      <link>https://ec.europa.eu/newsroom/fisma/items/10001</link>
+      <description>A new delegated act under the SFDR framework.</description>
+      <pubDate>Mon, 06 Apr 2026 12:00:00 +0200</pubDate>
+      <guid isPermaLink="true">https://ec.europa.eu/newsroom/fisma/items/10001</guid>
+    </item>
+    <item>
+      <title>Proposal on digital finance strategy</title>
+      <link>https://ec.europa.eu/newsroom/fisma/items/10002</link>
+      <description>Commission proposal on the digital finance strategy review.</description>
+      <pubDate>Fri, 03 Apr 2026 15:00:00 +0200</pubDate>
+      <guid isPermaLink="true">https://ec.europa.eu/newsroom/fisma/items/10002</guid>
+    </item>
+  </channel>
+</rss>

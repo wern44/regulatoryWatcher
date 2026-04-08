@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>ESMA News</title>
+    <link>https://www.esma.europa.eu/rss.xml</link>
+    <description>Latest ESMA news and publications</description>
+    <item>
+      <title>ESMA updates guidelines on liquidity management tools</title>
+      <link>https://www.esma.europa.eu/press-news/esma-updates-liquidity-guidelines</link>
+      <description>ESMA has updated its guidelines on liquidity management tools for UCITS.</description>
+      <pubDate>Mon, 06 Apr 2026 11:00:00 +0200</pubDate>
+      <guid isPermaLink="true">https://www.esma.europa.eu/press-news/esma-updates-liquidity-guidelines</guid>
+    </item>
+    <item>
+      <title>Consultation paper on AIFMD review</title>
+      <link>https://www.esma.europa.eu/press-news/consultation-aifmd-review</link>
+      <description>ESMA launches a consultation on AIFMD review measures.</description>
+      <pubDate>Fri, 03 Apr 2026 09:00:00 +0200</pubDate>
+      <guid isPermaLink="true">https://www.esma.europa.eu/press-news/consultation-aifmd-review</guid>
+    </item>
+  </channel>
+</rss>
