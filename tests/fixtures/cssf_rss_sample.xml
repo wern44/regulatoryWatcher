@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>CSSF Publications - aif</title>
+    <link>https://www.cssf.lu/en/feed/publications?content_keyword=aif</link>
+    <description>CSSF publications filtered by keyword aif</description>
+    <item>
+      <title>Circular CSSF 25/901 on ICT outsourcing notifications</title>
+      <link>https://www.cssf.lu/en/Document/circular-cssf-25-901/</link>
+      <description>&lt;p&gt;This circular amends Circular CSSF 25/882 on ICT outsourcing notifications...&lt;/p&gt;</description>
+      <pubDate>Mon, 06 Apr 2026 09:30:00 +0200</pubDate>
+      <guid isPermaLink="true">https://www.cssf.lu/en/Document/circular-cssf-25-901/</guid>
+    </item>
+    <item>
+      <title>Updated FAQ on AIFMD reporting</title>
+      <link>https://www.cssf.lu/en/Document/faq-aifmd-reporting-update/</link>
+      <description>Updates to the FAQ on AIFMD reporting.</description>
+      <pubDate>Fri, 03 Apr 2026 16:00:00 +0200</pubDate>
+      <guid isPermaLink="true">https://www.cssf.lu/en/Document/faq-aifmd-reporting-update/</guid>
+    </item>
+  </channel>
+</rss>
