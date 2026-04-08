@@ -1,0 +1,102 @@
+{#
+  Self-replacing pipeline-progress widget. Polls /run-pipeline/status every
+  2 seconds while the run is active. When the run finishes, the rendered
+  HTML drops the polling trigger so the widget stops polling on its own.
+#}
+<div id="pipeline-progress"
+     {% if progress.status == 'running' %}
+     hx-get="/run-pipeline/status"
+     hx-trigger="every 2s"
+     hx-swap="outerHTML"
+     {% endif %}
+     class="border rounded p-4
+       {% if progress.status == 'running' %}bg-blue-50 border-blue-300
+       {% elif progress.status == 'completed' %}bg-green-50 border-green-300
+       {% elif progress.status == 'failed' %}bg-red-50 border-red-300
+       {% else %}bg-slate-50 border-slate-300{% endif %}">
+
+  <div class="flex items-start justify-between gap-4 mb-2">
+    <div>
+      <div class="text-sm font-semibold uppercase tracking-wide
+        {% if progress.status == 'running' %}text-blue-800
+        {% elif progress.status == 'completed' %}text-green-800
+        {% elif progress.status == 'failed' %}text-red-800
+        {% else %}text-slate-700{% endif %}">
+        {% if progress.status == 'running' %}
+          Pipeline running…
+        {% elif progress.status == 'completed' %}
+          Pipeline completed
+        {% elif progress.status == 'failed' %}
+          Pipeline failed
+        {% else %}
+          Pipeline idle
+        {% endif %}
+      </div>
+      <div class="text-xs text-slate-600 mt-1">{{ progress.message }}</div>
+    </div>
+    <div class="text-xs text-slate-500 text-right shrink-0">
+      {% if progress.elapsed_seconds %}{{ progress.elapsed_seconds }}s elapsed{% endif %}
+    </div>
+  </div>
+
+  {% if progress.status == 'running' or progress.status == 'completed' or progress.status == 'failed' %}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs mt-3">
+    <div class="bg-white rounded border p-2">
+      <div class="uppercase text-slate-500">Source</div>
+      <div class="font-semibold">
+        {% if progress.current_source %}
+          {{ progress.current_source }}
+          {% if progress.total_sources %}
+            <span class="text-slate-400 font-normal">
+              ({{ progress.source_index }}/{{ progress.total_sources }})
+            </span>
+          {% endif %}
+        {% else %}
+          <span class="text-slate-400">—</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="bg-white rounded border p-2">
+      <div class="uppercase text-slate-500">Phase</div>
+      <div class="font-semibold">{{ progress.current_phase or '—' }}</div>
+    </div>
+    <div class="bg-white rounded border p-2">
+      <div class="uppercase text-slate-500">Docs processed</div>
+      <div class="font-semibold">{{ progress.docs_seen }}</div>
+    </div>
+    <div class="bg-white rounded border p-2">
+      <div class="uppercase text-slate-500">Events / versions</div>
+      <div class="font-semibold">
+        {{ progress.events_created }} / {{ progress.versions_created }}
+      </div>
+    </div>
+  </div>
+
+  {% if progress.current_doc_title and progress.status == 'running' %}
+  <div class="mt-3 text-xs text-slate-600 truncate">
+    <span class="text-slate-500">Current:</span> {{ progress.current_doc_title }}
+  </div>
+  {% endif %}
+
+  {% if progress.sources_failed %}
+  <div class="mt-3 text-xs text-amber-800">
+    Failed sources: {{ progress.sources_failed | join(', ') }}
+  </div>
+  {% endif %}
+
+  {% if progress.error %}
+  <div class="mt-3 text-xs text-red-800 break-words">
+    {{ progress.error }}
+  </div>
+  {% endif %}
+
+  {% if progress.status == 'completed' or progress.status == 'failed' %}
+  <div class="mt-3 flex justify-end">
+    <button class="px-3 py-1 bg-slate-200 rounded text-xs hover:bg-slate-300"
+            onclick="location.reload()">
+      Refresh dashboard
+    </button>
+  </div>
+  {% endif %}
+  {% endif %}
+</div>

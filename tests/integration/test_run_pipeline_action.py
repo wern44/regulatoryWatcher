@@ -1,4 +1,5 @@
 import shutil
+import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -79,15 +80,37 @@ def _patch_registry_and_ollama(client, monkeypatch) -> None:
     client.app.state.ollama_client = fake_ollama
 
 
-def test_run_pipeline_button_posts_and_creates_events(
+def _wait_until_idle_or_done(client, timeout: float = 5.0) -> dict:
+    """Poll the progress object until status is no longer 'running'."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        snap = client.app.state.pipeline_progress.snapshot()
+        if snap["status"] != "running":
+            return snap
+        time.sleep(0.05)
+    raise AssertionError(
+        f"pipeline_progress did not finish within {timeout}s "
+        f"(last status: {snap['status']})"
+    )
+
+
+def test_post_returns_progress_widget_and_starts_background_run(
     tmp_path: Path, monkeypatch
 ) -> None:
     client = _cssf_only_client(tmp_path, monkeypatch)
     _patch_registry_and_ollama(client, monkeypatch)
 
-    response = client.post("/run-pipeline", follow_redirects=False)
-    assert response.status_code == 303
-    assert response.headers["location"].startswith("/?ran=")
+    response = client.post("/run-pipeline")
+    assert response.status_code == 200
+    # The body is the progress partial, not a redirect.
+    assert 'id="pipeline-progress"' in response.text
+    assert "Pipeline running" in response.text or "Pipeline completed" in response.text
+
+    # Wait for the background thread to finish, then verify it actually
+    # produced an event row.
+    final = _wait_until_idle_or_done(client)
+    assert final["status"] == "completed"
+    assert final["events_created"] == 1
 
     engine = create_app_engine(tmp_path / "app.db")
     from sqlalchemy.orm import Session
@@ -98,25 +121,58 @@ def test_run_pipeline_button_posts_and_creates_events(
         assert events[0].title == "Manual run: fake CSSF update"
 
 
-def test_dashboard_renders_button_and_flash(
+def test_status_endpoint_returns_progress_widget(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = _cssf_only_client(tmp_path, monkeypatch)
+    _patch_registry_and_ollama(client, monkeypatch)
+
+    # Kick off a run and wait for it to settle.
+    client.post("/run-pipeline")
+    _wait_until_idle_or_done(client)
+
+    r = client.get("/run-pipeline/status")
+    assert r.status_code == 200
+    assert 'id="pipeline-progress"' in r.text
+    # Once finished the polling trigger must be gone — the widget should not
+    # contain `hx-trigger="every 2s"`.
+    assert "every 2s" not in r.text
+    assert "Pipeline completed" in r.text
+
+
+def test_dashboard_renders_run_button_and_progress_slot(
     tmp_path: Path, monkeypatch
 ) -> None:
     client = _cssf_only_client(tmp_path, monkeypatch)
 
-    # Plain dashboard: button visible, no flash.
     r = client.get("/")
     assert r.status_code == 200
     assert "Run pipeline now" in r.text
-    assert "Pipeline run #" not in r.text
-
-    # Dashboard with success flash.
-    r2 = client.get("/?ran=7&events=3")
-    assert r2.status_code == 200
-    assert "Pipeline run #7 completed" in r2.text
-    assert "3 new event(s)" in r2.text
+    assert 'id="pipeline-progress-slot"' in r.text
+    # No run yet, so the slot is empty (status == idle is filtered out).
+    assert 'id="pipeline-progress"' not in r.text
 
 
-def test_run_pipeline_error_redirects_with_error_flash(
+def test_concurrent_post_does_not_start_a_second_run(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = _cssf_only_client(tmp_path, monkeypatch)
+    _patch_registry_and_ollama(client, monkeypatch)
+
+    # Pre-mark the progress as running so the second POST sees it.
+    client.app.state.pipeline_progress.reset_for_run(total_sources=1)
+
+    r = client.post("/run-pipeline")
+    assert r.status_code == 200
+    assert 'id="pipeline-progress"' in r.text
+    # The state we pre-set is still 'running' — no new background thread
+    # was started, so progress is unchanged.
+    snap = client.app.state.pipeline_progress.snapshot()
+    assert snap["status"] == "running"
+    assert snap["events_created"] == 0
+
+
+def test_run_pipeline_error_marks_progress_as_failed(
     tmp_path: Path, monkeypatch
 ) -> None:
     client = _cssf_only_client(tmp_path, monkeypatch)
@@ -129,6 +185,7 @@ def test_run_pipeline_error_redirects_with_error_flash(
 
     monkeypatch.setattr(actions_module, "build_enabled_sources", boom)
 
-    r = client.post("/run-pipeline", follow_redirects=False)
-    assert r.status_code == 303
-    assert "pipeline_error=RuntimeError" in r.headers["location"]
+    client.post("/run-pipeline")
+    final = _wait_until_idle_or_done(client)
+    assert final["status"] == "failed"
+    assert "RuntimeError" in (final["error"] or "")

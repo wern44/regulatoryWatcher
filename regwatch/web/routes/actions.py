@@ -1,12 +1,15 @@
-"""Manual actions triggered from the web UI (run pipeline now, etc.)."""
+"""Manual actions triggered from the web UI (run pipeline now, status polling)."""
 from __future__ import annotations
 
 import logging
+import threading
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse
 
 from regwatch.pipeline.pipeline_factory import build_runner
+from regwatch.pipeline.progress import PipelineProgress
 from regwatch.pipeline.sources import build_enabled_sources
 
 router = APIRouter()
@@ -14,51 +17,93 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.post("/run-pipeline")
-def run_pipeline(request: Request) -> RedirectResponse:
-    """Run a full pipeline pass synchronously and redirect to the dashboard.
-
-    On success, appends `?ran=<run_id>&events=<n>` for a flash message.
-    On failure, appends `?pipeline_error=<message>`.
-    """
-    config = request.app.state.config
-    ollama = request.app.state.ollama_client
-
+def _run_pipeline_in_background(
+    *,
+    session_factory,
+    config,
+    ollama_client,
+    progress: PipelineProgress,
+) -> None:
+    """Body of the worker thread. Owns its own DB session."""
     try:
         sources = build_enabled_sources(config)
-        with request.app.state.session_factory() as session:
-            try:
-                runner = build_runner(
-                    session,
-                    sources=sources,
-                    archive_root=config.paths.pdf_archive,
-                    ollama_client=ollama,
-                )
-                run_id = runner.run_once()
-                session.commit()
-
-                from regwatch.db.models import PipelineRun  # noqa: PLC0415
-
-                run_row = session.get(PipelineRun, run_id)
-                events = run_row.events_created if run_row is not None else 0
-                failed = (
-                    ",".join(run_row.sources_failed)
-                    if run_row is not None and run_row.sources_failed
-                    else ""
-                )
-            except Exception:
-                # Make sure any partial transaction is rolled back before the
-                # session (and its connection) is returned to the pool.
-                session.rollback()
-                raise
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Manual pipeline run failed")
-        return RedirectResponse(
-            url=f"/?pipeline_error={type(exc).__name__}",
-            status_code=303,
+        logger.exception("Pipeline source instantiation failed")
+        progress.finish(run_id=None, error=f"{type(exc).__name__}: {exc}")
+        return
+
+    with session_factory() as session:
+        try:
+            runner = build_runner(
+                session,
+                sources=sources,
+                archive_root=config.paths.pdf_archive,
+                ollama_client=ollama_client,
+            )
+            run_id = runner.run_once(progress=progress)
+            session.commit()
+        except Exception as exc:  # noqa: BLE001
+            session.rollback()
+            logger.exception("Manual pipeline run failed")
+            progress.finish(run_id=None, error=f"{type(exc).__name__}: {exc}")
+            return
+
+    progress.finish(run_id=run_id)
+
+
+@router.post("/run-pipeline", response_class=HTMLResponse)
+def run_pipeline(request: Request) -> HTMLResponse:
+    """Start a pipeline run in a background thread and return the progress widget.
+
+    The widget polls `/run-pipeline/status` every 2s via HTMX. If a run is
+    already in flight, we return the live widget for the existing run
+    instead of starting a duplicate.
+    """
+    progress: PipelineProgress = request.app.state.pipeline_progress
+    templates = request.app.state.templates
+
+    snapshot = progress.snapshot()
+    if snapshot["status"] == "running":
+        return templates.TemplateResponse(
+            request,
+            "partials/pipeline_progress.html",
+            {"progress": snapshot},
         )
 
-    params = f"?ran={run_id}&events={events}"
-    if failed:
-        params += f"&failed={failed}"
-    return RedirectResponse(url=f"/{params}", status_code=303)
+    # Reset eagerly so the immediate response shows "running" instead of
+    # whatever the previous run left behind. The background thread will call
+    # reset_for_run again with the source count.
+    progress.reset_for_run(total_sources=0)
+    progress.message = "Initialising pipeline..."
+    progress.started_at = datetime.now(UTC)
+
+    thread = threading.Thread(
+        target=_run_pipeline_in_background,
+        kwargs={
+            "session_factory": request.app.state.session_factory,
+            "config": request.app.state.config,
+            "ollama_client": request.app.state.ollama_client,
+            "progress": progress,
+        },
+        name="regwatch-pipeline",
+        daemon=True,
+    )
+    thread.start()
+
+    return templates.TemplateResponse(
+        request,
+        "partials/pipeline_progress.html",
+        {"progress": progress.snapshot()},
+    )
+
+
+@router.get("/run-pipeline/status", response_class=HTMLResponse)
+def run_pipeline_status(request: Request) -> HTMLResponse:
+    """HTMX polling endpoint. Returns the progress widget; self-replaces."""
+    progress: PipelineProgress = request.app.state.pipeline_progress
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        request,
+        "partials/pipeline_progress.html",
+        {"progress": progress.snapshot()},
+    )

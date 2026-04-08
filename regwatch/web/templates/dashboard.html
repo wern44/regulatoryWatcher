@@ -3,26 +3,20 @@
 {% block content %}
   <div class="flex items-center justify-between mb-4">
     <h1 class="text-2xl font-bold">Dashboard</h1>
-    <form method="post" action="/run-pipeline">
-      <button type="submit"
-              class="px-4 py-2 bg-slate-800 text-white rounded hover:bg-slate-700 text-sm font-semibold">
-        Run pipeline now
-      </button>
-    </form>
+    <button type="button"
+            hx-post="/run-pipeline"
+            hx-target="#pipeline-progress-slot"
+            hx-swap="innerHTML"
+            class="px-4 py-2 bg-slate-800 text-white rounded hover:bg-slate-700 text-sm font-semibold">
+      Run pipeline now
+    </button>
   </div>
 
-  {% if flash.ran %}
-  <div class="bg-green-100 border border-green-300 text-green-900 px-4 py-2 rounded mb-4 text-sm">
-    Pipeline run #{{ flash.ran }} completed — {{ flash.events }} new event(s).
-    {% if flash.failed %}
-    <span class="text-amber-800">Failed sources: {{ flash.failed|join(', ') }}.</span>
+  <div id="pipeline-progress-slot" class="mb-4">
+    {% if progress and progress.status != 'idle' %}
+      {% include "partials/pipeline_progress.html" %}
     {% endif %}
   </div>
-  {% elif flash.error %}
-  <div class="bg-red-100 border border-red-300 text-red-900 px-4 py-2 rounded mb-4 text-sm">
-    Pipeline run failed: {{ flash.error }}. Check the server logs for details.
-  </div>
-  {% endif %}
 
   <div class="grid grid-cols-4 gap-4 mb-6">
     <div class="bg-white p-4 rounded shadow-sm border">
