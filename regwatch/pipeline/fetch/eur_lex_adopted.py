@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from SPARQLWrapper import JSON, SPARQLWrapper
@@ -22,7 +22,7 @@ class EurLexAdoptedSource:
 
     def fetch(self, since: datetime) -> Iterator[RawDocument]:
         results = self._run_query(self._build_query(since))
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for binding in results.get("results", {}).get("bindings", []):
             celex = binding.get("celex", {}).get("value")
             title = binding.get("title", {}).get("value", "")
@@ -45,6 +45,9 @@ class EurLexAdoptedSource:
             f'STR(?celex) = "{prefix}"' for prefix in self._celex_prefixes
         ) or "true"
         since_iso = since.date().isoformat()
+        english = (
+            "<http://publications.europa.eu/resource/authority/language/ENG>"
+        )
         return f"""
         PREFIX cdm: <http://publications.europa.eu/ontology/cdm#>
         SELECT ?work ?celex ?title ?date
@@ -53,7 +56,7 @@ class EurLexAdoptedSource:
           ?work cdm:work_date_document ?date .
           ?expression cdm:expression_belongs_to_work ?work ;
                       cdm:expression_title ?title ;
-                      cdm:expression_uses_language <http://publications.europa.eu/resource/authority/language/ENG> .
+                      cdm:expression_uses_language {english} .
           FILTER ({filter_clause})
           FILTER (?date >= "{since_iso}"^^xsd:date)
         }}
@@ -70,4 +73,4 @@ class EurLexAdoptedSource:
 
 def _parse_date(s: str) -> datetime:
     # SPARQL returns dates as YYYY-MM-DD.
-    return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+    return datetime.fromisoformat(s).replace(tzinfo=UTC)

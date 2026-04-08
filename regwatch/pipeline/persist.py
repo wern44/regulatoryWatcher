@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -114,7 +114,7 @@ def _create_new_version(
         regulation_id=regulation_id,
         version_number=prev_number + 1,
         is_current=True,
-        fetched_at=datetime.now(timezone.utc),
+        fetched_at=datetime.now(UTC),
         source_url=extracted.raw.source_url,
         content_hash=content_hash,
         html_text=extracted.html_text,

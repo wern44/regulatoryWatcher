@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import case, desc
 from sqlalchemy.orm import Session
@@ -70,7 +70,7 @@ class InboxService:
         if ev is None:
             raise ValueError(f"UpdateEvent {event_id} not found")
         ev.review_status = "SEEN"
-        ev.seen_at = datetime.now(timezone.utc)
+        ev.seen_at = datetime.now(UTC)
 
     def archive(self, event_id: int) -> None:
         ev = self._session.get(UpdateEvent, event_id)

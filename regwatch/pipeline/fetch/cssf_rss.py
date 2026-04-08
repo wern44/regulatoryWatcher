@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import feedparser
@@ -24,7 +24,7 @@ class CssfRssSource:
 
     def fetch(self, since: datetime) -> Iterator[RawDocument]:
         seen_links: set[str] = set()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for keyword in self.keywords:
             url = f"{self.base_url}?content_keyword={keyword}"
             response = self._client.get(url)
@@ -51,10 +51,10 @@ class CssfRssSource:
 def _parse_date(entry: Any) -> datetime:
     raw = getattr(entry, "published", None) or getattr(entry, "updated", None)
     if raw is None:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
     parsed = dateparser.parse(raw)
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
     return parsed
 
 

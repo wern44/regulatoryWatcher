@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from SPARQLWrapper import JSON, SPARQLWrapper
@@ -19,7 +19,7 @@ class EurLexProposalSource:
 
     def fetch(self, since: datetime) -> Iterator[RawDocument]:
         results = self._run_query(self._build_query(since))
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for binding in results.get("results", {}).get("bindings", []):
             celex = binding.get("celex", {}).get("value", "")
             if not celex.startswith("5"):
@@ -40,6 +40,9 @@ class EurLexProposalSource:
 
     def _build_query(self, since: datetime) -> str:
         since_iso = since.date().isoformat()
+        english = (
+            "<http://publications.europa.eu/resource/authority/language/ENG>"
+        )
         return f"""
         PREFIX cdm: <http://publications.europa.eu/ontology/cdm#>
         SELECT ?work ?celex ?title ?date
@@ -48,7 +51,7 @@ class EurLexProposalSource:
           ?work cdm:work_date_document ?date .
           ?expression cdm:expression_belongs_to_work ?work ;
                       cdm:expression_title ?title ;
-                      cdm:expression_uses_language <http://publications.europa.eu/resource/authority/language/ENG> .
+                      cdm:expression_uses_language {english} .
           FILTER (STRSTARTS(STR(?celex), "5"))
           FILTER (?date >= "{since_iso}"^^xsd:date)
         }}
@@ -64,4 +67,4 @@ class EurLexProposalSource:
 
 
 def _parse_date(s: str) -> datetime:
-    return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+    return datetime.fromisoformat(s).replace(tzinfo=UTC)

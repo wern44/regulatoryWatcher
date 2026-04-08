@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -25,7 +25,7 @@ class ChatService:
     ) -> ChatSession:
         row = ChatSession(
             title=title,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
             filters=asdict(filters),
         )
         self._session.add(row)
@@ -44,7 +44,7 @@ class ChatService:
                 role="user",
                 content=question,
                 retrieved_chunk_ids=[],
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
         )
         self._session.flush()
@@ -59,7 +59,7 @@ class ChatService:
             role="assistant",
             content=result.answer,
             retrieved_chunk_ids=result.cited_chunk_ids,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         self._session.add(assistant)
         self._session.flush()

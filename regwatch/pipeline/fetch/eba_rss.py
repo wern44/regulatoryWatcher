@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import feedparser
@@ -19,7 +19,7 @@ class EbaRssSource:
     url = "https://www.eba.europa.eu/news-press/news/rss.xml"
 
     def fetch(self, since: datetime) -> Iterator[RawDocument]:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         with httpx.Client(timeout=30.0, follow_redirects=True) as client:
             response = client.get(self.url)
             response.raise_for_status()
@@ -47,8 +47,8 @@ class EbaRssSource:
 def _parse_date(entry: Any) -> datetime:
     raw = getattr(entry, "published", None) or getattr(entry, "updated", None)
     if raw is None:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
     parsed = dateparser.parse(raw)
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
     return parsed

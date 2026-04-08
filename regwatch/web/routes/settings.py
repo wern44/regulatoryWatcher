@@ -1,16 +1,16 @@
 """Settings view + manual PDF upload."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from regwatch.db.models import DocumentVersion, PipelineRun
+from regwatch.domain.types import RawDocument
 from regwatch.ollama.client import HealthStatus
 from regwatch.pipeline.extract.pdf import extract_pdf
-from regwatch.domain.types import RawDocument
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -80,7 +80,7 @@ async def upload_pdf(
         version.pdf_extracted_text = text
         version.pdf_is_protected = is_protected
         version.pdf_manual_upload = True
-        version.fetched_at = datetime.now(timezone.utc)
+        version.fetched_at = datetime.now(UTC)
         session.commit()
 
     return RedirectResponse(url="/settings", status_code=303)

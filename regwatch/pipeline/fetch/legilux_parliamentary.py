@@ -8,7 +8,7 @@ https://wdocs-pub.chd.lu/docs/exped/ (flagged by the spec's open question).
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from SPARQLWrapper import JSON, SPARQLWrapper
@@ -25,7 +25,7 @@ class LegiluxParliamentarySource:
 
     def fetch(self, since: datetime) -> Iterator[RawDocument]:
         results = self._run_query(self._build_query(since))
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for binding in results.get("results", {}).get("bindings", []):
             dossier_uri = binding.get("dossier", {}).get("value", "")
             title = binding.get("title", {}).get("value", "")
@@ -66,4 +66,4 @@ class LegiluxParliamentarySource:
 
 
 def _parse_date(s: str) -> datetime:
-    return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+    return datetime.fromisoformat(s).replace(tzinfo=UTC)

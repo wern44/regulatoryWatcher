@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import update
 from sqlalchemy.orm import Session
@@ -43,7 +43,7 @@ class PipelineRunner:
         """Run all sources once. Returns the pipeline_run id."""
         self._abort_stale_runs()
         run = PipelineRun(
-            started_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
             status="RUNNING",
             sources_attempted=[],
             sources_failed=[],
@@ -53,7 +53,7 @@ class PipelineRunner:
         self._session.add(run)
         self._session.flush()
 
-        since = since or datetime(2000, 1, 1, tzinfo=timezone.utc)
+        since = since or datetime(2000, 1, 1, tzinfo=UTC)
 
         for source in self._sources:
             run.sources_attempted = [*run.sources_attempted, source.name]
@@ -71,7 +71,7 @@ class PipelineRunner:
                 logger.exception("Source %s failed", source.name)
                 run.sources_failed = [*run.sources_failed, source.name]
 
-        run.finished_at = datetime.now(timezone.utc)
+        run.finished_at = datetime.now(UTC)
         run.status = "COMPLETED"
         self._session.flush()
         return run.run_id
@@ -80,5 +80,5 @@ class PipelineRunner:
         self._session.execute(
             update(PipelineRun)
             .where(PipelineRun.status == "RUNNING")
-            .values(status="ABORTED", finished_at=datetime.now(timezone.utc))
+            .values(status="ABORTED", finished_at=datetime.now(UTC))
         )

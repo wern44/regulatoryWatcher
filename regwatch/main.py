@@ -69,6 +69,8 @@ def create_app() -> FastAPI:
         ict,
         inbox,
         regulation_detail,
+    )
+    from regwatch.web.routes import (
         settings as settings_routes,
     )
 
