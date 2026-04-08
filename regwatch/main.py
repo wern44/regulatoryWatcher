@@ -54,11 +54,17 @@ def create_app() -> FastAPI:
         "/static", StaticFiles(directory=str(_STATIC_DIR)), name="static"
     )
 
-    from regwatch.web.routes import catalog, dashboard, inbox
+    from regwatch.web.routes import (
+        catalog,
+        dashboard,
+        inbox,
+        regulation_detail,
+    )
 
     app.include_router(dashboard.router)
     app.include_router(inbox.router)
     app.include_router(catalog.router)
+    app.include_router(regulation_detail.router)
 
     return app
 

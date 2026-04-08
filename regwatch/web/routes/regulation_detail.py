@@ -1,0 +1,48 @@
+"""Regulation detail view route."""
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import HTMLResponse
+
+from regwatch.db.models import DocumentVersion, Regulation
+from regwatch.services.updates import UpdateService
+
+router = APIRouter()
+
+
+@router.get("/regulations/{regulation_id}", response_class=HTMLResponse)
+def regulation_detail(request: Request, regulation_id: int) -> HTMLResponse:
+    templates = request.app.state.templates
+    with request.app.state.session_factory() as session:
+        reg = session.get(Regulation, regulation_id)
+        if reg is None:
+            raise HTTPException(status_code=404)
+
+        svc = UpdateService(session)
+        versions = svc.list_versions(regulation_id)
+
+        current = (
+            session.query(DocumentVersion)
+            .filter(DocumentVersion.regulation_id == regulation_id)
+            .filter(DocumentVersion.is_current.is_(True))
+            .one_or_none()
+        )
+        latest_diff = current.change_summary if current is not None else None
+
+        payload = {
+            "active": "catalog",
+            "regulation": {
+                "regulation_id": reg.regulation_id,
+                "reference_number": reg.reference_number,
+                "title": reg.title,
+                "issuing_authority": reg.issuing_authority,
+                "lifecycle_stage": reg.lifecycle_stage.value,
+                "is_ict": reg.is_ict,
+            },
+            "versions": versions,
+            "latest_diff": latest_diff,
+        }
+
+    return templates.TemplateResponse(
+        request, "regulation/detail.html", payload
+    )

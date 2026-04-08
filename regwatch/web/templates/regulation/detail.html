@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}RegWatch — {{ regulation.reference_number }}{% endblock %}
+{% block content %}
+  <a href="/catalog" class="text-sm text-slate-500 hover:underline">← Catalog</a>
+  <h1 class="text-2xl font-bold mt-2 mb-1">{{ regulation.reference_number }}</h1>
+  <div class="text-slate-600 mb-4">{{ regulation.title }}</div>
+
+  <div class="flex flex-wrap gap-2 mb-4">
+    <span class="px-2 py-0.5 rounded bg-slate-100 text-xs">{{ regulation.lifecycle_stage }}</span>
+    <span class="px-2 py-0.5 rounded bg-slate-100 text-xs">{{ regulation.issuing_authority }}</span>
+    {% if regulation.is_ict %}<span class="px-2 py-0.5 rounded bg-purple-100 text-purple-800 text-xs font-semibold">ICT</span>{% endif %}
+    <span class="px-2 py-0.5 rounded bg-slate-100 text-xs">{{ versions|length }} version(s)</span>
+  </div>
+
+  <div class="grid grid-cols-3 gap-4">
+    <section class="col-span-2 bg-white p-4 rounded shadow-sm border">
+      <h2 class="text-lg font-semibold mb-2">Latest changes</h2>
+      {% if latest_diff %}
+        <pre class="text-xs whitespace-pre-wrap font-mono">{% for line in latest_diff.splitlines() %}<span class="{% if line.startswith('+') %}text-green-700{% elif line.startswith('-') %}text-red-700{% endif %}">{{ line }}</span>
+{% endfor %}</pre>
+      {% else %}
+        <p class="text-sm text-slate-500">No diff on the current version.</p>
+      {% endif %}
+    </section>
+
+    <aside class="bg-white p-4 rounded shadow-sm border">
+      <h2 class="text-lg font-semibold mb-2">Version history</h2>
+      <ul class="text-sm space-y-1">
+        {% for v in versions %}
+          <li class="flex justify-between">
+            <span>v{{ v.version_number }} ({{ v.fetched_at.strftime('%Y-%m-%d') }})</span>
+            {% if v.is_current %}<span class="text-xs text-green-700 font-semibold">current</span>{% endif %}
+          </li>
+        {% else %}
+          <li class="text-slate-500">No versions yet.</li>
+        {% endfor %}
+      </ul>
+    </aside>
+  </div>
+{% endblock %}
