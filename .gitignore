@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Runtime data
+/data/
+config.yaml
+.superpowers/
+
+# IDE
+.vscode/
+.idea/
+*.swp

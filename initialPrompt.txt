@@ -1,0 +1,174 @@
+#Regulatoisches Überwachungs-Tool
+Kannst du bitte ein Tool entwickeln, welches die Regulatorischen Anforderungen an zwei Unternehmen in Luxembourg überwacht und übersichtlich darstellt.
+Hierbei sollen alle aktuellen regulatorischen Anforderungen, die sich aus den CSSF Rundschreiben, den Gesetzen in Luxembourg und den EU Regularien ergeben übersichtlich dargestellt werden.
+In regelmäßigen Abständen soll auf Neuerungen geprüft werden. Hierzu stehen unterschiedliche Informationsquellen zur Verfügung (siehe Recherche-Ergebnis unten). Bitte stelle sicher, dass das Tool die relevanten Informationsquellen nutzt, die eine automatische Extraktion via Web ermöglichen.
+Alle nötigen Informationen sollen in einer Datenbank gespeichert werden. Diese muss bei Änderungen in der Regulatorik aktualisiert werden.
+Bitte recherchiere die Best Practices, um eine solches Tool zu erstellen und die nötigen Informationen zu extrahieren.
+Die geltenden Gesetzte, CSSF Rundschrieben und EU Regulierungen können sich ändern und müssen dann in dem Tool angepasst werden. Bei Änderungen kommt es oft nur zu Anpassungen an bestimmten Stellen, selten wird alles geändert.
+In der App soll zwischen beiden Unternehmenstypen getrennt werden, um die jeweils zutreffenden Anforderungen zu sehen.
+Auch sollen IKT-Bezogene Rundschreiben oder Regulierungen markiert werden, um diese einzeln betrachten zu können.
+Bitte recherchiere die mögliche Umsetzung sehr genau und erstelle einien detaillierten Plan für die Implementierung.
+
+##Recherche-Ergebnis:
+# Regulatory monitoring blueprint for Union Investment Luxembourg
+
+**Union Investment Luxembourg S.A.** (LEI: 529900FSORICM1ERBP05, RCS Luxembourg B28679, NACE 66.30) operates under two distinct CSSF authorizations — as an **AIFM** under the Law of 12 July 2013 and as a **Chapter 15 Management Company** under the Law of 17 December 2010. This dual authorization creates a complex regulatory matrix spanning **50+ instruments** across Luxembourg and EU levels, all of which can be monitored programmatically through RSS feeds, SPARQL endpoints, Solr APIs, and the GLEIF REST API. **DORA** (applicable since 17 January 2025) is now the overriding ICT framework for both entity types, displacing most prior CSSF ICT circulars.
+
+---
+
+## The dual-authorization regulatory matrix
+
+Both entities share the same legal person but fall under distinct primary legislation. Understanding which regulations apply to which authorization — and which apply to both — is the foundation for any compliance monitoring system.
+
+### Luxembourg primary legislation
+
+**AIFM authorization** is governed by the **Law of 12 July 2013** on alternative investment fund managers, which transposes AIFMD (Directive 2011/61/EU). This law was materially amended by the **Law of 21 July 2023** (Modernisation Act) and faces imminent change through **Draft Bill 8628** (submitted October 2025), which transposes AIFMD II with a deadline of **16 April 2026**. Key provisions cover authorisation (minimum capital €125,000 + 0.02% of AuM above €250m, capped at €10m), delegation requirements, and the "Super ManCo" bridge under Article 101-1 of the UCI Law.
+
+**Chapter 15 ManCo authorization** falls under the **Law of 17 December 2010** relating to UCIs, specifically Articles 101–112, which transpose the UCITS IV Directive (2009/65/EC). This law was last consolidated on **17 January 2025**. The ManCo is further subject to **CSSF Regulation No 10-04** (as amended by CSSF Regulation 22-05) — a legally binding instrument that transposes Commission Directive 2010/43/EU and establishes organizational requirements, risk management rules (Articles 42–50 covering global exposure, stress testing, VaR limits), conduct of business, and sustainability risk integration. **AIFMs are not subject to CSSF Regulation 10-04**; their equivalent rules come from Commission Delegated Regulation (EU) No 231/2013.
+
+Both entity types are subject to the **Law of 12 November 2004** (AML/CFT), the **Law of 5 April 1993** on the financial sector (especially for MiFID top-up services), and the **Law of 10 August 1915** on commercial companies.
+
+### The central CSSF circular: 18/698
+
+**Circular CSSF 18/698** (23 August 2018) is the single most important circular for both entity types. It replaced Circular 12/546 and governs authorisation, organization, governance, substance requirements, delegation frameworks, and AML/CFT provisions for **all investment fund managers** — Chapter 15 ManCos, Chapter 16 ManCos, authorized AIFMs, SIAGs, and FIAAGs. At 96 pages, it is the operational backbone of IFM supervision in Luxembourg.
+
+### CSSF circulars that apply only to one entity type
+
+The following table captures the critical differentiation:
+
+| Circular | Scope | Key subject |
+|---|---|---|
+| **CSSF 23/844** | AIFM only | AIFM reporting obligations under Article 24 AIFMD (replaced 14/581) |
+| **CSSF 11/512** | ManCo only | Risk management clarifications following CSSF Reg 10-04 and ESMA |
+| **CSSF 10/437** | ManCo only | Remuneration policies in the financial sector |
+| **CSSF 08/356** | ManCo only | Efficient portfolio management techniques (securities lending, repos) |
+| **CSSF 14/592** | ManCo only | ESMA guidelines on ETFs and other UCITS issues |
+| **CSSF 16/644** | ManCo only | UCITS depositary provisions under UCITS V |
+| **CSSF 04/146** | ManCo only | Late trading and market timing protection |
+| **CSSF 14/591** | ManCo only | Material changes to UCITS — investor protection |
+| **CSSF 24/856** | Both | NAV errors, breach of investment rules (effective 1 Jan 2025, replaced 02/77) |
+
+Shared circulars include **25/894** (non-authorized fund notifications), **24/854** (AML/CFT summary reports), **21/789** as amended by **23/839** (annual SAQ and management letter), **22/811** as amended by **25/900** (UCI administrators), **22/795** (marketing communications under CBDF), **19/708** as amended by **21/790** (electronic document transmission), **15/633** (quarterly financial reporting), and **17/650** as amended by **20/744** (AML/CFT predicate offences).
+
+---
+
+## EU-level regulatory framework and key differentiators
+
+### Core directives and level-2 measures
+
+The AIFM authorization is governed at EU level by **Directive 2011/61/EU** (AIFMD) and its level-2 measure **Commission Delegated Regulation (EU) No 231/2013**. The Chapter 15 ManCo authorization is governed by **Directive 2009/65/EC** (UCITS Directive, as amended by UCITS V — Directive 2014/91/EU) and level-2 measure **Commission Directive 2010/43/EU**.
+
+**AIFMD II** — **Directive (EU) 2024/927** — amends both directives simultaneously. Published on 26 March 2024, it entered into force on 15 April 2024 with a transposition deadline of **16 April 2026**. New reporting requirements under both AIFMD and UCITS apply from **16 April 2027**. Key changes include mandatory liquidity management tools (minimum 2 LMTs for open-ended AIFs and UCITS), enhanced delegation and substance requirements, a new loan origination framework (AIFM only — UCITS cannot originate loans), expanded ancillary services, and harmonized supervisory reporting.
+
+### Regulations applying to both entity types
+
+**SFDR** (Regulation 2019/2088) treats both AIFMs and UCITS ManCos as "financial market participants" — requiring entity-level sustainability risk policies, PAI statements (mandatory above 500 employees), and product-level Article 6/8/9 disclosures. The level-2 **RTS** (Delegated Regulation 2022/1288) has applied since January 2023. The **Taxonomy Regulation** (2020/852) applies identically to both via SFDR cross-reference.
+
+**DORA** (Regulation 2022/2554) explicitly covers both UCITS ManCos (Article 2(1)(j)) and authorized AIFMs (Article 2(1)(k)). Sub-threshold AIFMs are excluded, but there is no exemption for UCITS ManCos. **EMIR** (Regulation 648/2012, as amended by EMIR Refit and EMIR III 2024/2987) classifies both UCITS and AIFs as Financial Counterparties. **SFTR** (Regulation 2015/2365), **PRIIPs** (Regulation 1286/2014), **Benchmarks Regulation** (2016/1011), and the **CBDF framework** (Directive 2019/1160 + Regulation 2019/1156) apply uniformly. **MiFID II** (Directive 2014/65/EU) applies to both when providing "top-up" services (discretionary portfolio management, investment advice) but not for core fund management activities.
+
+### Regulations primarily applicable to one entity type
+
+The **AIFMD loan origination framework** (new Articles 15–16 under AIFMD II) applies exclusively to AIFMs. UCITS cannot originate loans. **ESMA's remuneration guidelines** are separate instruments: **ESMA/2013/232** for AIFMs and **ESMA/2016/411** for UCITS ManCos. AIFM-specific Annex IV reporting (ESMA/2014/869) applies only to AIFMs, while **ESMA risk measurement guidelines** (ESMA/2012/197) and **ESMA ETF/UCITS guidelines** (ESMA/2014/937) apply only to UCITS ManCos.
+
+### ESMA guidelines applying to both
+
+Both entity types must comply with ESMA guidelines on **liquidity stress testing** (ESMA34-39-897), **performance fees** (ESMA34-39-992), **fund names using ESG terms** (ESMA34-1592494965-657, applied November 2024/May 2025), **marketing communications** (ESMA34-45-1272), and forthcoming **LMT guidelines** (final report April 2025, compliance from April 2027).
+
+---
+
+## DORA as the overriding ICT framework
+
+Since **17 January 2025**, DORA is the primary ICT regulation for both entity types. The CSSF's April 2025 circular package (**Circulars 25/880 through 25/883** and **25/892–25/893**) comprehensively restructured the national framework to eliminate overlaps.
+
+### Five pillars of DORA obligations
+
+**ICT risk management** (Articles 5–16) requires a comprehensive, documented framework approved by the management body, a dedicated ICT risk management function, a complete ICT asset inventory, annual risk assessments, and business continuity/disaster recovery plans. **ICT incident reporting** (Articles 17–23) mandates classification within 24 hours of detection, initial notification within **4 hours** of classification, an intermediate report within **72 hours**, and a final report within **1 month**. Any "successful malicious unauthorized access" automatically qualifies as major. **Digital operational resilience testing** (Articles 24–27) requires annual security testing and threat-led penetration testing (TLPT) every 3 years for significant entities, with the first mandatory TLPT due before **17 January 2028**. The CSSF is the TLPT authority under the TIBER-LU framework. **ICT third-party risk management** (Articles 28–44) requires a register of all ICT third-party arrangements (15 templates under ITS 2024/2956), submitted annually to the CSSF. **Circular CSSF 25/882** additionally requires **3 months' advance notification** before any new ICT outsourcing of critical/important functions. The ESAs designated **19 Critical Third-Party Providers** in November 2025. **Information sharing** (Article 45) enables voluntary cyber threat intelligence exchange.
+
+### Key DORA secondary legislation
+
+The most important delegated acts are **RTS 2024/1774** (ICT risk management framework), **RTS 2024/1772** (incident classification and thresholds), **RTS 2024/1773** (contractual arrangements for critical ICT services), **ITS 2024/2956** (register of information templates), **RTS 2025/301** (incident reporting content and timelines), **ITS 2025/302** (incident reporting forms), and **RTS 2025/532** (subcontracting of critical ICT services, effective 22 July 2025).
+
+### What DORA displaced
+
+**Circular CSSF 22/806** (outsourcing) was amended by **Circular 25/883** — for DORA entities it now applies **only to business process outsourcing**, with all ICT outsourcing provisions repealed. **Circular 24/847** (ICT incident reporting) is superseded by DORA for DORA entities (per Circular 25/893). **ESMA cloud outsourcing guidelines** were revised in September 2025 to exclude all DORA entities from their scope. **Circular 20/750** (ICT risk management) was never directly applicable to fund managers but is now explicitly out of scope for DORA entities. **NIS2** (Directive 2022/2555) is effectively displaced by DORA as *lex specialis* — and Luxembourg has not yet transposed NIS2 (Bill 8364 still in committee; the European Commission sent a reasoned opinion in May 2025).
+
+### GDPR runs independently alongside DORA
+
+**GDPR** (Regulation 2016/679) and Luxembourg's **Law of 1 August 2018** apply fully to both entity types. Personal data breaches may trigger **dual reporting**: GDPR notification to CNPD within 72 hours **and** DORA incident reporting to CSSF. Neither exempts from the other. The CNPD supervises GDPR compliance from its Esch-sur-Alzette office.
+
+---
+
+## Technical architecture for programmatic monitoring
+
+### Luxembourg sources with verified access methods
+
+**CSSF RSS feeds** are the highest-value, easiest-to-implement monitoring channel. The main feed at `https://www.cssf.lu/en/feed/publications` covers all publications. Keyword-filtered feeds follow the pattern `https://www.cssf.lu/en/feed/publications?content_keyword={keyword}`, with confirmed keywords including `aif`, `ucits`, `aml-cft`, `sustainable-finance`, `emir`, `mifid`, `investment-fund`, and `crypto-assets`. The CSSF website runs WordPress, so individual circulars follow the URL pattern `https://www.cssf.lu/en/Document/circular-cssf-{YY}-{NNN}/` and PDF attachments sit at `https://www.cssf.lu/wp-content/uploads/{filename}.pdf`. No public REST API exists for content retrieval. Update frequency is multiple items per week.
+
+**Legilux** (legilux.public.lu) offers a **SPARQL endpoint** at `http://data.legilux.public.lu/sparql` returning CSV, JSON, RDF, or HTML. Every legislative document has a permanent ELI URI: `http://data.legilux.public.lu/eli/etat/{serie}/{type}/{year}/{month}/{day}/{ID}/jo`. The data model follows both the JOLux and ELI standards under a free, open-data license. This is the authoritative source for Mémorial A (laws, Grand-Ducal Regulations, CSSF Regulations) — electronic publication is the sole authentic legal instrument since 2017.
+
+**CNPD** (cnpd.public.lu) has no RSS feed and no API. The site runs Adobe Experience Manager with server-side rendering, making it scrapable with `requests` + `BeautifulSoup`. News follows the URL pattern `https://cnpd.public.lu/en/actualites/{national|international}/{YYYY}/{MM}/{slug}.html` with **2–3 items per week**. Many items are French-only.
+
+**CSSF eDesk entity search** (searchentities.apps.cssf.lu) is a JavaScript SPA with **robots.txt blocking crawlers**. It requires Playwright/Selenium to render and intercept XHR calls to discover the backend API. The S3-compatible API at eDesk is for regulatory report **submission** only (requires authentication). A practical workaround is using ESMA registers (which aggregate CSSF entity data) via the Solr API.
+
+### EU sources with verified access methods
+
+**EUR-Lex/CELLAR SPARQL endpoint** at `http://publications.europa.eu/webapi/rdf/sparql` is public, free, and requires no authentication. It returns RDF/XML, JSON, CSV, or TSV and uses the Common Data Model ontology. A query builder exists at `https://op.europa.eu/en/advanced-sparql-query-editor`. Individual regulations can be accessed by CELEX number (`https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:{CELEX}`) or ELI URI. EUR-Lex also provides **predefined RSS alerts** at `https://eur-lex.europa.eu/content/help/search/predefined-rss.html` for Official Journal L and C series. Custom RSS alerts (up to 50) require EU Login. Bulk data downloads are available at `https://datadump.publications.europa.eu`.
+
+**ESMA Registers** offer a powerful **Solr A2A API** at `https://registers.esma.europa.eu/solr/esma_registers_{CoreName}/select`. Key cores include `esma_registers_upreg` (MiFID, UCITS, AIFMD entities), `esma_registers_funds` (AIF/EuSEF/EuVECA funds), and `esma_registers_funds_cbdif` (cross-border marketing). No authentication required; responses available in XML or JSON (append `&wt=json`). Entity data includes `ae_entityName`, `ae_lei`, `ae_entityTypeCode`, `ae_competentAuthority`, `ae_status`, and `ae_authorisationNotificationDate`. ESMA also publishes an **RSS feed** at `https://www.esma.europa.eu/rss.xml` for news and publications.
+
+**EBA** provides an RSS feed at `https://www.eba.europa.eu/news-press/news/rss.xml` covering press releases, guidelines, and consultations. No REST API is available for content retrieval.
+
+**European Commission DG FISMA** offers granular RSS feeds: articles (`item_type_id=911`), press releases (`913`), events (`914`), consultations (`916`) — all at `https://ec.europa.eu/newsroom/fisma/feed?item_type_id={ID}&lang=en&orderby=item_date`. Topic-specific feeds are available by ID (Banking=1565, UCITS=1588, Derivatives/EMIR=1601, Digital Finance=26363, Sustainable Finance=26362, AML=various).
+
+### GLEIF API for LEI-based company data
+
+The **GLEIF REST API** at `https://api.gleif.org/api/v1/` is **free, public, requires no authentication**, and uses JSON:API format. The primary lookup endpoint is `GET /lei-records/529900FSORICM1ERBP05`. Available data fields include legal name, legal and headquarters addresses, jurisdiction, legal form, registration authority and number (B28679 for this entity), entity status, LEI registration dates, managing LOU, BIC/ISIN mappings, and — critically — **relationship data** (direct parent, ultimate parent, direct children, managed funds, branches). The `include=direct-parent,ultimate-parent` parameter fetches relationship data in a single call. GLEIF Golden Copy data updates **3 times daily**. Bulk downloads in XML, JSON, and CSV are available at `https://www.gleif.org/en/lei-data/gleif-golden-copy/download-the-golden-copy`.
+
+Confirmed entity data for LEI 529900FSORICM1ERBP05: **Union Investment Luxembourg S.A.**, registered as B28679, address 3 Heienhaff, L-1736 Senningerberg, Luxembourg, EUID LURCSL.B28679, NACE 66.30 (Fund management activities).
+
+---
+
+## Implementation priority and Python library stack
+
+The recommended implementation order, by value and difficulty:
+
+| Priority | Source | Method | Python libraries | Difficulty |
+|---|---|---|---|---|
+| 1 | CSSF publications | RSS feeds (keyword-filtered) | `feedparser` | Easy |
+| 2 | GLEIF company data | REST API (JSON:API) | `requests` | Easy |
+| 3 | ESMA registers | Solr A2A API | `requests`, `pysolr` | Easy |
+| 4 | EUR-Lex legislation | CELLAR SPARQL | `SPARQLWrapper` | Medium |
+| 5 | Legilux legislation | SPARQL endpoint | `SPARQLWrapper` | Medium |
+| 6 | EBA/ESMA news | RSS feeds | `feedparser` | Easy |
+| 7 | EC DG FISMA news | RSS feeds | `feedparser` | Easy |
+| 8 | EUR-Lex Official Journal | Predefined RSS alerts | `feedparser` | Easy |
+| 9 | CNPD news | HTML scraping | `requests` + `BeautifulSoup` | Medium |
+| 10 | CSSF entity search | Headless browser + XHR intercept | `playwright` | Hard |
+
+---
+
+## Database schema for regulatory monitoring
+
+### Company master data (from GLEIF + CSSF)
+
+Key fields: `lei` (PK), `legal_name`, `rcs_number` (B28679), `euid`, `legal_address`, `hq_address`, `jurisdiction`, `legal_form`, `nace_code`, `entity_status`, `lei_registration_status`, `lei_next_renewal`, `managing_lou`, `gleif_last_updated`. For each LEI, store multiple **authorization records**: `authorization_id` (PK), `lei` (FK), `cssf_entity_id` (7073800 for AIFM, 6918042 for ManCo), `authorization_type` (AIFM / Chapter15ManCo), `authorization_date`, `cssf_status`, and `cssf_url`.
+
+### Regulatory inventory (which regulations apply to which type)
+
+Core table: `regulation_id` (PK), `regulation_type` (Law / Circular / EU_Regulation / EU_Directive / ESMA_Guideline / RTS / ITS), `reference_number`, `title`, `issuing_authority`, `publication_date`, `effective_date`, `status` (Active / Repealed / Amended), `replaced_by`, `url`, `pdf_url`. Junction table: `regulation_applicability` linking `regulation_id` to `authorization_type` with an `applicability_scope` field (AIFM_ONLY / MANCO_ONLY / BOTH / CONDITIONAL). This enables the query "show me all regulations that apply to our AIFM authorization."
+
+### Regulatory update tracking
+
+Table: `regulatory_update_id` (PK), `source` (CSSF_RSS / ESMA_RSS / EUR_LEX / LEGILUX / EBA_RSS / CNPD / EC_FISMA), `source_url`, `title`, `publication_date`, `content_hash` (for deduplication), `content_summary`, `raw_content`, `document_type`, `keywords[]`, `affected_regulation_ids[]` (FK array), `affected_authorization_types[]`, `severity` (Informational / Material / Critical), `review_status` (New / Under_Review / Assessed / Archived), `assigned_to`, `review_notes`, `review_date`.
+
+### Compliance status tracking
+
+Table: `compliance_item_id` (PK), `regulation_id` (FK), `authorization_id` (FK), `requirement_description`, `compliance_status` (Compliant / Partially_Compliant / Non_Compliant / Not_Assessed / Not_Applicable), `evidence_reference`, `gap_description`, `remediation_plan`, `deadline`, `responsible_person`, `last_assessment_date`, `next_review_date`. For DORA specifically, add a `dora_pillar` field (ICT_Risk_Mgmt / Incident_Reporting / Resilience_Testing / Third_Party_Risk / Info_Sharing) and a `register_of_information` table mapping ICT third-party arrangements to the 15 DORA ITS templates (RT.01–RT.05 and beyond).
+
+---
+
+## Conclusion: what makes this monitoring system actionable
+
+The regulatory landscape splits cleanly along two axes. **Vertically**, the AIFM Law of 2013 and the UCI Law of 2010 (Chapter 15) create distinct authorization tracks with different primary legislation, level-2 measures, and CSSF circulars — but a substantial shared core around Circular 18/698, AML, SFDR, DORA, and EMIR. **Horizontally**, monitoring sources span Luxembourg domestic (CSSF RSS, Legilux SPARQL) and EU institutional (EUR-Lex SPARQL, ESMA Solr, EBA/EC RSS) layers, almost all of which offer programmatic access without authentication.
+
+Three insights stand out for implementation. First, **CSSF's keyword-filtered RSS feeds** are an underutilized goldmine — subscribing to the `aif`, `ucits`, `aml-cft`, and `sustainable-finance` keyword feeds provides near-real-time coverage of the most relevant publications. Second, the **ESMA Solr API** can serve as a proxy for CSSF entity data that is otherwise locked behind a JavaScript SPA with robots.txt restrictions, since ESMA aggregates NCA-submitted entity information including LEI codes. Third, the **AIFMD II transposition deadline of 16 April 2026** is the most pressing regulatory event — Luxembourg's Draft Bill 8628 must be monitored via Legilux SPARQL and CSSF RSS for adoption updates, as it will introduce new delegation, LMT, reporting, and ancillary services requirements affecting both authorization tracks.

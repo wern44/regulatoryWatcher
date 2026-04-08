@@ -1,0 +1,65 @@
+entity:
+  lei: "529900FSORICM1ERBP05"
+  legal_name: "Union Investment Luxembourg S.A."
+  authorizations:
+    - type: AIFM
+      cssf_entity_id: "7073800"
+    - type: CHAPTER15_MANCO
+      cssf_entity_id: "6918042"
+
+sources:
+  cssf_rss:
+    enabled: true
+    interval_hours: 6
+    keywords: [aif, ucits, aml-cft, sustainable-finance, emir, mifid, investment-fund, crypto-assets]
+  cssf_consultation:
+    enabled: true
+    interval_hours: 6
+  eur_lex_adopted:
+    enabled: true
+    interval_hours: 6
+    celex_prefixes: ["32011L0061", "32009L0065", "32022R2554", "32019R2088", "32020R0852", "32024L0927"]
+  eur_lex_proposal:
+    enabled: true
+    interval_hours: 6
+  legilux_sparql:
+    enabled: true
+    interval_hours: 12
+  legilux_parliamentary:
+    enabled: true
+    interval_hours: 12
+  esma_rss:
+    enabled: true
+    interval_hours: 6
+  eba_rss:
+    enabled: true
+    interval_hours: 6
+  ec_fisma_rss:
+    enabled: true
+    interval_hours: 6
+    item_types: [911, 913, 916]
+    topic_ids: [1565, 1588, 1601, 26362, 26363]
+
+ollama:
+  base_url: "http://localhost:11434"
+  chat_model: "llama3.1:8b"
+  embedding_model: "nomic-embed-text"
+  embedding_dim: 768
+
+rag:
+  chunk_size_tokens: 500
+  chunk_overlap_tokens: 50
+  retrieval_k: 20
+  rerank_k: 10
+  enable_rerank: false
+
+paths:
+  db_file: "./data/app.db"
+  pdf_archive: "./data/pdfs"
+  uploads_dir: "./data/uploads"
+
+ui:
+  language: en
+  timezone: "Europe/Luxembourg"
+  host: "127.0.0.1"
+  port: 8000
