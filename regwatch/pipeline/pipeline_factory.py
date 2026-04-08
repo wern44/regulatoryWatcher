@@ -12,11 +12,12 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from regwatch.domain.types import ExtractedDocument, MatchedDocument, RawDocument
+from regwatch.ollama.client import OllamaClient
 from regwatch.pipeline.extract.html import extract_html
 from regwatch.pipeline.extract.pdf import extract_pdf
 from regwatch.pipeline.match.classify import is_ict_document, severity_for
+from regwatch.pipeline.match.combined import CombinedMatcher
 from regwatch.pipeline.match.lifecycle import classify_lifecycle
-from regwatch.pipeline.match.rules import RuleMatcher
 from regwatch.pipeline.runner import PipelineRunner
 
 
@@ -25,9 +26,9 @@ def build_runner(
     *,
     sources: Iterable,
     archive_root: Path | str,
-    ollama_enabled: bool = False,
+    ollama_client: OllamaClient | None = None,
 ) -> PipelineRunner:
-    rule_matcher = RuleMatcher(session)
+    combined = CombinedMatcher(session, ollama=ollama_client)
 
     def _extract(raw: RawDocument) -> ExtractedDocument:
         # Test hook: prefer in-memory text over real HTTP.
@@ -65,7 +66,7 @@ def build_runner(
             or extracted.raw.title
             or ""
         )
-        references = rule_matcher.match(text_for_match)
+        references = combined.match(text_for_match)
         is_ict = is_ict_document(
             extracted.raw.title + " " + (text_for_match or "")
         )
