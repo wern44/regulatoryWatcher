@@ -1,0 +1,58 @@
+"""Helpers to import and instantiate fetch sources from AppConfig.
+
+Shared by the CLI (`regwatch run-pipeline`) and the web UI "Run pipeline"
+button so both paths construct sources the same way.
+"""
+from __future__ import annotations
+
+from typing import Any
+
+from regwatch.config import AppConfig, SourceConfig
+from regwatch.pipeline.fetch.base import REGISTRY
+
+
+def import_all_sources() -> None:
+    """Side-effect imports that register every built-in Source in REGISTRY."""
+    import regwatch.pipeline.fetch.cssf_consultation  # noqa: F401, PLC0415
+    import regwatch.pipeline.fetch.cssf_rss  # noqa: F401, PLC0415
+    import regwatch.pipeline.fetch.eba_rss  # noqa: F401, PLC0415
+    import regwatch.pipeline.fetch.ec_fisma_rss  # noqa: F401, PLC0415
+    import regwatch.pipeline.fetch.esma_rss  # noqa: F401, PLC0415
+    import regwatch.pipeline.fetch.eur_lex_adopted  # noqa: F401, PLC0415
+    import regwatch.pipeline.fetch.eur_lex_proposal  # noqa: F401, PLC0415
+    import regwatch.pipeline.fetch.legilux_parliamentary  # noqa: F401, PLC0415
+    import regwatch.pipeline.fetch.legilux_sparql  # noqa: F401, PLC0415
+
+
+def instantiate_source(name: str, source_cfg: SourceConfig) -> Any:
+    """Instantiate a registered source class with the arguments it expects."""
+    cls = REGISTRY[name]
+    if name == "cssf_rss":
+        return cls(keywords=source_cfg.keywords)
+    if name == "eur_lex_adopted":
+        return cls(celex_prefixes=source_cfg.celex_prefixes)
+    if name == "ec_fisma_rss":
+        return cls(
+            item_types=source_cfg.item_types,
+            topic_ids=source_cfg.topic_ids,
+        )
+    return cls()
+
+
+def build_enabled_sources(
+    config: AppConfig, *, only: str | None = None
+) -> list[Any]:
+    """Instantiate every enabled source in the config.
+
+    If `only` is set, restrict to that single source name (used by
+    `run-pipeline --source NAME`).
+    """
+    import_all_sources()
+    instances: list[Any] = []
+    for name, source_cfg in config.sources.items():
+        if not source_cfg.enabled:
+            continue
+        if only is not None and name != only:
+            continue
+        instances.append(instantiate_source(name, source_cfg))
+    return instances

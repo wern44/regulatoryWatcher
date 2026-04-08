@@ -12,7 +12,13 @@ router = APIRouter()
 
 
 @router.get("/", response_class=HTMLResponse)
-def dashboard(request: Request) -> HTMLResponse:
+def dashboard(
+    request: Request,
+    ran: int | None = None,
+    events: int | None = None,
+    failed: str | None = None,
+    pipeline_error: str | None = None,
+) -> HTMLResponse:
     templates = request.app.state.templates
     with request.app.state.session_factory() as session:
         reg_svc = RegulationService(session)
@@ -48,5 +54,11 @@ def dashboard(request: Request) -> HTMLResponse:
                 "ict": len(ict_regs),
             },
             "upcoming": upcoming[:5],
+            "flash": {
+                "ran": ran,
+                "events": events,
+                "failed": (failed.split(",") if failed else []),
+                "error": pipeline_error,
+            },
         },
     )

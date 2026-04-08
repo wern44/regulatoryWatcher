@@ -61,6 +61,7 @@ def create_app() -> FastAPI:
     )
 
     from regwatch.web.routes import (
+        actions,
         catalog,
         chat,
         dashboard,
@@ -83,6 +84,7 @@ def create_app() -> FastAPI:
     app.include_router(ict.router)
     app.include_router(chat.router)
     app.include_router(settings_routes.router)
+    app.include_router(actions.router)
 
     return app
 

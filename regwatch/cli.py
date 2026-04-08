@@ -72,34 +72,6 @@ def seed(
     typer.echo(f"Loaded seed. {count} regulation(s) in the catalog.")
 
 
-def _import_sources() -> None:
-    """Side-effect imports to populate the source REGISTRY."""
-    import regwatch.pipeline.fetch.cssf_consultation  # noqa: F401
-    import regwatch.pipeline.fetch.cssf_rss  # noqa: F401
-    import regwatch.pipeline.fetch.eba_rss  # noqa: F401
-    import regwatch.pipeline.fetch.ec_fisma_rss  # noqa: F401
-    import regwatch.pipeline.fetch.esma_rss  # noqa: F401
-    import regwatch.pipeline.fetch.eur_lex_adopted  # noqa: F401
-    import regwatch.pipeline.fetch.eur_lex_proposal  # noqa: F401
-    import regwatch.pipeline.fetch.legilux_parliamentary  # noqa: F401
-    import regwatch.pipeline.fetch.legilux_sparql  # noqa: F401
-
-
-def _instantiate_source(name: str, source_cfg):  # type: ignore[no-untyped-def]
-    from regwatch.pipeline.fetch.base import REGISTRY
-
-    cls = REGISTRY[name]
-    if name == "cssf_rss":
-        return cls(keywords=source_cfg.keywords)
-    if name == "eur_lex_adopted":
-        return cls(celex_prefixes=source_cfg.celex_prefixes)
-    if name == "ec_fisma_rss":
-        return cls(
-            item_types=source_cfg.item_types, topic_ids=source_cfg.topic_ids
-        )
-    return cls()
-
-
 @app.command("run-pipeline")
 def run_pipeline(
     source: Annotated[
@@ -108,17 +80,11 @@ def run_pipeline(
 ) -> None:
     """Fetch, extract, match, persist — one pass across enabled sources."""
     cfg = _get_config()
-    _import_sources()
     from regwatch.ollama.client import OllamaClient
     from regwatch.pipeline.pipeline_factory import build_runner
+    from regwatch.pipeline.sources import build_enabled_sources
 
-    source_instances = []
-    for name, source_cfg in cfg.sources.items():
-        if not source_cfg.enabled:
-            continue
-        if source is not None and name != source:
-            continue
-        source_instances.append(_instantiate_source(name, source_cfg))
+    source_instances = build_enabled_sources(cfg, only=source)
 
     ollama = OllamaClient(
         base_url=cfg.ollama.base_url,
