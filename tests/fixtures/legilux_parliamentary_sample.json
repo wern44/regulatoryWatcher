@@ -1,0 +1,13 @@
+{
+  "head": {"vars": ["dossier", "title", "date", "number"]},
+  "results": {
+    "bindings": [
+      {
+        "dossier": {"type": "uri", "value": "http://data.legilux.public.lu/eli/etat/projet-de-loi/2025/10/08/a1/jo"},
+        "title": {"type": "literal", "value": "Projet de loi 8628 portant modification de la loi financière"},
+        "date": {"type": "literal", "value": "2025-10-08"},
+        "number": {"type": "literal", "value": "8628"}
+      }
+    ]
+  }
+}
