@@ -28,3 +28,33 @@ def create_virtual_tables(engine: Engine, *, embedding_dim: int) -> None:
                 """
             )
         )
+        conn.execute(
+            text(
+                """
+                CREATE TRIGGER IF NOT EXISTS document_chunk_ai
+                AFTER INSERT ON document_chunk BEGIN
+                  INSERT INTO document_chunk_fts(rowid, text) VALUES (new.chunk_id, new.text);
+                END
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TRIGGER IF NOT EXISTS document_chunk_ad"
+                " AFTER DELETE ON document_chunk BEGIN"
+                " INSERT INTO document_chunk_fts(document_chunk_fts, rowid, text)"
+                " VALUES ('delete', old.chunk_id, old.text);"
+                " END"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TRIGGER IF NOT EXISTS document_chunk_au"
+                " AFTER UPDATE ON document_chunk BEGIN"
+                " INSERT INTO document_chunk_fts(document_chunk_fts, rowid, text)"
+                " VALUES ('delete', old.chunk_id, old.text);"
+                " INSERT INTO document_chunk_fts(rowid, text)"
+                " VALUES (new.chunk_id, new.text);"
+                " END"
+            )
+        )

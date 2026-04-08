@@ -1,7 +1,7 @@
 """SQLAlchemy ORM models for the Regulatory Watcher database."""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -13,12 +13,34 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
 )
+from sqlalchemy import (
+    text as sa_text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
+
+
+class TZDateTime(TypeDecorator):
+    """Store datetimes as UTC ISO strings; always read back as UTC-aware datetimes."""
+
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect: object) -> datetime | None:
+        if value is not None and value.tzinfo is not None:
+            return value.astimezone(UTC).replace(tzinfo=None)
+        return value
+
+    def process_result_value(self, value: datetime | None, dialect: object) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value
 
 
 class Base(DeclarativeBase):
@@ -69,7 +91,7 @@ class Entity(Base):
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
     jurisdiction: Mapped[str | None] = mapped_column(String(10), nullable=True)
     nace_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    gleif_last_updated: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    gleif_last_updated: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
 
     authorizations: Mapped[list[Authorization]] = relationship(
         back_populates="entity", cascade="all, delete-orphan"
@@ -123,7 +145,7 @@ class Regulation(Base):
         back_populates="regulation", cascade="all, delete-orphan"
     )
     versions: Mapped[list[DocumentVersion]] = relationship(
-        back_populates="regulation", cascade="all, delete-orphan"
+        back_populates="regulation", cascade="all, delete-orphan", passive_deletes=True
     )
 
 
@@ -163,10 +185,12 @@ class DocumentVersion(Base):
     __tablename__ = "document_version"
 
     version_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    regulation_id: Mapped[int] = mapped_column(ForeignKey("regulation.regulation_id"))
+    regulation_id: Mapped[int] = mapped_column(
+        ForeignKey("regulation.regulation_id", ondelete="CASCADE")
+    )
     version_number: Mapped[int] = mapped_column(Integer)
     is_current: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    fetched_at: Mapped[datetime] = mapped_column(DateTime)
+    fetched_at: Mapped[datetime] = mapped_column(TZDateTime)
     source_url: Mapped[str] = mapped_column(String(500))
     content_hash: Mapped[str] = mapped_column(String(64), index=True)
     html_text: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -177,10 +201,19 @@ class DocumentVersion(Base):
     change_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     regulation: Mapped[Regulation] = relationship(back_populates="versions")
+    chunks: Mapped[list[DocumentChunk]] = relationship(
+        back_populates="version", cascade="all, delete-orphan", passive_deletes=True
+    )
 
     __table_args__ = (
         UniqueConstraint(
             "regulation_id", "version_number", name="uq_document_version_regulation_version"
+        ),
+        Index(
+            "uq_document_version_one_current",
+            "regulation_id",
+            unique=True,
+            sqlite_where=sa_text("is_current = 1"),
         ),
     )
 
@@ -192,8 +225,8 @@ class UpdateEvent(Base):
     source: Mapped[str] = mapped_column(String(30))
     source_url: Mapped[str] = mapped_column(String(500))
     title: Mapped[str] = mapped_column(Text)
-    published_at: Mapped[datetime] = mapped_column(DateTime, index=True)
-    fetched_at: Mapped[datetime] = mapped_column(DateTime)
+    published_at: Mapped[datetime] = mapped_column(TZDateTime, index=True)
+    fetched_at: Mapped[datetime] = mapped_column(TZDateTime)
     raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON)
     content_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     is_ict: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
@@ -201,11 +234,11 @@ class UpdateEvent(Base):
     review_status: Mapped[str] = mapped_column(
         String(20), default="NEW", index=True
     )  # NEW / SEEN / ASSESSED / ARCHIVED
-    seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    seen_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     regulation_links: Mapped[list[UpdateEventRegulationLink]] = relationship(
-        back_populates="event", cascade="all, delete-orphan"
+        back_populates="event", cascade="all, delete-orphan", passive_deletes=True
     )
 
 
@@ -214,7 +247,9 @@ class UpdateEventRegulationLink(Base):
 
     link_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("update_event.event_id"))
-    regulation_id: Mapped[int] = mapped_column(ForeignKey("regulation.regulation_id"))
+    regulation_id: Mapped[int] = mapped_column(
+        ForeignKey("regulation.regulation_id", ondelete="CASCADE")
+    )
     match_method: Mapped[str] = mapped_column(String(30))
     confidence: Mapped[float] = mapped_column(Float)
     matched_snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -226,8 +261,8 @@ class PipelineRun(Base):
     __tablename__ = "pipeline_run"
 
     run_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    started_at: Mapped[datetime] = mapped_column(DateTime)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(TZDateTime)
+    finished_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     status: Mapped[str] = mapped_column(String(20))  # RUNNING / COMPLETED / FAILED / ABORTED
     sources_attempted: Mapped[list[str]] = mapped_column(JSON, default=list)
     sources_failed: Mapped[list[str]] = mapped_column(JSON, default=list)
@@ -240,8 +275,12 @@ class DocumentChunk(Base):
     __tablename__ = "document_chunk"
 
     chunk_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    version_id: Mapped[int] = mapped_column(ForeignKey("document_version.version_id"), index=True)
-    regulation_id: Mapped[int] = mapped_column(ForeignKey("regulation.regulation_id"), index=True)
+    version_id: Mapped[int] = mapped_column(
+        ForeignKey("document_version.version_id", ondelete="CASCADE"), index=True
+    )
+    regulation_id: Mapped[int] = mapped_column(
+        ForeignKey("regulation.regulation_id", ondelete="CASCADE"), index=True
+    )
     chunk_index: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(Text)
     token_count: Mapped[int] = mapped_column(Integer)
@@ -250,13 +289,15 @@ class DocumentChunk(Base):
     is_ict: Mapped[bool] = mapped_column(Boolean, default=False)
     authorization_types: Mapped[list[str]] = mapped_column(JSON, default=list)
 
+    version: Mapped[DocumentVersion] = relationship(back_populates="chunks")
+
 
 class ChatSession(Base):
     __tablename__ = "chat_session"
 
     session_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime)
     filters: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
     messages: Mapped[list[ChatMessage]] = relationship(
@@ -272,6 +313,6 @@ class ChatMessage(Base):
     role: Mapped[str] = mapped_column(String(10))  # user / assistant / system
     content: Mapped[str] = mapped_column(Text)
     retrieved_chunk_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime)
 
     session: Mapped[ChatSession] = relationship(back_populates="messages")
