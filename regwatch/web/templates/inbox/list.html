@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}RegWatch — Inbox{% endblock %}
+{% block content %}
+  <h1 class="text-2xl font-bold mb-4">Inbox ({{ events|length }} new)</h1>
+  <table class="w-full bg-white border rounded shadow-sm">
+    <thead class="bg-slate-100 text-xs uppercase text-slate-600">
+      <tr>
+        <th class="text-left p-2">Severity</th>
+        <th class="text-left p-2">Source</th>
+        <th class="text-left p-2">Title</th>
+        <th class="text-left p-2">Published</th>
+        <th class="text-left p-2">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ev in events %}
+        {% include "partials/inbox_row.html" %}
+      {% else %}
+        <tr><td colspan="5" class="p-4 text-center text-slate-500">No new updates.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

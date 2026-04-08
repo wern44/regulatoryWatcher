@@ -1,0 +1,25 @@
+<tr id="event-{{ ev.event_id }}" class="border-t text-sm">
+  <td class="p-2">
+    <span class="px-2 py-0.5 rounded text-xs font-semibold
+      {% if ev.severity == 'CRITICAL' %}bg-red-100 text-red-800
+      {% elif ev.severity == 'MATERIAL' %}bg-amber-100 text-amber-800
+      {% else %}bg-slate-100 text-slate-700{% endif %}">
+      {{ ev.severity }}
+    </span>
+  </td>
+  <td class="p-2">{{ ev.source }}</td>
+  <td class="p-2">
+    <a class="hover:underline" href="{{ ev.source_url }}" target="_blank" rel="noreferrer">{{ ev.title }}</a>
+  </td>
+  <td class="p-2">{{ ev.published_at.strftime('%Y-%m-%d') }}</td>
+  <td class="p-2 flex gap-1">
+    <button class="px-2 py-1 bg-slate-200 rounded hover:bg-slate-300"
+            hx-post="/inbox/{{ ev.event_id }}/mark-seen"
+            hx-target="#event-{{ ev.event_id }}"
+            hx-swap="outerHTML">Mark seen</button>
+    <button class="px-2 py-1 bg-red-100 rounded hover:bg-red-200 text-red-800"
+            hx-post="/inbox/{{ ev.event_id }}/archive"
+            hx-target="#event-{{ ev.event_id }}"
+            hx-swap="outerHTML">Archive</button>
+  </td>
+</tr>
