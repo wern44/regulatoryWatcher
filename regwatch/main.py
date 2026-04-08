@@ -69,6 +69,7 @@ def create_app() -> FastAPI:
         ict,
         inbox,
         regulation_detail,
+        settings as settings_routes,
     )
 
     app.include_router(dashboard.router)
@@ -79,6 +80,7 @@ def create_app() -> FastAPI:
     app.include_router(deadlines.router)
     app.include_router(ict.router)
     app.include_router(chat.router)
+    app.include_router(settings_routes.router)
 
     return app
 

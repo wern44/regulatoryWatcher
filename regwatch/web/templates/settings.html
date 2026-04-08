@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}RegWatch — Settings{% endblock %}
+{% block content %}
+  <h1 class="text-2xl font-bold mb-4">Settings</h1>
+
+  <section class="bg-white p-4 rounded shadow-sm border mb-4">
+    <h2 class="text-lg font-semibold mb-2">Entity</h2>
+    <div class="text-sm">
+      <div><strong>LEI:</strong> {{ config.entity.lei }}</div>
+      <div><strong>Legal name:</strong> {{ config.entity.legal_name }}</div>
+    </div>
+  </section>
+
+  <section class="bg-white p-4 rounded shadow-sm border mb-4">
+    <h2 class="text-lg font-semibold mb-2">Ollama</h2>
+    <div class="text-sm space-y-1">
+      <div><strong>Base URL:</strong> {{ config.ollama.base_url }}</div>
+      <div><strong>Chat model:</strong> {{ config.ollama.chat_model }}</div>
+      <div><strong>Embedding model:</strong> {{ config.ollama.embedding_model }}</div>
+      <div>
+        <strong>Status:</strong>
+        {% if ollama_health.reachable %}
+          <span class="text-green-700">reachable</span>
+        {% else %}
+          <span class="text-red-700">unreachable</span>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="bg-white p-4 rounded shadow-sm border mb-4">
+    <h2 class="text-lg font-semibold mb-2">Protected PDFs awaiting upload</h2>
+    {% if protected_versions %}
+    <ul class="divide-y text-sm">
+      {% for v in protected_versions %}
+      <li class="py-2 flex justify-between items-center">
+        <div>
+          <div class="font-medium">Regulation #{{ v.regulation_id }} — version {{ v.version_number }}</div>
+          <div class="text-xs text-slate-500">{{ v.source_url }}</div>
+        </div>
+        <form method="post" action="/settings/upload-pdf/{{ v.version_id }}" enctype="multipart/form-data" class="flex gap-2 items-center">
+          <input type="file" name="file" accept="application/pdf" required class="text-xs">
+          <button class="px-2 py-1 bg-slate-800 text-white rounded text-xs" type="submit">Upload</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-slate-500">No protected documents.</p>
+    {% endif %}
+  </section>
+
+  <section class="bg-white p-4 rounded shadow-sm border">
+    <h2 class="text-lg font-semibold mb-2">Recent pipeline runs</h2>
+    {% if runs %}
+    <ul class="divide-y text-sm">
+      {% for r in runs %}
+      <li class="py-2 flex justify-between">
+        <span>#{{ r.run_id }} — {{ r.status }} — {{ r.events_created }} events</span>
+        <span class="text-xs text-slate-500">{{ r.started_at.strftime('%Y-%m-%d %H:%M') }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-slate-500">No runs yet.</p>
+    {% endif %}
+  </section>
+{% endblock %}
