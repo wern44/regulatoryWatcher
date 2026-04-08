@@ -70,3 +70,30 @@ def test_ollama_referenced_then_resolved(tmp_path: Path) -> None:
     assert len(refs) == 1
     assert refs[0].regulation_id == rid
     assert refs[0].method == "OLLAMA_REFERENCE"
+
+
+def test_ollama_http_error_degrades_gracefully(tmp_path: Path) -> None:
+    """A 404 (e.g. model not pulled) must not crash the pipeline — we return
+    an empty match list and skip Ollama for the rest of the run."""
+    import httpx
+
+    session = _session(tmp_path)
+    _add_reg(session, "CSSF 18/698", r"CSSF[\s\-]?18[/\-]698")
+    session.commit()
+
+    ollama = MagicMock()
+    ollama.chat.side_effect = httpx.HTTPStatusError(
+        "404",
+        request=httpx.Request("POST", "http://localhost:11434/api/chat"),
+        response=httpx.Response(
+            404, request=httpx.Request("POST", "http://localhost:11434/api/chat")
+        ),
+    )
+
+    matcher = CombinedMatcher(session, ollama=ollama)
+    # First call falls through to Ollama, catches the error, disables it.
+    assert matcher.match("Text without any alias match.") == []
+    assert ollama.chat.call_count == 1
+    # Second call must NOT hit Ollama again — the matcher latched it off.
+    assert matcher.match("Another unrelated text.") == []
+    assert ollama.chat.call_count == 1
