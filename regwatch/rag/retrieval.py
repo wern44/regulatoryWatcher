@@ -7,6 +7,7 @@ corpus sizes (tens of thousands of chunks).
 """
 from __future__ import annotations
 
+import re
 import struct
 from dataclasses import dataclass, field
 
@@ -72,7 +73,7 @@ class HybridRetriever:
         return [r[0] for r in rows]
 
     def _sparse_search(self, query: str, *, k: int) -> list[int]:
-        safe_query = query.replace('"', " ").strip()
+        safe_query = _sanitize_fts_query(query)
         if not safe_query:
             return []
         rows = self._session.execute(
@@ -134,6 +135,22 @@ class HybridRetriever:
                 )
             )
         return out
+
+
+_FTS_SPECIAL = re.compile(r"[^\w\s]", re.UNICODE)
+
+
+def _sanitize_fts_query(query: str) -> str:
+    """Strip FTS5 special characters and wrap bare terms for a safe OR query."""
+    cleaned = _FTS_SPECIAL.sub(" ", query).strip()
+    if not cleaned:
+        return ""
+    tokens = [t for t in cleaned.split() if t]
+    if not tokens:
+        return ""
+    # Use OR to be forgiving: FTS5 defaults to AND and would miss most results
+    # for natural-language questions.
+    return " OR ".join(f'"{t}"' for t in tokens)
 
 
 def _reciprocal_rank_fusion(
