@@ -3,6 +3,54 @@
 {% block content %}
   <h1 class="text-2xl font-bold mb-4">Settings</h1>
 
+  {% if db_action == 'imported' %}
+  <div class="bg-green-100 border border-green-300 text-green-900 px-4 py-2 rounded mb-4 text-sm">
+    Database imported successfully.
+  </div>
+  {% elif db_action == 'reset' %}
+  <div class="bg-green-100 border border-green-300 text-green-900 px-4 py-2 rounded mb-4 text-sm">
+    Database reset and re-seeded.
+  </div>
+  {% elif db_error %}
+  <div class="bg-red-100 border border-red-300 text-red-900 px-4 py-2 rounded mb-4 text-sm">
+    Database operation failed: {{ db_error }}. Check the server logs.
+  </div>
+  {% endif %}
+
+  <section class="bg-white p-4 rounded shadow-sm border mb-4">
+    <h2 class="text-lg font-semibold mb-2">Database</h2>
+    <p class="text-xs text-slate-500 mb-3">
+      Source of truth: <code>{{ config.paths.db_file }}</code>
+    </p>
+    <div class="flex flex-wrap gap-3 items-start">
+      <a href="/settings/db/export"
+         class="px-3 py-2 bg-slate-800 text-white rounded text-sm hover:bg-slate-700">
+        Download backup (.db)
+      </a>
+
+      <form method="post" action="/settings/db/import" enctype="multipart/form-data"
+            class="flex gap-2 items-center">
+        <input type="file" name="file" accept=".db,application/x-sqlite3"
+               required class="text-xs">
+        <button class="px-3 py-2 bg-slate-200 rounded text-sm hover:bg-slate-300" type="submit">
+          Restore from file
+        </button>
+      </form>
+
+      <form method="post" action="/settings/db/reset"
+            onsubmit="return confirm('This will DROP every table and re-seed the curated catalog. All fetched events, versions, chunks and chat history will be lost. Continue?');">
+        <button class="px-3 py-2 bg-red-100 text-red-800 rounded text-sm hover:bg-red-200 font-semibold" type="submit">
+          Reset database
+        </button>
+      </form>
+    </div>
+    <p class="text-xs text-slate-500 mt-3">
+      Backups are SQLite files containing the entire app state (regulations,
+      events, versions, chunks, embeddings, chat history). Restoring overwrites
+      the current database.
+    </p>
+  </section>
+
   <section class="bg-white p-4 rounded shadow-sm border mb-4">
     <h2 class="text-lg font-semibold mb-2">Entity</h2>
     <div class="text-sm">

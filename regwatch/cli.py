@@ -72,6 +72,85 @@ def seed(
     typer.echo(f"Loaded seed. {count} regulation(s) in the catalog.")
 
 
+@app.command("db-export")
+def db_export(
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Where to write the backup file")
+    ],
+) -> None:
+    """Write a consistent online backup of the database to a file."""
+    cfg = _get_config()
+    from regwatch.db.admin import backup_database  # noqa: PLC0415
+
+    dest = backup_database(cfg.paths.db_file, output)
+    typer.echo(f"Backup written to {dest}")
+
+
+@app.command("db-import")
+def db_import(
+    file: Annotated[
+        Path, typer.Argument(help="Path to the .db backup to restore")
+    ],
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes", "-y", help="Skip the confirmation prompt"
+        ),
+    ] = False,
+) -> None:
+    """Replace the current database with `file`. Destructive."""
+    cfg = _get_config()
+    from regwatch.db.admin import restore_database  # noqa: PLC0415
+
+    if not yes:
+        typer.confirm(
+            f"This will overwrite {cfg.paths.db_file} with {file}. Continue?",
+            abort=True,
+        )
+
+    engine = create_app_engine(cfg.paths.db_file)
+    restore_database(engine, uploaded_file=file, db_path=Path(cfg.paths.db_file))
+    typer.echo(f"Database restored from {file}")
+
+
+@app.command("db-reset")
+def db_reset(
+    seed: Annotated[
+        bool,
+        typer.Option(
+            "--seed/--no-seed",
+            help="Re-load seeds/regulations_seed.yaml after the reset",
+        ),
+    ] = True,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes", "-y", help="Skip the confirmation prompt"
+        ),
+    ] = False,
+) -> None:
+    """Drop every table and recreate the schema. Destructive."""
+    cfg = _get_config()
+    from regwatch.db.admin import reset_database  # noqa: PLC0415
+
+    if not yes:
+        typer.confirm(
+            f"This will DROP every table in {cfg.paths.db_file}. Continue?",
+            abort=True,
+        )
+
+    engine = create_app_engine(cfg.paths.db_file)
+    seed_path = Path("seeds/regulations_seed.yaml") if seed else None
+    reset_database(
+        engine,
+        embedding_dim=cfg.ollama.embedding_dim,
+        seed_file=seed_path,
+    )
+    typer.echo(
+        "Database reset complete." + (" Seed reloaded." if seed else "")
+    )
+
+
 @app.command("run-pipeline")
 def run_pipeline(
     source: Annotated[

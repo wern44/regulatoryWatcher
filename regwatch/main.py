@@ -16,6 +16,7 @@ from regwatch.db.engine import create_app_engine
 from regwatch.db.models import Base
 from regwatch.db.virtual_tables import create_virtual_tables
 from regwatch.ollama.client import OllamaClient
+from regwatch.pipeline.progress import PipelineProgress
 from regwatch.scheduler.jobs import build_scheduler
 
 _TEMPLATES_DIR = Path(__file__).parent / "web" / "templates"
@@ -55,6 +56,7 @@ def create_app() -> FastAPI:
         chat_model=config.ollama.chat_model,
         embedding_model=config.ollama.embedding_model,
     )
+    app.state.pipeline_progress = PipelineProgress()
     _STATIC_DIR.mkdir(parents=True, exist_ok=True)
     app.mount(
         "/static", StaticFiles(directory=str(_STATIC_DIR)), name="static"
@@ -65,6 +67,7 @@ def create_app() -> FastAPI:
         catalog,
         chat,
         dashboard,
+        db_admin,
         deadlines,
         drafts,
         ict,
@@ -85,6 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(chat.router)
     app.include_router(settings_routes.router)
     app.include_router(actions.router)
+    app.include_router(db_admin.router)
 
     return app
 

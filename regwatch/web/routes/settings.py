@@ -16,7 +16,11 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 
 @router.get("", response_class=HTMLResponse)
-def settings_view(request: Request) -> HTMLResponse:
+def settings_view(
+    request: Request,
+    db_action: str | None = None,
+    db_error: str | None = None,
+) -> HTMLResponse:
     templates = request.app.state.templates
     config = request.app.state.config
     ollama = request.app.state.ollama_client
@@ -49,6 +53,8 @@ def settings_view(request: Request) -> HTMLResponse:
             "ollama_health": ollama_health,
             "protected_versions": protected,
             "runs": runs,
+            "db_action": db_action,
+            "db_error": db_error,
         },
     )
 
