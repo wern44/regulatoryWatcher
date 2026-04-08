@@ -182,8 +182,9 @@ Write `tests/__init__.py` with a single blank line.
 """Shared pytest fixtures."""
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 @pytest.fixture
