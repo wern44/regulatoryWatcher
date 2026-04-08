@@ -1,0 +1,15 @@
+<aside class="w-56 bg-slate-900 text-slate-100 min-h-screen p-4 flex flex-col">
+  <div class="text-xl font-bold mb-6">RegWatch</div>
+  <nav class="flex flex-col gap-1 text-sm">
+    <a href="/" class="px-3 py-2 rounded hover:bg-slate-800 {% if active == 'dashboard' %}bg-slate-800{% endif %}">Dashboard</a>
+    <a href="/inbox" class="px-3 py-2 rounded hover:bg-slate-800 {% if active == 'inbox' %}bg-slate-800{% endif %}">Inbox</a>
+    <a href="/catalog" class="px-3 py-2 rounded hover:bg-slate-800 {% if active == 'catalog' %}bg-slate-800{% endif %}">Catalog</a>
+    <a href="/catalog?authorization=AIFM" class="px-5 py-1 rounded hover:bg-slate-800 text-slate-300">AIFM</a>
+    <a href="/catalog?authorization=CHAPTER15_MANCO" class="px-5 py-1 rounded hover:bg-slate-800 text-slate-300">Chapter 15 ManCo</a>
+    <a href="/ict" class="px-3 py-2 rounded hover:bg-slate-800 {% if active == 'ict' %}bg-slate-800{% endif %}">ICT / DORA</a>
+    <a href="/drafts" class="px-3 py-2 rounded hover:bg-slate-800 {% if active == 'drafts' %}bg-slate-800{% endif %}">Drafts</a>
+    <a href="/deadlines" class="px-3 py-2 rounded hover:bg-slate-800 {% if active == 'deadlines' %}bg-slate-800{% endif %}">Deadlines</a>
+    <a href="/chat" class="px-3 py-2 rounded hover:bg-slate-800 {% if active == 'chat' %}bg-slate-800{% endif %}">Q&amp;A</a>
+    <a href="/settings" class="mt-auto px-3 py-2 rounded hover:bg-slate-800 {% if active == 'settings' %}bg-slate-800{% endif %}">Settings</a>
+  </nav>
+</aside>
