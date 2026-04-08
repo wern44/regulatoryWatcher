@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite_vec
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.engine.interfaces import DBAPIConnection
-from sqlalchemy.pool import ConnectionPoolEntry
+from sqlalchemy.pool import ConnectionPoolEntry, NullPool
 
 
 def create_app_engine(db_file: Path | str) -> Engine:
@@ -15,7 +15,12 @@ def create_app_engine(db_file: Path | str) -> Engine:
     db_file.parent.mkdir(parents=True, exist_ok=True)
 
     url = f"sqlite:///{db_file.as_posix()}"
-    engine = create_engine(url, future=True)
+    # NullPool: every Session gets a fresh DBAPI connection and returns it on
+    # close. This avoids two problems: (1) a long-running uvicorn worker
+    # holding a stale transaction from an earlier failed request, and
+    # (2) PRAGMA settings on this module being applied to brand-new
+    # connections only, so changing them requires a full worker restart.
+    engine = create_engine(url, future=True, poolclass=NullPool)
 
     @event.listens_for(engine, "connect")
     def _on_connect(dbapi_conn: DBAPIConnection, _: ConnectionPoolEntry) -> None:

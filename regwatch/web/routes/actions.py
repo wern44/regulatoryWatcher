@@ -27,24 +27,30 @@ def run_pipeline(request: Request) -> RedirectResponse:
     try:
         sources = build_enabled_sources(config)
         with request.app.state.session_factory() as session:
-            runner = build_runner(
-                session,
-                sources=sources,
-                archive_root=config.paths.pdf_archive,
-                ollama_client=ollama,
-            )
-            run_id = runner.run_once()
-            session.commit()
+            try:
+                runner = build_runner(
+                    session,
+                    sources=sources,
+                    archive_root=config.paths.pdf_archive,
+                    ollama_client=ollama,
+                )
+                run_id = runner.run_once()
+                session.commit()
 
-            from regwatch.db.models import PipelineRun  # noqa: PLC0415
+                from regwatch.db.models import PipelineRun  # noqa: PLC0415
 
-            run_row = session.get(PipelineRun, run_id)
-            events = run_row.events_created if run_row is not None else 0
-            failed = (
-                ",".join(run_row.sources_failed)
-                if run_row is not None and run_row.sources_failed
-                else ""
-            )
+                run_row = session.get(PipelineRun, run_id)
+                events = run_row.events_created if run_row is not None else 0
+                failed = (
+                    ",".join(run_row.sources_failed)
+                    if run_row is not None and run_row.sources_failed
+                    else ""
+                )
+            except Exception:
+                # Make sure any partial transaction is rolled back before the
+                # session (and its connection) is returned to the pool.
+                session.rollback()
+                raise
     except Exception as exc:  # noqa: BLE001
         logger.exception("Manual pipeline run failed")
         return RedirectResponse(
