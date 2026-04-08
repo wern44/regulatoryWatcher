@@ -1,0 +1,144 @@
+# Curated seed of the regulatory catalog for Union Investment Luxembourg S.A.
+# Extend as needed. source_of_truth is implicitly SEED for every entry in this file.
+
+entity:
+  lei: "529900FSORICM1ERBP05"
+  legal_name: "Union Investment Luxembourg S.A."
+  rcs_number: "B28679"
+  address: "3 Heienhaff, L-1736 Senningerberg, Luxembourg"
+  jurisdiction: "LU"
+  nace_code: "66.30"
+
+authorizations:
+  - type: AIFM
+    cssf_entity_id: "7073800"
+  - type: CHAPTER15_MANCO
+    cssf_entity_id: "6918042"
+
+regulations:
+  - reference_number: "CSSF 18/698"
+    type: CSSF_CIRCULAR
+    title: "IFM authorisation, organisation, governance, substance and delegation"
+    issuing_authority: "CSSF"
+    publication_date: 2018-08-23
+    lifecycle_stage: IN_FORCE
+    is_ict: false
+    url: "https://www.cssf.lu/en/Document/circular-cssf-18-698/"
+    applicability: BOTH
+    aliases:
+      - { pattern: 'CSSF[\s\-]?18[/\-]698', kind: REGEX }
+      - { pattern: 'Circular 18/698', kind: EXACT }
+
+  - reference_number: "CSSF 23/844"
+    type: CSSF_CIRCULAR
+    title: "AIFM reporting obligations under Article 24 AIFMD"
+    issuing_authority: "CSSF"
+    publication_date: 2023-11-20
+    lifecycle_stage: IN_FORCE
+    is_ict: false
+    url: "https://www.cssf.lu/en/Document/circular-cssf-23-844/"
+    applicability: AIFM_ONLY
+    aliases:
+      - { pattern: 'CSSF[\s\-]?23[/\-]844', kind: REGEX }
+
+  - reference_number: "CSSF 11/512"
+    type: CSSF_CIRCULAR
+    title: "Risk management clarifications for UCITS ManCos"
+    issuing_authority: "CSSF"
+    publication_date: 2011-05-30
+    lifecycle_stage: IN_FORCE
+    is_ict: false
+    url: "https://www.cssf.lu/en/Document/circular-cssf-11-512/"
+    applicability: MANCO_ONLY
+    aliases:
+      - { pattern: 'CSSF[\s\-]?11[/\-]512', kind: REGEX }
+
+  - reference_number: "CSSF 24/856"
+    type: CSSF_CIRCULAR
+    title: "NAV errors and breach of investment rules (replacing 02/77)"
+    issuing_authority: "CSSF"
+    publication_date: 2024-01-01
+    effective_date: 2025-01-01
+    lifecycle_stage: IN_FORCE
+    is_ict: false
+    url: "https://www.cssf.lu/en/Document/circular-cssf-24-856/"
+    applicability: BOTH
+    aliases:
+      - { pattern: 'CSSF[\s\-]?24[/\-]856', kind: REGEX }
+
+  - reference_number: "Directive 2011/61/EU"
+    type: EU_DIRECTIVE
+    celex_id: "32011L0061"
+    title: "Alternative Investment Fund Managers Directive (AIFMD)"
+    issuing_authority: "European Parliament"
+    publication_date: 2011-06-08
+    lifecycle_stage: IN_FORCE
+    is_ict: false
+    url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32011L0061"
+    applicability: AIFM_ONLY
+    aliases:
+      - { pattern: 'AIFMD', kind: EXACT }
+      - { pattern: '32011L0061', kind: CELEX }
+      - { pattern: 'Directive 2011/61/EU', kind: EXACT }
+
+  - reference_number: "Directive 2009/65/EC"
+    type: EU_DIRECTIVE
+    celex_id: "32009L0065"
+    title: "Undertakings for Collective Investment in Transferable Securities (UCITS)"
+    issuing_authority: "European Parliament"
+    publication_date: 2009-07-13
+    lifecycle_stage: IN_FORCE
+    is_ict: false
+    url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32009L0065"
+    applicability: MANCO_ONLY
+    aliases:
+      - { pattern: 'UCITS Directive', kind: EXACT }
+      - { pattern: '32009L0065', kind: CELEX }
+      - { pattern: 'Directive 2009/65/EC', kind: EXACT }
+
+  - reference_number: "Directive (EU) 2024/927"
+    type: EU_DIRECTIVE
+    celex_id: "32024L0927"
+    title: "AIFMD II"
+    issuing_authority: "European Parliament"
+    publication_date: 2024-03-26
+    transposition_deadline: 2026-04-16
+    application_date: 2027-04-16
+    lifecycle_stage: ADOPTED_NOT_IN_FORCE
+    is_ict: false
+    url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024L0927"
+    applicability: BOTH
+    aliases:
+      - { pattern: 'AIFMD II', kind: EXACT }
+      - { pattern: '32024L0927', kind: CELEX }
+      - { pattern: 'Directive \(EU\) 2024/927', kind: REGEX }
+
+  - reference_number: "Regulation (EU) 2022/2554"
+    type: EU_REGULATION
+    celex_id: "32022R2554"
+    title: "Digital Operational Resilience Act (DORA)"
+    issuing_authority: "European Parliament"
+    publication_date: 2022-12-14
+    application_date: 2025-01-17
+    lifecycle_stage: IN_FORCE
+    is_ict: true
+    url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32022R2554"
+    applicability: BOTH
+    aliases:
+      - { pattern: 'DORA', kind: EXACT }
+      - { pattern: '32022R2554', kind: CELEX }
+      - { pattern: 'Regulation \(EU\) 2022/2554', kind: REGEX }
+
+  - reference_number: "Regulation (EU) 2019/2088"
+    type: EU_REGULATION
+    celex_id: "32019R2088"
+    title: "Sustainable Finance Disclosure Regulation (SFDR)"
+    issuing_authority: "European Parliament"
+    publication_date: 2019-11-27
+    lifecycle_stage: IN_FORCE
+    is_ict: false
+    url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32019R2088"
+    applicability: BOTH
+    aliases:
+      - { pattern: 'SFDR', kind: EXACT }
+      - { pattern: '32019R2088', kind: CELEX }
