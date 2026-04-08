@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}RegWatch — Catalog{% endblock %}
+{% block content %}
+  <h1 class="text-2xl font-bold mb-4">Catalog</h1>
+
+  <form method="get" action="/catalog" class="flex gap-2 mb-4 text-sm">
+    <select name="authorization" class="border rounded px-2 py-1">
+      <option value="">Any authorisation</option>
+      <option value="AIFM" {% if flt.authorization_type == 'AIFM' %}selected{% endif %}>AIFM</option>
+      <option value="CHAPTER15_MANCO" {% if flt.authorization_type == 'CHAPTER15_MANCO' %}selected{% endif %}>Chapter 15 ManCo</option>
+    </select>
+    <input type="text" name="search" value="{{ flt.search or '' }}" placeholder="Search..."
+           class="border rounded px-2 py-1 flex-1">
+    <button class="px-3 py-1 bg-slate-800 text-white rounded" type="submit">Filter</button>
+  </form>
+
+  <table class="w-full bg-white border rounded shadow-sm text-sm">
+    <thead class="bg-slate-100 text-xs uppercase text-slate-600">
+      <tr>
+        <th class="text-left p-2">Reference</th>
+        <th class="text-left p-2">Title</th>
+        <th class="text-left p-2">Authority</th>
+        <th class="text-left p-2">Lifecycle</th>
+        <th class="text-left p-2">ICT</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in regulations %}
+        {% include "partials/catalog_row.html" %}
+      {% else %}
+        <tr><td colspan="5" class="p-4 text-center text-slate-500">No regulations match.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

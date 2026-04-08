@@ -1,0 +1,11 @@
+<tr class="border-t">
+  <td class="p-2 font-mono">
+    <a class="hover:underline" href="/regulations/{{ r.regulation_id }}">{{ r.reference_number }}</a>
+  </td>
+  <td class="p-2">{{ r.title }}</td>
+  <td class="p-2">{{ r.issuing_authority }}</td>
+  <td class="p-2">
+    <span class="px-2 py-0.5 rounded text-xs bg-slate-100">{{ r.lifecycle_stage }}</span>
+  </td>
+  <td class="p-2">{% if r.is_ict %}<span class="text-purple-700 font-semibold">ICT</span>{% endif %}</td>
+</tr>
