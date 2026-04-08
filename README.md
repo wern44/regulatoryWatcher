@@ -57,3 +57,4 @@ Then open http://localhost:8000. The sidebar exposes Dashboard, Inbox, Catalog, 
     pytest tests/integration     # integration tests only
 
 Integration tests use a fresh SQLite file per test and mock only Ollama and outbound HTTP.
+# regulatoryWatcher
