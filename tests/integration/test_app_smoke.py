@@ -28,6 +28,8 @@ def _client(tmp_path: Path, monkeypatch) -> TestClient:
 
     importlib.reload(main_module)
     app = main_module.create_app()
+    # Provide a dummy model so FirstStartupMiddleware does not redirect test requests.
+    app.state.llm_client.chat_model = "test-model"
     return TestClient(app)
 
 

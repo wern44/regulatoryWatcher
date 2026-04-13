@@ -10,6 +10,9 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import sessionmaker
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import RedirectResponse as StarletteRedirect
 
 from regwatch.config import load_config
 from regwatch.db.engine import create_app_engine
@@ -18,9 +21,20 @@ from regwatch.db.virtual_tables import create_virtual_tables
 from regwatch.llm.client import LLMClient
 from regwatch.pipeline.progress import PipelineProgress
 from regwatch.scheduler.jobs import build_scheduler
+from regwatch.services.settings import SettingsService
 
 _TEMPLATES_DIR = Path(__file__).parent / "web" / "templates"
 _STATIC_DIR = Path(__file__).parent / "web" / "static"
+
+
+class FirstStartupMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        path = request.url.path
+        if path.startswith("/static") or path.startswith("/settings"):
+            return await call_next(request)
+        if not request.app.state.llm_client.chat_model:
+            return StarletteRedirect(url="/settings/setup")
+        return await call_next(request)
 
 
 def create_app() -> FastAPI:
@@ -31,6 +45,12 @@ def create_app() -> FastAPI:
     Base.metadata.create_all(engine)
     create_virtual_tables(engine, embedding_dim=config.llm.embedding_dim)
     session_factory = sessionmaker(engine, expire_on_commit=False)
+
+    # Load persisted model settings from DB, falling back to config values.
+    with session_factory() as session:
+        settings_svc = SettingsService(session)
+        chat_model = settings_svc.get("chat_model") or config.llm.chat_model or ""
+        embedding_model = settings_svc.get("embedding_model") or config.llm.embedding_model or ""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -53,10 +73,11 @@ def create_app() -> FastAPI:
     app.state.session_factory = session_factory
     app.state.llm_client = LLMClient(
         base_url=config.llm.base_url,
-        chat_model=config.llm.chat_model or "",
-        embedding_model=config.llm.embedding_model or "",
+        chat_model=chat_model,
+        embedding_model=embedding_model,
     )
     app.state.pipeline_progress = PipelineProgress()
+    app.add_middleware(FirstStartupMiddleware)
     _STATIC_DIR.mkdir(parents=True, exist_ok=True)
     app.mount(
         "/static", StaticFiles(directory=str(_STATIC_DIR)), name="static"
