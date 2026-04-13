@@ -13,7 +13,7 @@ from regwatch.db.models import (
     Regulation,
     RegulationType,
 )
-from regwatch.ollama.client import HealthStatus
+from regwatch.llm.client import HealthStatus
 from tests.integration.test_app_smoke import _client
 
 
@@ -56,8 +56,8 @@ def _seed_protected_version(db_file: Path) -> int:
         return v.version_id
 
 
-def _patch_ollama_health(client) -> None:
-    client.app.state.ollama_client.health = lambda: HealthStatus(  # type: ignore[assignment]
+def _patch_llm_health(client) -> None:
+    client.app.state.llm_client.health = lambda: HealthStatus(  # type: ignore[assignment]
         reachable=True,
         chat_model_available=True,
         embedding_model_available=True,
@@ -69,7 +69,7 @@ def test_settings_view_lists_protected_versions(
 ) -> None:
     client = _client(tmp_path, monkeypatch)
     _seed_protected_version(tmp_path / "app.db")
-    _patch_ollama_health(client)
+    _patch_llm_health(client)
 
     r = client.get("/settings")
     assert r.status_code == 200
@@ -80,7 +80,7 @@ def test_settings_view_lists_protected_versions(
 def test_upload_pdf_clears_protection_flag(tmp_path: Path, monkeypatch) -> None:
     client = _client(tmp_path, monkeypatch)
     vid = _seed_protected_version(tmp_path / "app.db")
-    _patch_ollama_health(client)
+    _patch_llm_health(client)
 
     pdf_file = tmp_path / "fixed.pdf"
     _make_unprotected_pdf(pdf_file, "Clean extracted text")

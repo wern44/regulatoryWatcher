@@ -121,7 +121,7 @@ regulations:
     publication_date: 2022-12-14
     application_date: 2025-01-17
     lifecycle_stage: IN_FORCE
-    is_ict: true
+    is_ict: false
     url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32022R2554"
     applicability: BOTH
     aliases:

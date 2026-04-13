@@ -4,13 +4,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from regwatch.db.models import DocumentVersion, PipelineRun
 from regwatch.domain.types import RawDocument
-from regwatch.ollama.client import HealthStatus
+from regwatch.llm.client import HealthStatus
 from regwatch.pipeline.extract.pdf import extract_pdf
+from regwatch.services.settings import SettingsService
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -23,11 +24,15 @@ def settings_view(
 ) -> HTMLResponse:
     templates = request.app.state.templates
     config = request.app.state.config
-    ollama = request.app.state.ollama_client
+    llm = request.app.state.llm_client
     try:
-        ollama_health = ollama.health()
+        llm_health = llm.health()
     except Exception:  # noqa: BLE001
-        ollama_health = HealthStatus(reachable=False)
+        llm_health = HealthStatus(reachable=False)
+    try:
+        available_models = llm.list_models()
+    except Exception:  # noqa: BLE001
+        available_models = []
 
     with request.app.state.session_factory() as session:
         protected = (
@@ -50,13 +55,63 @@ def settings_view(
         {
             "active": "settings",
             "config": config,
-            "ollama_health": ollama_health,
+            "llm_health": llm_health,
+            "available_models": available_models,
+            "current_chat_model": llm.chat_model,
+            "current_embedding_model": llm.embedding_model,
             "protected_versions": protected,
             "runs": runs,
             "db_action": db_action,
             "db_error": db_error,
         },
     )
+
+
+@router.get("/setup", response_class=HTMLResponse)
+def setup_view(request: Request) -> HTMLResponse:
+    templates = request.app.state.templates
+    llm = request.app.state.llm_client
+    try:
+        models = llm.list_models()
+    except Exception:  # noqa: BLE001
+        models = []
+    return templates.TemplateResponse(
+        request,
+        "settings/setup.html",
+        {"models": models},
+    )
+
+
+@router.post("/setup")
+def setup_save(
+    request: Request,
+    chat_model: str = Form(...),
+    embedding_model: str = Form(...),
+) -> RedirectResponse:
+    with request.app.state.session_factory() as session:
+        svc = SettingsService(session)
+        svc.set("chat_model", chat_model)
+        svc.set("embedding_model", embedding_model)
+        session.commit()
+    request.app.state.llm_client.chat_model = chat_model
+    request.app.state.llm_client.embedding_model = embedding_model
+    return RedirectResponse(url="/", status_code=303)
+
+
+@router.post("/save-models")
+def save_models(
+    request: Request,
+    chat_model: str = Form(...),
+    embedding_model: str = Form(...),
+) -> RedirectResponse:
+    with request.app.state.session_factory() as session:
+        svc = SettingsService(session)
+        svc.set("chat_model", chat_model)
+        svc.set("embedding_model", embedding_model)
+        session.commit()
+    request.app.state.llm_client.chat_model = chat_model
+    request.app.state.llm_client.embedding_model = embedding_model
+    return RedirectResponse(url="/settings", status_code=303)
 
 
 @router.post("/upload-pdf/{version_id}")

@@ -52,6 +52,8 @@ def persist_matched(session: Session, matched: MatchedDocument) -> PersistResult
         is_ict=matched.is_ict,
         severity=matched.severity,
         review_status="NEW",
+        description=matched.description,
+        applicable_entity_types=matched.applicable_entity_types,
     )
     for ref in matched.references:
         event.regulation_links.append(

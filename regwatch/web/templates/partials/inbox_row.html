@@ -7,9 +7,21 @@
       {{ ev.severity }}
     </span>
   </td>
-  <td class="p-2">{{ ev.source }}</td>
+  <td class="p-2">{{ ev.source_display_name }}</td>
   <td class="p-2">
-    <a class="hover:underline" href="{{ ev.source_url }}" target="_blank" rel="noreferrer">{{ ev.title }}</a>
+    <a class="hover:underline font-medium" href="{{ ev.source_url }}" target="_blank" rel="noreferrer">{{ ev.title }}</a>
+    {% if ev.description %}
+    <div class="text-xs text-slate-500 mt-0.5">{{ ev.description }}</div>
+    {% endif %}
+  </td>
+  <td class="p-2 text-xs">
+    {% if ev.applicable_entity_types %}
+      {% for t in ev.applicable_entity_types %}
+        <span class="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded">{{ t }}</span>
+      {% endfor %}
+    {% else %}
+      <span class="text-slate-400">—</span>
+    {% endif %}
   </td>
   <td class="p-2">{{ ev.published_at.strftime('%Y-%m-%d') }}</td>
   <td class="p-2 flex gap-1">

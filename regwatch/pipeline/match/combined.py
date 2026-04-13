@@ -1,4 +1,4 @@
-"""Combined matcher: rules first, then Ollama-extracted references, re-resolved through rules."""
+"""Combined matcher: rules first, then LLM-extracted references, re-resolved through rules."""
 from __future__ import annotations
 
 import logging
@@ -7,7 +7,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from regwatch.domain.types import MatchedReference
-from regwatch.ollama.client import OllamaClient, OllamaError
+from regwatch.llm.client import LLMClient, LLMError
 from regwatch.pipeline.match.ollama_refs import extract_references
 from regwatch.pipeline.match.rules import RuleMatcher
 
@@ -16,13 +16,13 @@ logger = logging.getLogger(__name__)
 
 class CombinedMatcher:
     def __init__(
-        self, session: Session, *, ollama: OllamaClient | None = None
+        self, session: Session, *, ollama: LLMClient | None = None
     ) -> None:
         self._rule_matcher = RuleMatcher(session)
         self._ollama = ollama
-        # Latches to True once we've seen Ollama fail, so we stop trying for
+        # Latches to True once we've seen the LLM fail, so we stop trying for
         # the remainder of this matcher's lifetime (one pipeline run). Keeps
-        # a missing model or an unreachable Ollama from spamming per-document
+        # a missing model or an unreachable server from spamming per-document
         # tracebacks on every single extracted doc.
         self._ollama_disabled = False
 
@@ -36,9 +36,9 @@ class CombinedMatcher:
 
         try:
             extracted_refs = extract_references(self._ollama, text)
-        except (httpx.HTTPError, OllamaError) as exc:
+        except (httpx.HTTPError, LLMError) as exc:
             logger.warning(
-                "Ollama reference extraction unavailable (%s); "
+                "LLM reference extraction unavailable (%s); "
                 "falling back to rule-only matching for the rest of this run.",
                 exc,
             )

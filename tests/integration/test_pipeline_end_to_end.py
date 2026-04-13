@@ -116,7 +116,7 @@ def test_end_to_end_with_mock_ollama(tmp_path: Path) -> None:
         session,
         sources=[_FakeSource([raw])],
         archive_root=tmp_path / "pdfs",
-        ollama_client=fake_ollama,
+        llm_client=fake_ollama,
     )
     runner.run_once()
     session.commit()

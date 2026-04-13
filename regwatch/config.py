@@ -32,10 +32,10 @@ class SourceConfig(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class OllamaConfig(BaseModel):
+class LLMConfig(BaseModel):
     base_url: str
-    chat_model: str
-    embedding_model: str
+    chat_model: str | None = None
+    embedding_model: str | None = None
     embedding_dim: int
 
 
@@ -63,7 +63,7 @@ class UiConfig(BaseModel):
 class AppConfig(BaseModel):
     entity: EntityConfig
     sources: dict[str, SourceConfig]
-    ollama: OllamaConfig
+    llm: LLMConfig
     rag: RagConfig
     paths: PathsConfig
     ui: UiConfig

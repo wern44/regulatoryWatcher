@@ -15,7 +15,7 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
 from regwatch.db.models import DocumentChunk
-from regwatch.ollama.client import OllamaClient
+from regwatch.llm.client import LLMClient
 
 
 @dataclass
@@ -39,7 +39,7 @@ class RetrievedChunk:
 
 class HybridRetriever:
     def __init__(
-        self, session: Session, *, ollama: OllamaClient, top_k: int = 20
+        self, session: Session, *, ollama: LLMClient, top_k: int = 20
     ) -> None:
         self._session = session
         self._ollama = ollama

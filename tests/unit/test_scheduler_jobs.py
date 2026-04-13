@@ -19,7 +19,7 @@ def _minimal_config(enabled_sources: dict[str, SourceConfig]) -> AppConfig:
                 "authorizations": [{"type": "AIFM", "cssf_entity_id": "1"}],
             },
             "sources": {k: v.model_dump() for k, v in enabled_sources.items()},
-            "ollama": {
+            "llm": {
                 "base_url": "http://x",
                 "chat_model": "x",
                 "embedding_model": "x",

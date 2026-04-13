@@ -29,7 +29,7 @@ def chat_list(request: Request) -> HTMLResponse:
 def chat_create(request: Request, title: str = Form(...)) -> RedirectResponse:
     with request.app.state.session_factory() as session:
         svc = ChatService(
-            session, ollama=request.app.state.ollama_client
+            session, ollama=request.app.state.llm_client
         )
         new_session = svc.create_session(title=title, filters=RetrievalFilters())
         session.commit()
@@ -45,7 +45,7 @@ def chat_session(request: Request, session_id: int) -> HTMLResponse:
         if cs is None:
             raise HTTPException(status_code=404)
         svc = ChatService(
-            session, ollama=request.app.state.ollama_client
+            session, ollama=request.app.state.llm_client
         )
         messages = svc.list_messages(session_id)
     return templates.TemplateResponse(
@@ -62,7 +62,7 @@ def chat_ask(
     """Non-streaming ask endpoint. SSE streaming can layer on later."""
     with request.app.state.session_factory() as session:
         svc = ChatService(
-            session, ollama=request.app.state.ollama_client
+            session, ollama=request.app.state.llm_client
         )
         svc.ask(session_id, question)
         session.commit()

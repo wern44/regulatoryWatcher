@@ -1,7 +1,15 @@
 {% extends "base.html" %}
 {% block title %}RegWatch — Deadlines{% endblock %}
 {% block content %}
-  <h1 class="text-2xl font-bold mb-4">Deadlines</h1>
+  <div class="flex justify-between items-center mb-4">
+    <h1 class="text-2xl font-bold">Deadlines</h1>
+    <label class="flex items-center gap-2 text-sm">
+      <input type="checkbox"
+             {% if show_completed %}checked{% endif %}
+             onchange="window.location.href='/deadlines?show_completed=' + this.checked">
+      Show completed
+    </label>
+  </div>
   <table class="w-full bg-white border rounded shadow-sm text-sm">
     <thead class="bg-slate-100 text-xs uppercase text-slate-600">
       <tr>
@@ -11,11 +19,12 @@
         <th class="text-left p-2">Due</th>
         <th class="text-left p-2">Days</th>
         <th class="text-left p-2">Band</th>
+        <th class="text-left p-2">Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for d in deadlines %}
-      <tr class="border-t">
+      <tr id="deadline-{{ d.regulation_id }}-{{ d.kind }}" class="border-t {% if d.done %}opacity-50{% endif %}">
         <td class="p-2 font-mono">{{ d.reference_number }}</td>
         <td class="p-2">{{ d.title }}</td>
         <td class="p-2">{{ d.kind }}</td>
@@ -31,9 +40,29 @@
             {{ d.severity_band }}
           </span>
         </td>
+        <td class="p-2">
+          {% if not d.done %}
+          <button class="px-2 py-1 bg-green-100 rounded hover:bg-green-200 text-green-800 text-xs"
+                  hx-post="/deadlines/{{ d.regulation_id }}/dismiss"
+                  hx-vals='{"kind": "{{ d.kind }}"}'
+                  hx-target="#deadline-{{ d.regulation_id }}-{{ d.kind }}"
+                  hx-swap="outerHTML">Done</button>
+          <button class="px-2 py-1 bg-slate-100 rounded hover:bg-slate-200 text-slate-600 text-xs"
+                  hx-post="/deadlines/{{ d.regulation_id }}/dismiss"
+                  hx-vals='{"kind": "{{ d.kind }}"}'
+                  hx-target="#deadline-{{ d.regulation_id }}-{{ d.kind }}"
+                  hx-swap="outerHTML">N/A</button>
+          {% else %}
+          <button class="px-2 py-1 bg-slate-100 rounded hover:bg-slate-200 text-slate-600 text-xs"
+                  hx-post="/deadlines/{{ d.regulation_id }}/restore"
+                  hx-vals='{"kind": "{{ d.kind }}"}'
+                  hx-target="#deadline-{{ d.regulation_id }}-{{ d.kind }}"
+                  hx-swap="outerHTML">Restore</button>
+          {% endif %}
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="p-4 text-center text-slate-500">No upcoming deadlines.</td></tr>
+      <tr><td colspan="7" class="p-4 text-center text-slate-500">No upcoming deadlines.</td></tr>
       {% endfor %}
     </tbody>
   </table>

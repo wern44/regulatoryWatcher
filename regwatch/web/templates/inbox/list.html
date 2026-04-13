@@ -2,12 +2,38 @@
 {% block title %}RegWatch — Inbox{% endblock %}
 {% block content %}
   <h1 class="text-2xl font-bold mb-4">Inbox ({{ events|length }} new)</h1>
+
+  <div class="flex gap-3 mb-4 items-center text-sm">
+    <form class="flex gap-2 items-center">
+      <label class="font-medium">Source:</label>
+      <select name="source" onchange="this.form.submit()" class="border rounded px-2 py-1 text-sm">
+        <option value="">All</option>
+        {% for s in source_options %}
+        <option value="{{ s }}" {% if current_source == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+      <label class="font-medium ml-3">Entity Type:</label>
+      <select name="entity_type" onchange="this.form.submit()" class="border rounded px-2 py-1 text-sm">
+        <option value="">All (relevant)</option>
+        <option value="AIFM" {% if current_entity_type == 'AIFM' %}selected{% endif %}>AIFM</option>
+        <option value="CHAPTER15_MANCO" {% if current_entity_type == 'CHAPTER15_MANCO' %}selected{% endif %}>Chapter 15 ManCo</option>
+      </select>
+      <label class="flex items-center gap-1 ml-3">
+        <input type="checkbox" name="show_all" value="true"
+               {% if show_all %}checked{% endif %}
+               onchange="this.form.submit()">
+        Show all
+      </label>
+    </form>
+  </div>
+
   <table class="w-full bg-white border rounded shadow-sm">
     <thead class="bg-slate-100 text-xs uppercase text-slate-600">
       <tr>
         <th class="text-left p-2">Severity</th>
         <th class="text-left p-2">Source</th>
         <th class="text-left p-2">Title</th>
+        <th class="text-left p-2">Entity Types</th>
         <th class="text-left p-2">Published</th>
         <th class="text-left p-2">Actions</th>
       </tr>
@@ -16,7 +42,7 @@
       {% for ev in events %}
         {% include "partials/inbox_row.html" %}
       {% else %}
-        <tr><td colspan="5" class="p-4 text-center text-slate-500">No new updates.</td></tr>
+        <tr><td colspan="6" class="p-4 text-center text-slate-500">No new updates.</td></tr>
       {% endfor %}
     </tbody>
   </table>

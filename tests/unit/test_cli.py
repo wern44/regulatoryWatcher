@@ -24,7 +24,7 @@ def _minimal_config(tmp_path: Path) -> Path:
                 - type: AIFM
                   cssf_entity_id: "1"
             sources: {{}}
-            ollama:
+            llm:
               base_url: "http://localhost:11434"
               chat_model: "llama3.1:8b"
               embedding_model: "nomic-embed-text"

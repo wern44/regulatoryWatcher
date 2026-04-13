@@ -14,13 +14,13 @@ def test_chat_list_renders(tmp_path: Path, monkeypatch) -> None:
 def test_chat_create_and_ask_flow(tmp_path: Path, monkeypatch) -> None:
     client = _client(tmp_path, monkeypatch)
 
-    # Replace the app's ollama client with a mock that also handles embed
+    # Replace the app's llm client with a mock that also handles embed
     # (for retrieval). Embeddings aren't used since no indexed content exists.
     fake = MagicMock()
     # Production config uses 768 dims (nomic-embed-text).
     fake.embed.return_value = [0.0] * 768
     fake.chat.return_value = "Sample assistant reply."
-    client.app.state.ollama_client = fake
+    client.app.state.llm_client = fake
 
     # Create a new session.
     r = client.post("/chat", data={"title": "DORA questions"}, follow_redirects=False)
