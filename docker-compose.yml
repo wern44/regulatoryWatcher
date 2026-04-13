@@ -1,0 +1,15 @@
+services:
+  regwatch:
+    build: .
+    container_name: regwatch
+    ports:
+      - "8001:8001"
+    volumes:
+      - regwatch-data:/app/data
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      - REGWATCH_CONFIG=/app/config.yaml
+    restart: unless-stopped
+
+volumes:
+  regwatch-data:
