@@ -1,0 +1,22 @@
+#Change the use of Ollama to LM Studio
+Please Change the use of Ollama as I now want to use LM Studio. But please make the Change generic, so I can switch between different Scenarios. Call the new reference LLM_BASE_URL and the new LLM Server is reachable at: http://192.168.32.231:1234
+Bitte stelle sicher, dass der Zugriff nach dem Update funktioniert.
+
+#ICT items - CSSF Circulars
+Can you please make sure that you put all relevant CSSF circulars in the ICT site!There are currently None, but there should be some in there!
+Also in the catalog of all circulars and regulations the ICT CSSF Circulars are missing!
+
+#Inbox
+Also please put only Elements in my Inbox that is relevant for my entities (Entity types). One from many examples is Circular "CSSF 26/909" that is only relevant for "Crypto-Assets Service Providers (CASPs)" which is mentioned on the Details page of this circular. But you should make sure to filter the available documents by the entities and the Entity types so you only have the relevant documents to analyse. In the Inbox please also add a short description of the item, so I know what it is About.
+Please also make it possible to filter the Inbox by source.
+Also add for which Entity type the item is applicable to. And this should also be possible to filter.
+
+#Deadlines done
+Please make it possible to mark an tiem in the Deadlines site as done or n/a so it will not Show the next time.
+
+#Settings - model
+Please make it possible to select a model from the available Ollama models in the Settings site. Please make sure to save this for the next session.
+
+#Change Port
+Can you please Change the port to 8001.
+
