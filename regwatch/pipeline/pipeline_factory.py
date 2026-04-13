@@ -15,7 +15,12 @@ from regwatch.domain.types import ExtractedDocument, MatchedDocument, RawDocumen
 from regwatch.llm.client import LLMClient
 from regwatch.pipeline.extract.html import extract_html
 from regwatch.pipeline.extract.pdf import extract_pdf
-from regwatch.pipeline.match.classify import is_ict_document, severity_for
+from regwatch.pipeline.match.classify import (
+    classify_entity_types,
+    generate_description,
+    is_ict_document,
+    severity_for,
+)
 from regwatch.pipeline.match.combined import CombinedMatcher
 from regwatch.pipeline.match.lifecycle import classify_lifecycle
 from regwatch.pipeline.runner import PipelineRunner
@@ -67,8 +72,16 @@ def build_runner(
             or ""
         )
         references = combined.match(text_for_match)
-        is_ict = is_ict_document(
-            extracted.raw.title + " " + (text_for_match or "")
+        full_text = extracted.raw.title + " " + (text_for_match or "")
+        is_ict = is_ict_document(full_text, llm=llm_client)
+        entity_types = classify_entity_types(
+            extracted.raw.title, text_for_match, llm=llm_client
+        )
+        description = generate_description(
+            extracted.raw.title,
+            text_for_match,
+            extracted.raw.raw_payload,
+            llm=llm_client,
         )
         lifecycle = classify_lifecycle(
             title=extracted.raw.title,
@@ -88,6 +101,8 @@ def build_runner(
             lifecycle_stage=lifecycle,
             is_ict=is_ict,
             severity=severity,
+            applicable_entity_types=entity_types,
+            description=description,
         )
 
     return PipelineRunner(

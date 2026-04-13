@@ -48,3 +48,5 @@ class MatchedDocument:
     lifecycle_stage: str = "IN_FORCE"
     is_ict: bool = False
     severity: str = "INFORMATIONAL"
+    applicable_entity_types: list[str] | None = None
+    description: str | None = None
