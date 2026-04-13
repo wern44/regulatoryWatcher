@@ -1,22 +1,53 @@
 {% extends "base.html" %}
 {% block title %}RegWatch — ICT / DORA{% endblock %}
 {% block content %}
-  <h1 class="text-2xl font-bold mb-4">ICT / DORA</h1>
+  <div class="flex justify-between items-center mb-4">
+    <h1 class="text-2xl font-bold">ICT / DORA</h1>
+    <form method="post" action="/ict/refresh">
+      <button type="submit" class="px-3 py-2 bg-slate-800 text-white rounded text-sm hover:bg-slate-700">
+        Refresh catalog
+      </button>
+    </form>
+  </div>
   <table class="w-full bg-white border rounded shadow-sm text-sm">
     <thead class="bg-slate-100 text-xs uppercase text-slate-600">
       <tr>
         <th class="text-left p-2">Reference</th>
         <th class="text-left p-2">Title</th>
         <th class="text-left p-2">Authority</th>
+        <th class="text-left p-2">DORA Pillar</th>
         <th class="text-left p-2">Lifecycle</th>
-        <th class="text-left p-2">ICT</th>
+        <th class="text-left p-2">Status</th>
+        <th class="text-left p-2">Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for r in regulations %}
-        {% include "partials/catalog_row.html" %}
+      <tr class="border-t {% if r.needs_review %}bg-amber-50{% endif %}">
+        <td class="p-2 font-mono">{{ r.reference_number }}</td>
+        <td class="p-2">
+          <a href="{{ r.url }}" target="_blank" class="hover:underline">{{ r.title }}</a>
+        </td>
+        <td class="p-2">{{ r.issuing_authority }}</td>
+        <td class="p-2">{{ r.dora_pillar or '—' }}</td>
+        <td class="p-2">{{ r.lifecycle_stage }}</td>
+        <td class="p-2">
+          {% if r.needs_review %}
+            <span class="px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800">Needs review</span>
+          {% else %}
+            <span class="text-green-700 text-xs">Confirmed</span>
+          {% endif %}
+        </td>
+        <td class="p-2">
+          <form method="post" action="/ict/{{ r.regulation_id }}/unset-ict" class="inline">
+            <button type="submit" class="px-2 py-1 bg-red-100 rounded hover:bg-red-200 text-red-800 text-xs">
+              Not ICT
+            </button>
+          </form>
+        </td>
+      </tr>
       {% else %}
-        <tr><td colspan="5" class="p-4 text-center text-slate-500">No ICT-flagged regulations.</td></tr>
+        <tr><td colspan="7" class="p-4 text-center text-slate-500">No ICT-flagged regulations.</td></tr>
       {% endfor %}
     </tbody>
   </table>

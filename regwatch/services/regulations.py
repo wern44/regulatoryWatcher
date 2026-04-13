@@ -35,6 +35,8 @@ class RegulationDTO:
     url: str
     transposition_deadline: date | None
     application_date: date | None
+    needs_review: bool
+    dora_pillar: str | None
 
 
 class RegulationService:
@@ -93,4 +95,6 @@ def _to_dto(r: Regulation) -> RegulationDTO:
         url=r.url,
         transposition_deadline=r.transposition_deadline,
         application_date=r.application_date,
+        needs_review=r.needs_review,
+        dora_pillar=r.dora_pillar.value if r.dora_pillar else None,
     )
