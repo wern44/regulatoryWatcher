@@ -137,6 +137,9 @@ class Regulation(Base):
         ForeignKey("regulation.regulation_id"), nullable=True
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
+    transposition_done: Mapped[bool] = mapped_column(Boolean, default=False)
+    application_done: Mapped[bool] = mapped_column(Boolean, default=False)
 
     aliases: Mapped[list[RegulationAlias]] = relationship(
         back_populates="regulation", cascade="all, delete-orphan"
@@ -179,6 +182,19 @@ class RegulationLifecycleLink(Base):
     to_regulation_id: Mapped[int] = mapped_column(ForeignKey("regulation.regulation_id"))
     # PROPOSAL_OF / TRANSPOSES / AMENDS / REPEALS / SUCCEEDS
     relation: Mapped[str] = mapped_column(String(20))
+
+
+class RegulationOverride(Base):
+    __tablename__ = "regulation_override"
+
+    override_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    regulation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("regulation.regulation_id"), nullable=True
+    )
+    reference_number: Mapped[str] = mapped_column(String(100))
+    action: Mapped[str] = mapped_column(String(20))  # INCLUDE / EXCLUDE / SET_ICT / UNSET_ICT
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime)
 
 
 class DocumentVersion(Base):
@@ -236,6 +252,8 @@ class UpdateEvent(Base):
     )  # NEW / SEEN / ASSESSED / ARCHIVED
     seen_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    applicable_entity_types: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
 
     regulation_links: Mapped[list[UpdateEventRegulationLink]] = relationship(
         back_populates="event", cascade="all, delete-orphan", passive_deletes=True
@@ -269,6 +287,14 @@ class PipelineRun(Base):
     events_created: Mapped[int] = mapped_column(Integer, default=0)
     versions_created: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class Setting(Base):
+    __tablename__ = "setting"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(TZDateTime)
 
 
 class DocumentChunk(Base):
