@@ -40,10 +40,8 @@ sources:
     item_types: [911, 913, 916]
     topic_ids: [1565, 1588, 1601, 26362, 26363]
 
-ollama:
-  base_url: "http://localhost:11434"
-  chat_model: "llama3.1:latest"
-  embedding_model: "nomic-embed-text"
+llm:
+  base_url: "http://192.168.32.231:1234"
   embedding_dim: 768
 
 rag:
@@ -62,4 +60,4 @@ ui:
   language: en
   timezone: "Europe/Luxembourg"
   host: "127.0.0.1"
-  port: 8000
+  port: 8001
