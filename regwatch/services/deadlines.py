@@ -23,6 +23,7 @@ class DeadlineDTO:
     days_until: int
     severity_band: str
     url: str
+    done: bool
 
 
 class DeadlineService:
@@ -48,7 +49,7 @@ class DeadlineService:
             return "BLUE"
         return "GREY"
 
-    def upcoming(self, window_days: int) -> list[DeadlineDTO]:
+    def upcoming(self, window_days: int, show_completed: bool = False) -> list[DeadlineDTO]:
         rows = (
             self._session.query(Regulation)
             .filter(
@@ -62,15 +63,15 @@ class DeadlineService:
         today = date.today()
         items: list[DeadlineDTO] = []
         for reg in rows:
-            for kind, due in (
-                ("TRANSPOSITION", reg.transposition_deadline),
-                ("APPLICATION", reg.application_date),
+            for kind, due, done_flag in (
+                ("TRANSPOSITION", reg.transposition_deadline, reg.transposition_done),
+                ("APPLICATION", reg.application_date, reg.application_done),
             ):
                 if due is None:
                     continue
+                if done_flag and not show_completed:
+                    continue
                 days_until = (due - today).days
-                # Include overdue items always. Include future items only if
-                # within the window.
                 if days_until > window_days:
                     continue
                 items.append(
@@ -83,7 +84,17 @@ class DeadlineService:
                         days_until=days_until,
                         severity_band=self.severity_band(days_until),
                         url=reg.url,
+                        done=done_flag,
                     )
                 )
         items.sort(key=lambda d: d.days_until)
         return items
+
+    def set_done(self, regulation_id: int, kind: DeadlineKind, done: bool) -> None:
+        reg = self._session.get(Regulation, regulation_id)
+        if reg is None:
+            raise ValueError(f"Regulation {regulation_id} not found")
+        if kind == "TRANSPOSITION":
+            reg.transposition_done = done
+        else:
+            reg.application_done = done

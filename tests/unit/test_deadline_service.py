@@ -25,6 +25,8 @@ def _add_reg(
     *,
     transposition_deadline: date | None = None,
     application_date: date | None = None,
+    transposition_done: bool = False,
+    application_done: bool = False,
 ) -> None:
     reg = Regulation(
         type=RegulationType.EU_DIRECTIVE,
@@ -37,6 +39,8 @@ def _add_reg(
         url="https://example.com",
         transposition_deadline=transposition_deadline,
         application_date=application_date,
+        transposition_done=transposition_done,
+        application_done=application_done,
     )
     session.add(reg)
 
@@ -87,6 +91,9 @@ def test_upcoming_returns_sorted_by_days_until(tmp_path: Path) -> None:
     assert far.severity_band == "BLUE"
     # Sorted ascending by days_until.
     assert items.index(near) < items.index(far)
+    # done defaults to False
+    assert near.done is False
+    assert far.done is False
 
 
 def test_upcoming_includes_overdue(tmp_path: Path) -> None:
@@ -105,3 +112,111 @@ def test_upcoming_includes_overdue(tmp_path: Path) -> None:
         d.reference_number == "Past" and d.severity_band == "OVERDUE"
         for d in items
     )
+
+
+def test_upcoming_hides_done_by_default(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    today = date.today()
+    _add_reg(
+        session,
+        "DoneReg",
+        transposition_deadline=today + timedelta(days=20),
+        transposition_done=True,
+    )
+    _add_reg(
+        session,
+        "ActiveReg",
+        transposition_deadline=today + timedelta(days=50),
+    )
+    session.commit()
+
+    svc = DeadlineService(session)
+    items = svc.upcoming(window_days=365)
+    refs = [d.reference_number for d in items]
+    assert "DoneReg" not in refs
+    assert "ActiveReg" in refs
+
+
+def test_upcoming_show_completed_includes_done(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    today = date.today()
+    _add_reg(
+        session,
+        "DoneReg",
+        application_date=today + timedelta(days=30),
+        application_done=True,
+    )
+    session.commit()
+
+    svc = DeadlineService(session)
+    items = svc.upcoming(window_days=365, show_completed=True)
+    found = next((d for d in items if d.reference_number == "DoneReg"), None)
+    assert found is not None
+    assert found.done is True
+
+
+def test_set_done_transposition(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    today = date.today()
+    _add_reg(
+        session,
+        "SetDoneReg",
+        transposition_deadline=today + timedelta(days=10),
+    )
+    session.commit()
+
+    svc = DeadlineService(session)
+    # Verify it appears before marking done
+    items_before = svc.upcoming(window_days=365)
+    target = next(d for d in items_before if d.reference_number == "SetDoneReg")
+    reg_id = target.regulation_id
+
+    svc.set_done(reg_id, "TRANSPOSITION", done=True)
+    session.commit()
+
+    # Should be hidden now
+    items_after = svc.upcoming(window_days=365)
+    assert not any(d.regulation_id == reg_id for d in items_after)
+
+    # Should appear with show_completed=True
+    items_completed = svc.upcoming(window_days=365, show_completed=True)
+    found = next(d for d in items_completed if d.regulation_id == reg_id)
+    assert found.done is True
+
+
+def test_set_done_restore(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    today = date.today()
+    _add_reg(
+        session,
+        "RestoreReg",
+        application_date=today + timedelta(days=10),
+        application_done=True,
+    )
+    session.commit()
+
+    svc = DeadlineService(session)
+    items_hidden = svc.upcoming(window_days=365)
+    assert not any(d.reference_number == "RestoreReg" for d in items_hidden)
+
+    # Get the reg_id via show_completed
+    items_all = svc.upcoming(window_days=365, show_completed=True)
+    reg_id = next(d for d in items_all if d.reference_number == "RestoreReg").regulation_id
+
+    svc.set_done(reg_id, "APPLICATION", done=False)
+    session.commit()
+
+    items_restored = svc.upcoming(window_days=365)
+    found = next(d for d in items_restored if d.regulation_id == reg_id)
+    assert found.done is False
+
+
+def test_set_done_invalid_regulation(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    Base.metadata.create_all(session.bind)  # type: ignore[arg-type]
+    svc = DeadlineService(session)
+    try:
+        svc.set_done(99999, "TRANSPOSITION", done=True)
+        assert False, "Should have raised ValueError"
+    except ValueError as exc:
+        assert "99999" in str(exc)
