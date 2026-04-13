@@ -18,12 +18,14 @@ The codebase is hard-coded to Ollama's proprietary API (`/api/chat`, `/api/embed
 ```yaml
 llm:
   base_url: "http://192.168.32.231:1234"
-  chat_model: "llama3.1:latest"
-  embedding_model: "nomic-embed-text"
+  # chat_model and embedding_model are optional in config —
+  # if omitted, the first-startup flow prompts the user to select
+  # from available models. Once selected, they are persisted in the
+  # setting table and override config values.
   embedding_dim: 768
 ```
 
-`OllamaConfig` → `LLMConfig` in `regwatch/config.py`.
+`OllamaConfig` → `LLMConfig` in `regwatch/config.py`. `chat_model` and `embedding_model` become `Optional[str]` with default `None` — the DB-persisted setting takes precedence, and if neither exists, the first-startup flow prompts the user.
 
 **Client refactor:** Rename `OllamaClient` → `LLMClient` in `regwatch/llm/client.py` (move from `regwatch/ollama/`). The public interface stays identical: `chat()`, `chat_stream()`, `embed()`, `health()`.
 
@@ -51,31 +53,92 @@ Response parsing adapts per format (Ollama returns `message.content`, OpenAI ret
 
 ---
 
-## 2. ICT CSSF Circulars — Seed Data & Pipeline Classification
+## 2. ICT CSSF Circulars — LLM-Driven Discovery & User Overrides
 
 ### Problem
 
-The ICT/DORA page and catalog show no CSSF circulars because none are marked `is_ict: true` in the seed. New documents fetched by the pipeline also aren't classified for ICT relevance beyond simple keywords.
+The ICT/DORA page and catalog show no CSSF circulars because none are marked `is_ict: true` in the seed. Hardcoding ICT classifications is fragile — circulars get superseded, applicability depends on authorization types, and manual curation doesn't scale. The tool must use the LLM to discover and classify relevant regulations, and the user must be able to correct mistakes.
 
-### Seed data fix
+### Design: LLM-driven regulation discovery
 
-Update `seeds/regulations_seed.yaml`:
+**No hardcoded ICT classifications.** The seed YAML provides the initial catalog structure but does NOT dictate `is_ict` or `dora_pillar` — those are determined dynamically by the LLM.
 
-| Circular | `is_ict` | `dora_pillar` |
-|----------|----------|---------------|
-| CSSF 18/698 (governance & security for IT outsourcing) | `true` | `THIRD_PARTY_RISK` |
+**Discovery flow** (triggered on first startup after model selection, and on-demand via a "Refresh catalog" button in the UI):
 
-CSSF 11/512 (risk management clarifications for UCITS ManCos), CSSF 23/844 (AIFM reporting under Art. 24 AIFMD), and CSSF 24/856 (NAV errors) are not ICT-related — they stay `is_ict: false`.
+1. For each regulation in the catalog, send the title + URL + any available text to the LLM:
+   ```
+   System: You are a regulatory classification expert for Luxembourg financial entities.
+   Given a regulation or circular, determine:
+   1. is_ict: Is this related to ICT, cybersecurity, digital operational resilience, IT outsourcing, or similar technology risk topics? (true/false)
+   2. dora_pillar: If is_ict is true, which DORA pillar? (ICT_RISK_MGMT, INCIDENT_REPORTING, RESILIENCE_TESTING, THIRD_PARTY_RISK, INFO_SHARING, or null)
+   3. applicable_entity_types: Which entity types does this apply to? (JSON array of: "AIFM", "CHAPTER15_MANCO", "CREDIT_INSTITUTION", "CASP", "INVESTMENT_FIRM", "INSURANCE", "PENSION_FUND", or "ALL")
+   4. is_superseded: Has this been replaced by a newer version? (true/false)
+   5. superseded_by: If superseded, the reference number of the replacement (or null)
 
-Add missing ICT-relevant circulars not currently in the seed:
+   Respond with ONLY a JSON object with these 5 fields.
 
-| Circular | Title | `is_ict` | `dora_pillar` | Applicability |
-|----------|-------|----------|---------------|---------------|
-| CSSF 20/750 | Requirements on ICT risk management | `true` | `ICT_RISK_MGMT` | BOTH |
-| CSSF 17/654 | IT outsourcing relying on a cloud computing infrastructure | `true` | `THIRD_PARTY_RISK` | BOTH |
-| CSSF 22/806 | ICT-related incident reporting | `true` | `INCIDENT_REPORTING` | BOTH |
+   User: Classify this regulation:
+   Reference: {reference_number}
+   Title: {title}
+   Issuing authority: {issuing_authority}
+   Type: {type}
+   ```
+2. Parse the JSON response. Update the regulation record with `is_ict`, `dora_pillar`.
+3. Skip regulations that have user overrides (see below).
 
-### Pipeline ICT classification
+**The LLM may also suggest new regulations** not yet in the catalog. A separate "Discover new regulations" step asks:
+   ```
+   System: You are a regulatory expert for Luxembourg. Given an entity with authorization types {auth_types}, list CSSF circulars and EU regulations relevant to ICT/DORA that may be missing from the following catalog. Only include currently applicable regulations (not superseded ones). Respond with a JSON array of objects: {reference_number, title, issuing_authority, type, is_ict, dora_pillar, url, applicability}.
+
+   User: Current catalog:
+   {list of reference_numbers and titles}
+   ```
+   New regulations discovered this way are added with `source_of_truth = "DISCOVERED"`.
+
+### User override tracking
+
+**New `regulation_override` table:**
+
+```python
+class RegulationOverride(Base):
+    __tablename__ = "regulation_override"
+    override_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    regulation_id: Mapped[int | None] = mapped_column(ForeignKey("regulation.regulation_id"), nullable=True)
+    reference_number: Mapped[str] = mapped_column(String(100))
+    action: Mapped[str] = mapped_column(String(20))  # INCLUDE / EXCLUDE / SET_ICT / UNSET_ICT
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime)
+```
+
+**Override semantics:**
+- `EXCLUDE`: User removed this regulation — on re-discovery, skip it even if the LLM suggests it.
+- `INCLUDE`: User added this regulation — on re-discovery, keep it even if the LLM doesn't find it.
+- `SET_ICT`: User marked this as ICT — on re-discovery, preserve `is_ict=True`.
+- `UNSET_ICT`: User marked this as non-ICT — on re-discovery, preserve `is_ict=False`.
+
+During re-discovery, the tool checks overrides BEFORE applying LLM results. User decisions always win.
+
+### Confidence and user review queue
+
+The LLM classification prompt is extended to also return a `confidence` field (0.0–1.0). When confidence is below 0.7, the regulation is flagged as `needs_review = True` on the regulation record.
+
+**New column on `regulation`:** `needs_review: Mapped[bool]` — `Boolean, default=False`.
+
+**Review queue in the UI:** A "Pending review" section on the catalog/settings page shows regulations where `needs_review = True`. For each, the user can:
+- Confirm the LLM's classification (clears `needs_review`, creates a confirming override)
+- Override it (sets the correct values, creates an override, clears `needs_review`)
+
+This ensures the tool never silently applies uncertain classifications. Items pending review are visible but marked with a warning indicator.
+
+### UI for managing regulations
+
+On the catalog page and ICT page, add:
+- **"Add regulation"** button — form to manually add a reference number, title, type. Creates an `INCLUDE` override.
+- **"Remove"** button per regulation — creates an `EXCLUDE` override and hides the regulation.
+- **"Mark as ICT" / "Mark as non-ICT"** toggle per regulation — creates `SET_ICT` or `UNSET_ICT` override.
+- **"Refresh catalog"** button — re-runs the LLM discovery, respecting all overrides.
+
+### Pipeline ICT classification (for new incoming documents)
 
 After the existing keyword-based `is_ict_document()` check, if it returns `False` and the LLM is available, use the chat model to classify:
 
@@ -185,7 +248,7 @@ Deadline items cannot be dismissed. Users see the same overdue items forever.
 
 ---
 
-## 5. Settings — Model Selector & DB Persistence
+## 5. Settings — Model Selector, DB Persistence & First-Startup Flow
 
 ### New `setting` table
 
@@ -204,9 +267,22 @@ class Setting(Base):
 - `set(key, value) -> None`
 - `get_all() -> dict[str, str]`
 
+### First-startup flow
+
+On first visit to the web UI, if no `chat_model` is persisted in the `setting` table:
+
+1. **Redirect to `/settings/setup`** — a setup page that:
+   - Auto-detects available models from the LLM server via `list_models()`
+   - Presents a dropdown for chat model and embedding model
+   - User selects and saves
+2. **After model selection, trigger regulation discovery** — runs the LLM-driven catalog classification and discovery (Section 2). This populates `is_ict`, `dora_pillar`, and discovers missing regulations.
+3. **Redirect to dashboard** — normal operation begins.
+
+This only runs once. Subsequent startups load the persisted model from the `setting` table.
+
 ### Model selection flow
 
-1. Settings page calls `LLMClient.list_models()` — tries `/v1/models` first (returns `data[].id`), falls back to `/api/tags` (returns `models[].name`).
+1. Settings page calls `LLMClient.list_models()` — tries `/v1/models` first (returns `data[].id`), fall back to `/api/tags` (returns `models[].name`).
 2. Display models in a dropdown for both chat and embedding model.
 3. On save, persist `chat_model` and `embedding_model` to the `setting` table.
 4. On app startup (in `create_app`), load settings from DB and use them to override config defaults when constructing `LLMClient`.
@@ -235,11 +311,12 @@ The user's `config.yaml` (gitignored) also needs to be updated, but that's a run
 | Area | Files modified | Files created | Files deleted |
 |------|---------------|---------------|---------------|
 | LLM client | `regwatch/config.py`, `regwatch/main.py`, all routes/services referencing `ollama_client` | `regwatch/llm/client.py`, `regwatch/llm/__init__.py` | `regwatch/ollama/client.py`, `regwatch/ollama/__init__.py` |
-| ICT seed | `seeds/regulations_seed.yaml` | — | — |
+| Regulation discovery | `regwatch/db/models.py` (new `RegulationOverride` model), `seeds/regulations_seed.yaml` (remove hardcoded `is_ict`) | `regwatch/services/discovery.py` | — |
 | ICT classify | `regwatch/pipeline/match/classify.py` | — | — |
+| Catalog UI | `regwatch/web/routes/catalog.py`, `regwatch/web/routes/ict.py`, catalog/ICT templates | — | — |
 | Inbox | `regwatch/db/models.py`, `regwatch/services/inbox.py`, `regwatch/web/routes/inbox.py`, `regwatch/web/templates/inbox/list.html`, `regwatch/pipeline/persist.py` | — | — |
 | Deadlines | `regwatch/db/models.py`, `regwatch/services/deadlines.py`, `regwatch/web/routes/deadlines.py`, `regwatch/web/templates/deadlines/list.html` | — | — |
-| Settings | `regwatch/db/models.py`, `regwatch/web/routes/settings.py`, `regwatch/web/templates/settings.html` | `regwatch/services/settings.py` | — |
+| Settings | `regwatch/db/models.py`, `regwatch/web/routes/settings.py`, `regwatch/web/templates/settings.html` | `regwatch/services/settings.py`, `regwatch/web/templates/settings/setup.html` | — |
 | Port | `config.example.yaml` | — | — |
 | Tests | Various test files for new/changed functionality | — | — |
 
@@ -248,3 +325,5 @@ The user's `config.yaml` (gitignored) also needs to be updated, but that's a run
 ## Architectural notes for future work
 
 The `applicable_entity_types` JSON column on `update_event` and the LLM-based classification are designed to be complemented by a future vector DB layer. When detailed document analysis is added later, the entity-type detection can be enhanced with embeddings-based classification rather than relying solely on the chat model. The JSON column format is flexible enough to accommodate additional entity types as the system evolves.
+
+The `regulation_override` table provides a durable audit trail of all user corrections. This can later be used as training signal for improving the LLM prompts or for fine-tuning a classifier. The `needs_review` flag ensures human-in-the-loop validation when the tool is uncertain — critical for regulatory compliance where incorrect classification has real consequences.
