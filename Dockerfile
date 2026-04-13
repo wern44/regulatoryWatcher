@@ -14,15 +14,15 @@ RUN apt-get update && \
         libxslt1-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies first (cached layer)
+# Copy application code, seeds, and project metadata
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir .
-
-# Copy application code and seeds
 COPY regwatch/ regwatch/
 COPY seeds/ seeds/
 COPY config.example.yaml ./
 COPY docker-entrypoint.sh ./
+
+# Install the package and all dependencies
+RUN pip install --no-cache-dir .
 
 RUN chmod +x docker-entrypoint.sh
 
