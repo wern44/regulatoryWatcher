@@ -7,14 +7,14 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from regwatch.db.models import ChatMessage, ChatSession
-from regwatch.ollama.client import OllamaClient
+from regwatch.llm.client import LLMClient
 from regwatch.rag.answer import AnswerRequest, generate_answer
 from regwatch.rag.retrieval import HybridRetriever, RetrievalFilters
 
 
 class ChatService:
     def __init__(
-        self, session: Session, ollama: OllamaClient, top_k: int = 10
+        self, session: Session, ollama: LLMClient, top_k: int = 10
     ) -> None:
         self._session = session
         self._ollama = ollama

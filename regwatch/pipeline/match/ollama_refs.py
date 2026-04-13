@@ -1,10 +1,10 @@
-"""Ollama-based extraction of regulatory references from free text."""
+"""LLM-based extraction of regulatory references from free text."""
 from __future__ import annotations
 
 import json
 import re
 
-from regwatch.ollama.client import OllamaClient
+from regwatch.llm.client import LLMClient
 
 _SYSTEM_PROMPT = (
     "You extract structured regulatory references from text. "
@@ -19,7 +19,7 @@ _SYSTEM_PROMPT = (
 _JSON_ARRAY_RE = re.compile(r"\[.*\]", re.DOTALL)
 
 
-def extract_references(client: OllamaClient, text: str) -> list[dict[str, str]]:
+def extract_references(client: LLMClient, text: str) -> list[dict[str, str]]:
     if not text or not text.strip():
         return []
 

@@ -25,7 +25,7 @@ def test_load_config_parses_example_yaml(tmp_path: Path) -> None:
                         "keywords": ["aif", "ucits"],
                     }
                 },
-                "ollama": {
+                "llm": {
                     "base_url": "http://localhost:11434",
                     "chat_model": "llama3.1:8b",
                     "embedding_model": "nomic-embed-text",
@@ -61,7 +61,7 @@ def test_load_config_parses_example_yaml(tmp_path: Path) -> None:
     assert cfg.entity.authorizations[0].type == "AIFM"
     assert cfg.sources["cssf_rss"].enabled is True
     assert cfg.sources["cssf_rss"].keywords == ["aif", "ucits"]
-    assert cfg.ollama.embedding_dim == 768
+    assert cfg.llm.embedding_dim == 768
 
 
 def test_load_config_rejects_unknown_authorization_type(tmp_path: Path) -> None:
@@ -75,7 +75,7 @@ def test_load_config_rejects_unknown_authorization_type(tmp_path: Path) -> None:
                     "authorizations": [{"type": "INVALID", "cssf_entity_id": "1"}],
                 },
                 "sources": {},
-                "ollama": {
+                "llm": {
                     "base_url": "x",
                     "chat_model": "x",
                     "embedding_model": "x",

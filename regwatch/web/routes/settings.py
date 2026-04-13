@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from regwatch.db.models import DocumentVersion, PipelineRun
 from regwatch.domain.types import RawDocument
-from regwatch.ollama.client import HealthStatus
+from regwatch.llm.client import HealthStatus
 from regwatch.pipeline.extract.pdf import extract_pdf
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -23,11 +23,11 @@ def settings_view(
 ) -> HTMLResponse:
     templates = request.app.state.templates
     config = request.app.state.config
-    ollama = request.app.state.ollama_client
+    llm = request.app.state.llm_client
     try:
-        ollama_health = ollama.health()
+        llm_health = llm.health()
     except Exception:  # noqa: BLE001
-        ollama_health = HealthStatus(reachable=False)
+        llm_health = HealthStatus(reachable=False)
 
     with request.app.state.session_factory() as session:
         protected = (
@@ -50,7 +50,7 @@ def settings_view(
         {
             "active": "settings",
             "config": config,
-            "ollama_health": ollama_health,
+            "llm_health": llm_health,
             "protected_versions": protected,
             "runs": runs,
             "db_action": db_action,

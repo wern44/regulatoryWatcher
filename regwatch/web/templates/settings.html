@@ -60,14 +60,14 @@
   </section>
 
   <section class="bg-white p-4 rounded shadow-sm border mb-4">
-    <h2 class="text-lg font-semibold mb-2">Ollama</h2>
+    <h2 class="text-lg font-semibold mb-2">LLM Server</h2>
     <div class="text-sm space-y-1">
-      <div><strong>Base URL:</strong> {{ config.ollama.base_url }}</div>
-      <div><strong>Chat model:</strong> {{ config.ollama.chat_model }}</div>
-      <div><strong>Embedding model:</strong> {{ config.ollama.embedding_model }}</div>
+      <div><strong>Base URL:</strong> {{ config.llm.base_url }}</div>
+      <div><strong>Chat model:</strong> {{ config.llm.chat_model or "(auto-detect)" }}</div>
+      <div><strong>Embedding model:</strong> {{ config.llm.embedding_model or "(auto-detect)" }}</div>
       <div>
         <strong>Status:</strong>
-        {% if ollama_health.reachable %}
+        {% if llm_health.reachable %}
           <span class="text-green-700">reachable</span>
         {% else %}
           <span class="text-red-700">unreachable</span>

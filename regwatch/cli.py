@@ -52,7 +52,7 @@ def init_db() -> None:
     cfg = _get_config()
     engine = create_app_engine(cfg.paths.db_file)
     Base.metadata.create_all(engine)
-    create_virtual_tables(engine, embedding_dim=cfg.ollama.embedding_dim)
+    create_virtual_tables(engine, embedding_dim=cfg.llm.embedding_dim)
     typer.echo(f"Schema created in {cfg.paths.db_file}")
 
 
@@ -143,7 +143,7 @@ def db_reset(
     seed_path = Path("seeds/regulations_seed.yaml") if seed else None
     reset_database(
         engine,
-        embedding_dim=cfg.ollama.embedding_dim,
+        embedding_dim=cfg.llm.embedding_dim,
         seed_file=seed_path,
     )
     typer.echo(
@@ -159,16 +159,16 @@ def run_pipeline(
 ) -> None:
     """Fetch, extract, match, persist — one pass across enabled sources."""
     cfg = _get_config()
-    from regwatch.ollama.client import OllamaClient
+    from regwatch.llm.client import LLMClient
     from regwatch.pipeline.pipeline_factory import build_runner
     from regwatch.pipeline.sources import build_enabled_sources
 
     source_instances = build_enabled_sources(cfg, only=source)
 
-    ollama = OllamaClient(
-        base_url=cfg.ollama.base_url,
-        chat_model=cfg.ollama.chat_model,
-        embedding_model=cfg.ollama.embedding_model,
+    llm = LLMClient(
+        base_url=cfg.llm.base_url,
+        chat_model=cfg.llm.chat_model or "",
+        embedding_model=cfg.llm.embedding_model or "",
     )
 
     engine = create_app_engine(cfg.paths.db_file)
@@ -177,7 +177,7 @@ def run_pipeline(
             session,
             sources=source_instances,
             archive_root=cfg.paths.pdf_archive,
-            ollama_client=ollama,
+            llm_client=llm,
         )
         run_id = runner.run_once()
         session.commit()
@@ -188,13 +188,13 @@ def run_pipeline(
 def reindex() -> None:
     """Clear all chunks and re-embed every current document version."""
     cfg = _get_config()
-    from regwatch.ollama.client import OllamaClient
+    from regwatch.llm.client import LLMClient
     from regwatch.rag.indexing import index_version
 
-    ollama = OllamaClient(
-        base_url=cfg.ollama.base_url,
-        chat_model=cfg.ollama.chat_model,
-        embedding_model=cfg.ollama.embedding_model,
+    llm = LLMClient(
+        base_url=cfg.llm.base_url,
+        chat_model=cfg.llm.chat_model or "",
+        embedding_model=cfg.llm.embedding_model or "",
     )
 
     engine = create_app_engine(cfg.paths.db_file)
@@ -215,7 +215,7 @@ def reindex() -> None:
             n = index_version(
                 session,
                 v,
-                ollama=ollama,
+                ollama=llm,
                 chunk_size_tokens=cfg.rag.chunk_size_tokens,
                 overlap_tokens=cfg.rag.chunk_overlap_tokens,
                 authorization_types=[a.type for a in cfg.entity.authorizations],
@@ -231,24 +231,24 @@ def chat(
 ) -> None:
     """One-shot RAG: retrieve and answer a single question."""
     cfg = _get_config()
-    from regwatch.ollama.client import OllamaClient
+    from regwatch.llm.client import LLMClient
     from regwatch.rag.answer import AnswerRequest, generate_answer
     from regwatch.rag.retrieval import HybridRetriever, RetrievalFilters
 
-    ollama = OllamaClient(
-        base_url=cfg.ollama.base_url,
-        chat_model=cfg.ollama.chat_model,
-        embedding_model=cfg.ollama.embedding_model,
+    llm = LLMClient(
+        base_url=cfg.llm.base_url,
+        chat_model=cfg.llm.chat_model or "",
+        embedding_model=cfg.llm.embedding_model or "",
     )
 
     engine = create_app_engine(cfg.paths.db_file)
     with Session(engine) as session:
         retriever = HybridRetriever(
-            session, ollama=ollama, top_k=cfg.rag.retrieval_k
+            session, ollama=llm, top_k=cfg.rag.retrieval_k
         )
         chunks = retriever.retrieve(question, RetrievalFilters())
         result = generate_answer(
-            ollama, AnswerRequest(question=question, chunks=chunks)
+            llm, AnswerRequest(question=question, chunks=chunks)
         )
     typer.echo(result.answer)
     if result.cited_chunk_ids:

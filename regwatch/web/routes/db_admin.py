@@ -96,7 +96,7 @@ def reset_database_route(request: Request) -> RedirectResponse:
         seed_path = Path("seeds/regulations_seed.yaml")
         reset_database(
             engine,
-            embedding_dim=config.ollama.embedding_dim,
+            embedding_dim=config.llm.embedding_dim,
             seed_file=seed_path if seed_path.exists() else None,
         )
     except Exception as exc:  # noqa: BLE001

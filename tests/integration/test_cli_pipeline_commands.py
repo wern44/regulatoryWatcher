@@ -34,7 +34,7 @@ def _minimal_config(tmp_path: Path) -> Path:
                 enabled: true
                 interval_hours: 6
                 keywords: [aif]
-            ollama:
+            llm:
               base_url: "http://localhost:11434"
               chat_model: "llama3.1:8b"
               embedding_model: "nomic-embed-text"
@@ -94,19 +94,19 @@ def test_run_pipeline_command_produces_events(
 
     monkeypatch.setitem(REGISTRY, "cssf_rss", _FakeCssfRssSource)
 
-    # Replace the real OllamaClient with a mock so the pipeline's combined
+    # Replace the real LLMClient with a mock so the pipeline's combined
     # matcher falls through to an empty reference list instead of hitting
     # localhost:11434.
     from unittest.mock import MagicMock
 
-    import regwatch.ollama.client as ollama_module
+    import regwatch.llm.client as llm_module
 
     fake_client_cls = MagicMock()
     fake_instance = MagicMock()
     fake_instance.chat.return_value = "[]"
     fake_instance.embed.return_value = [0.0, 0.0, 0.0, 0.0]
     fake_client_cls.return_value = fake_instance
-    monkeypatch.setattr(ollama_module, "OllamaClient", fake_client_cls)
+    monkeypatch.setattr(llm_module, "LLMClient", fake_client_cls)
 
     # init-db first
     result = runner.invoke(app, ["--config", str(config_file), "init-db"])

@@ -21,7 +21,7 @@ def _run_pipeline_in_background(
     *,
     session_factory,
     config,
-    ollama_client,
+    llm_client,
     progress: PipelineProgress,
 ) -> None:
     """Body of the worker thread. Owns its own DB session."""
@@ -38,7 +38,7 @@ def _run_pipeline_in_background(
                 session,
                 sources=sources,
                 archive_root=config.paths.pdf_archive,
-                ollama_client=ollama_client,
+                llm_client=llm_client,
             )
             run_id = runner.run_once(progress=progress)
             session.commit()
@@ -82,7 +82,7 @@ def run_pipeline(request: Request) -> HTMLResponse:
         kwargs={
             "session_factory": request.app.state.session_factory,
             "config": request.app.state.config,
-            "ollama_client": request.app.state.ollama_client,
+            "llm_client": request.app.state.llm_client,
             "progress": progress,
         },
         name="regwatch-pipeline",

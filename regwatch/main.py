@@ -15,7 +15,7 @@ from regwatch.config import load_config
 from regwatch.db.engine import create_app_engine
 from regwatch.db.models import Base
 from regwatch.db.virtual_tables import create_virtual_tables
-from regwatch.ollama.client import OllamaClient
+from regwatch.llm.client import LLMClient
 from regwatch.pipeline.progress import PipelineProgress
 from regwatch.scheduler.jobs import build_scheduler
 
@@ -29,7 +29,7 @@ def create_app() -> FastAPI:
 
     engine = create_app_engine(config.paths.db_file)
     Base.metadata.create_all(engine)
-    create_virtual_tables(engine, embedding_dim=config.ollama.embedding_dim)
+    create_virtual_tables(engine, embedding_dim=config.llm.embedding_dim)
     session_factory = sessionmaker(engine, expire_on_commit=False)
 
     @asynccontextmanager
@@ -51,10 +51,10 @@ def create_app() -> FastAPI:
     app.state.templates = templates
     app.state.config = config
     app.state.session_factory = session_factory
-    app.state.ollama_client = OllamaClient(
-        base_url=config.ollama.base_url,
-        chat_model=config.ollama.chat_model,
-        embedding_model=config.ollama.embedding_model,
+    app.state.llm_client = LLMClient(
+        base_url=config.llm.base_url,
+        chat_model=config.llm.chat_model or "",
+        embedding_model=config.llm.embedding_model or "",
     )
     app.state.pipeline_progress = PipelineProgress()
     _STATIC_DIR.mkdir(parents=True, exist_ok=True)

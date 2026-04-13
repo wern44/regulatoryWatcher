@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from regwatch.ollama.client import OllamaClient
+from regwatch.llm.client import LLMClient
 from regwatch.rag.retrieval import RetrievedChunk
 
 _SYSTEM_PROMPT = (
@@ -28,7 +28,7 @@ class AnswerResponse:
 
 
 def generate_answer(
-    ollama: OllamaClient, request: AnswerRequest
+    ollama: LLMClient, request: AnswerRequest
 ) -> AnswerResponse:
     if not request.chunks:
         return AnswerResponse(

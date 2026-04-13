@@ -63,21 +63,21 @@ class _FakeCssfRssSource:
         )
 
 
-def _patch_registry_and_ollama(client, monkeypatch) -> None:
+def _patch_registry_and_llm(client, monkeypatch) -> None:
     # Make sure the real class is registered before we overwrite the entry.
     import regwatch.pipeline.fetch.cssf_rss  # noqa: F401
 
     monkeypatch.setitem(REGISTRY, "cssf_rss", _FakeCssfRssSource)
 
-    fake_ollama = MagicMock()
-    fake_ollama.embed.return_value = [0.0] * 768
-    fake_ollama.chat.return_value = "[]"
-    fake_ollama.health.return_value = MagicMock(
+    fake_llm = MagicMock()
+    fake_llm.embed.return_value = [0.0] * 768
+    fake_llm.chat.return_value = "[]"
+    fake_llm.health.return_value = MagicMock(
         reachable=True,
         chat_model_available=True,
         embedding_model_available=True,
     )
-    client.app.state.ollama_client = fake_ollama
+    client.app.state.llm_client = fake_llm
 
 
 def _wait_until_idle_or_done(client, timeout: float = 5.0) -> dict:
@@ -98,7 +98,7 @@ def test_post_returns_progress_widget_and_starts_background_run(
     tmp_path: Path, monkeypatch
 ) -> None:
     client = _cssf_only_client(tmp_path, monkeypatch)
-    _patch_registry_and_ollama(client, monkeypatch)
+    _patch_registry_and_llm(client, monkeypatch)
 
     response = client.post("/run-pipeline")
     assert response.status_code == 200
@@ -125,7 +125,7 @@ def test_status_endpoint_returns_progress_widget(
     tmp_path: Path, monkeypatch
 ) -> None:
     client = _cssf_only_client(tmp_path, monkeypatch)
-    _patch_registry_and_ollama(client, monkeypatch)
+    _patch_registry_and_llm(client, monkeypatch)
 
     # Kick off a run and wait for it to settle.
     client.post("/run-pipeline")
@@ -157,7 +157,7 @@ def test_concurrent_post_does_not_start_a_second_run(
     tmp_path: Path, monkeypatch
 ) -> None:
     client = _cssf_only_client(tmp_path, monkeypatch)
-    _patch_registry_and_ollama(client, monkeypatch)
+    _patch_registry_and_llm(client, monkeypatch)
 
     # Pre-mark the progress as running so the second POST sees it.
     client.app.state.pipeline_progress.reset_for_run(total_sources=1)

@@ -8,7 +8,7 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
 from regwatch.db.models import DocumentChunk, DocumentVersion
-from regwatch.ollama.client import OllamaClient
+from regwatch.llm.client import LLMClient
 from regwatch.rag.chunker import chunk_text
 
 
@@ -16,7 +16,7 @@ def index_version(
     session: Session,
     version: DocumentVersion,
     *,
-    ollama: OllamaClient,
+    ollama: LLMClient,
     chunk_size_tokens: int,
     overlap_tokens: int,
     authorization_types: list[str],

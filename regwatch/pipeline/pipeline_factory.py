@@ -12,7 +12,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from regwatch.domain.types import ExtractedDocument, MatchedDocument, RawDocument
-from regwatch.ollama.client import OllamaClient
+from regwatch.llm.client import LLMClient
 from regwatch.pipeline.extract.html import extract_html
 from regwatch.pipeline.extract.pdf import extract_pdf
 from regwatch.pipeline.match.classify import is_ict_document, severity_for
@@ -26,9 +26,9 @@ def build_runner(
     *,
     sources: Iterable,
     archive_root: Path | str,
-    ollama_client: OllamaClient | None = None,
+    llm_client: LLMClient | None = None,
 ) -> PipelineRunner:
-    combined = CombinedMatcher(session, ollama=ollama_client)
+    combined = CombinedMatcher(session, ollama=llm_client)
 
     def _extract(raw: RawDocument) -> ExtractedDocument:
         # Test hook: prefer in-memory text over real HTTP.
