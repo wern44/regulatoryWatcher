@@ -61,7 +61,10 @@ def classify_entity_types(
                 '"INSURANCE", "PENSION_FUND". If the document applies broadly to all '
                 'financial entities, respond with ["ALL"].'
             ),
-            user=f"Which entity types does this document apply to?\n\nTitle: {title}\nText (first 2000 chars): {text[:2000]}",
+            user=(
+                f"Which entity types does this document apply to?\n\n"
+                f"Title: {title}\nText (first 2000 chars): {text[:2000]}"
+            ),
         )
         data = json.loads(reply.strip())
         if isinstance(data, list):
@@ -84,7 +87,10 @@ def generate_description(
         return None
     try:
         reply = llm.chat(
-            system="Summarize this regulatory document in 1-2 sentences for a compliance officer. Be concise.",
+            system=(
+                "Summarize this regulatory document in 1-2 sentences "
+                "for a compliance officer. Be concise."
+            ),
             user=f"{title}\n\n{text[:2000]}",
         )
         return reply.strip()[:500]

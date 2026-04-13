@@ -88,7 +88,11 @@ def add_regulation(
             issuing_authority=issuing_authority,
             lifecycle_stage=LifecycleStage.IN_FORCE,
             is_ict=False,
-            url=url or f"https://www.cssf.lu/en/Document/circular-{reference_number.lower().replace(' ', '-')}/",
+            url=(
+                url or "https://www.cssf.lu/en/Document/circular-"
+                + reference_number.lower().replace(" ", "-")
+                + "/"
+            ),
             source_of_truth="MANUAL",
             needs_review=True,
         )

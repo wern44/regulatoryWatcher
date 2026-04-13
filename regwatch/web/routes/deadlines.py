@@ -1,6 +1,8 @@
 """Deadlines route."""
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 
@@ -29,7 +31,7 @@ def deadlines(
 def dismiss_deadline(
     request: Request,
     regulation_id: int,
-    kind: DeadlineKind = Form(...),
+    kind: Annotated[DeadlineKind, Form()],
 ) -> HTMLResponse:
     with request.app.state.session_factory() as session:
         svc = DeadlineService(session)
@@ -42,7 +44,7 @@ def dismiss_deadline(
 def restore_deadline(
     request: Request,
     regulation_id: int,
-    kind: DeadlineKind = Form(...),
+    kind: Annotated[DeadlineKind, Form()],
 ) -> HTMLResponse:
     with request.app.state.session_factory() as session:
         svc = DeadlineService(session)

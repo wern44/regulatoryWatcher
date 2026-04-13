@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -24,7 +23,8 @@ _CLASSIFY_SYSTEM = (
     "1. is_ict: Is this related to ICT, cybersecurity, digital operational resilience, "
     "IT outsourcing, or similar technology risk topics? (true/false)\n"
     "2. dora_pillar: If is_ict is true, which DORA pillar? "
-    "(ICT_RISK_MGMT, INCIDENT_REPORTING, RESILIENCE_TESTING, THIRD_PARTY_RISK, INFO_SHARING, or null)\n"
+    "(ICT_RISK_MGMT, INCIDENT_REPORTING, RESILIENCE_TESTING, THIRD_PARTY_RISK, "
+    "INFO_SHARING, or null)\n"
     "3. applicable_entity_types: Which entity types does this apply to? "
     '(JSON array of: "AIFM", "CHAPTER15_MANCO", "CREDIT_INSTITUTION", "CASP", '
     '"INVESTMENT_FIRM", "INSURANCE", "PENSION_FUND", or "ALL")\n'
