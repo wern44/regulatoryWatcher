@@ -90,7 +90,9 @@ def _upsert_regulation(session: Session, reg_data: dict[str, Any]) -> None:
         reg.title = reg_data["title"]
         reg.issuing_authority = reg_data["issuing_authority"]
         reg.lifecycle_stage = LifecycleStage(reg_data["lifecycle_stage"])
-        reg.is_ict = reg_data.get("is_ict", False)
+        # Don't overwrite is_ict if it was already set by discovery or user override
+        if reg.source_of_truth == "SEED":
+            reg.is_ict = reg_data.get("is_ict", False)
         reg.url = reg_data["url"]
 
     reg.celex_id = reg_data.get("celex_id")
