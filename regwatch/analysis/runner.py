@@ -15,6 +15,7 @@ from regwatch.db.models import (
     DocumentAnalysis,
     DocumentAnalysisStatus,
     DocumentVersion,
+    ExtractionField,
     Regulation,
 )
 from regwatch.llm.client import LLMClient
@@ -142,7 +143,6 @@ class AnalysisRunner:
 
     @staticmethod
     def _collect_custom_values(s: Session, values: dict[str, object]) -> dict[str, object]:
-        from regwatch.db.models import ExtractionField
         custom_names = {
             f.name for f in s.query(ExtractionField).filter(
                 ExtractionField.is_core == False,  # noqa: E712

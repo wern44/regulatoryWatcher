@@ -59,7 +59,7 @@ class AnalysisService:
         row = (
             self._s.query(DocumentAnalysis)
             .filter_by(regulation_id=regulation_id)
-            .order_by(desc(DocumentAnalysis.created_at))
+            .order_by(desc(DocumentAnalysis.created_at), desc(DocumentAnalysis.analysis_id))
             .first()
         )
         return self._to_analysis_dto(row) if row else None
@@ -68,7 +68,7 @@ class AnalysisService:
         rows = (
             self._s.query(DocumentAnalysis)
             .filter_by(version_id=version_id)
-            .order_by(desc(DocumentAnalysis.created_at))
+            .order_by(desc(DocumentAnalysis.created_at), desc(DocumentAnalysis.analysis_id))
             .all()
         )
         return [self._to_analysis_dto(r) for r in rows]

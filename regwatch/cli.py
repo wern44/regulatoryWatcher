@@ -10,6 +10,7 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session, sessionmaker
 
 from regwatch.analysis.runner import AnalysisRunner
+from regwatch.analysis.startup import sweep_stuck_runs
 from regwatch.config import AppConfig, load_config
 from regwatch.db.engine import create_app_engine
 from regwatch.db.models import (
@@ -23,6 +24,7 @@ from regwatch.db.schema_sync import sync_schema
 from regwatch.db.seed import load_seed
 from regwatch.db.virtual_tables import create_virtual_tables
 from regwatch.llm.client import LLMClient
+from regwatch.services.analysis import AnalysisService
 
 app = typer.Typer(help="Regulatory Watcher CLI.")
 
@@ -78,7 +80,6 @@ def init_db() -> None:
     with Session(engine) as session:
         seed_core_fields(session)
         session.commit()
-    from regwatch.analysis.startup import sweep_stuck_runs
     with Session(engine) as session:
         sweep_stuck_runs(session)
         session.commit()
@@ -359,7 +360,6 @@ def analyse(
         version_ids, triggered_by="USER_CLI", llm_model=llm.chat_model,
     )
 
-    from regwatch.services.analysis import AnalysisService
     with sf() as s:
         run = AnalysisService(s).get_run(run_id)
     typer.echo(f"Run {run_id}: {run.status}")

@@ -8,9 +8,7 @@ from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from regwatch.db.models import DocumentVersion, ExtractionFieldType, PipelineRun
-from regwatch.domain.types import RawDocument
 from regwatch.llm.client import HealthStatus
-from regwatch.pipeline.extract.pdf import extract_pdf
 from regwatch.services.extraction_fields import (
     ExtractionFieldService,
     FieldNameConflictError,
@@ -242,9 +240,3 @@ def delete_extraction_field(request: Request, field_id: int) -> RedirectResponse
         except FieldProtectedError as e:
             raise HTTPException(400, str(e)) from e
     return RedirectResponse("/settings/extraction", status_code=303)
-
-
-# extract_pdf/RawDocument imports are kept for backward compatibility with the
-# original plan skeleton; they are unused in the in-file path above.
-_ = RawDocument
-_ = extract_pdf
