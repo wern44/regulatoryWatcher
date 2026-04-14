@@ -6,11 +6,39 @@ from typing import Annotated
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
-from regwatch.db.models import ChatSession
+from regwatch.db.models import ChatSession, Regulation
 from regwatch.rag.chat_service import ChatService
 from regwatch.rag.retrieval import RetrievalFilters
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+
+@router.get("/ask", response_class=HTMLResponse)
+def chat_ask_page(request: Request) -> HTMLResponse:
+    """Render the session-less ask page with a scope picker modal."""
+    templates = request.app.state.templates
+    with request.app.state.session_factory() as session:
+        regs = (
+            session.query(Regulation)
+            .order_by(Regulation.reference_number)
+            .all()
+        )
+        scope_tree = [
+            (
+                r,
+                sorted(
+                    r.versions,
+                    key=lambda v: v.version_number,
+                    reverse=True,
+                ),
+            )
+            for r in regs
+        ]
+        return templates.TemplateResponse(
+            request,
+            "chat/ask.html",
+            {"active": "chat", "scope_tree": scope_tree},
+        )
 
 
 @router.post("/ask", response_class=PlainTextResponse)

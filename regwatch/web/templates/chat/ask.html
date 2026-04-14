@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}RegWatch — Ask{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto p-6 space-y-4">
+  <a href="/chat" class="text-sm text-slate-500 hover:underline">← Sessions</a>
+  <h1 class="text-2xl font-bold">Ask</h1>
+
+  <form method="post" action="/chat/ask" id="ask-form" class="space-y-3">
+    <div class="flex items-center gap-2">
+      <span id="scope-chip" class="text-sm bg-slate-100 px-3 py-1 rounded">
+        Scope: all documents
+      </span>
+      <button type="button"
+              class="text-sm text-blue-700 underline"
+              onclick="document.getElementById('scope-modal').showModal()">
+        Change scope
+      </button>
+    </div>
+
+    <dialog id="scope-modal" class="rounded shadow-lg p-6 max-w-2xl w-full">
+      <div class="space-y-3">
+        <h3 class="font-semibold">Select versions to include</h3>
+        <p class="text-xs text-slate-500">Leave empty to search across all documents.</p>
+        <div class="max-h-96 overflow-y-auto divide-y divide-slate-100">
+          {% for reg, versions in scope_tree %}
+            <details class="py-2">
+              <summary class="cursor-pointer text-sm font-medium">
+                {{ reg.reference_number }} — {{ reg.title }}
+              </summary>
+              <ul class="mt-1 ml-4 space-y-1">
+                {% for v in versions %}
+                  <li>
+                    <label class="flex items-center gap-2 text-xs">
+                      <input type="checkbox"
+                             name="version_ids"
+                             value="{{ v.version_id }}"
+                             onchange="updateScopeChip()">
+                      <span>
+                        v{{ v.version_number }}
+                        {% if v.is_current %}
+                          <span class="ml-1 text-green-700 text-[10px]">current</span>
+                        {% endif %}
+                        — {{ v.fetched_at }}
+                      </span>
+                    </label>
+                  </li>
+                {% endfor %}
+              </ul>
+            </details>
+          {% else %}
+            <p class="text-sm text-slate-500 py-4">No regulations indexed yet.</p>
+          {% endfor %}
+        </div>
+        <div class="flex justify-end">
+          <button type="button"
+                  onclick="document.getElementById('scope-modal').close()"
+                  class="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded">
+            Done
+          </button>
+        </div>
+      </div>
+    </dialog>
+
+    <textarea name="query" required rows="3"
+              class="w-full rounded border border-slate-300 p-2 text-sm"
+              placeholder="Ask a question..."></textarea>
+    <button type="submit"
+            class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded">
+      Ask
+    </button>
+  </form>
+</div>
+
+<script>
+function updateScopeChip() {
+  const n = document.querySelectorAll('input[name="version_ids"]:checked').length;
+  document.getElementById('scope-chip').textContent =
+    n === 0 ? 'Scope: all documents' : 'Scope: ' + n + ' version(s)';
+}
+</script>
+{% endblock %}
