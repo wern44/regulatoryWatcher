@@ -15,4 +15,18 @@
     <span class="px-2 py-0.5 rounded text-xs bg-slate-100">{{ r.lifecycle_stage }}</span>
   </td>
   <td class="p-2">{% if r.is_ict %}<span class="text-purple-700 font-semibold">ICT</span>{% endif %}</td>
+  {% if status_by_reg is defined %}
+  <td class="p-2 text-xs whitespace-nowrap">
+    {% set s = status_by_reg.get(r.regulation_id, "never") %}
+    {% if s == "ok" %}
+      <span class="text-green-700">analysed</span>
+    {% elif s == "stale" %}
+      <span class="text-amber-700">re-analyse</span>
+    {% elif s == "failed" %}
+      <span class="text-red-700">failed</span>
+    {% else %}
+      <span class="text-slate-400">never</span>
+    {% endif %}
+  </td>
+  {% endif %}
 </tr>

@@ -12,11 +12,13 @@ from regwatch.analysis.runner import AnalysisRunner
 from regwatch.db.models import (
     AnalysisRun,
     AnalysisRunStatus,
+    DocumentVersion,
     LifecycleStage,
     Regulation,
     RegulationOverride,
     RegulationType,
 )
+from regwatch.services.analysis import AnalysisService
 from regwatch.services.discovery import DiscoveryService
 from regwatch.services.regulations import RegulationFilter, RegulationService
 
@@ -40,10 +42,38 @@ def catalog(
         svc = RegulationService(session)
         regs = svc.list(flt)
 
+        # Compute per-regulation analysis status for the column.
+        analysis_svc = AnalysisService(session)
+        current_by_reg: dict[int, int] = dict(
+            session.query(DocumentVersion.regulation_id, DocumentVersion.version_id)
+            .filter(DocumentVersion.is_current.is_(True))
+            .all()
+        )
+        status_by_reg: dict[int, str] = {}
+        for r in regs:
+            latest = analysis_svc.latest_for_regulation(r.regulation_id)
+            current_version_id = current_by_reg.get(r.regulation_id)
+            if latest is None:
+                status_by_reg[r.regulation_id] = "never"
+            elif latest.status == "FAILED":
+                status_by_reg[r.regulation_id] = "failed"
+            elif (
+                current_version_id is not None
+                and latest.version_id != current_version_id
+            ):
+                status_by_reg[r.regulation_id] = "stale"
+            else:
+                status_by_reg[r.regulation_id] = "ok"
+
     return templates.TemplateResponse(
         request,
         "catalog/list.html",
-        {"active": "catalog", "regulations": regs, "flt": flt},
+        {
+            "active": "catalog",
+            "regulations": regs,
+            "flt": flt,
+            "status_by_reg": status_by_reg,
+        },
     )
 
 
