@@ -137,6 +137,7 @@ class Regulation(Base):
         ForeignKey("regulation.regulation_id"), nullable=True
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    applicable_entity_types: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
     transposition_done: Mapped[bool] = mapped_column(Boolean, default=False)
     application_done: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -314,6 +315,7 @@ class DocumentChunk(Base):
     lifecycle_stage: Mapped[str] = mapped_column(String(30))
     is_ict: Mapped[bool] = mapped_column(Boolean, default=False)
     authorization_types: Mapped[list[str]] = mapped_column(JSON, default=list)
+    heading_path: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
 
     version: Mapped[DocumentVersion] = relationship(back_populates="chunks")
 
