@@ -68,3 +68,11 @@ ui:
   timezone: "Europe/Luxembourg"
   host: "127.0.0.1"
   port: 8001
+
+cssf_discovery:
+  base_url: "https://www.cssf.lu/en/regulatory-framework/"
+  request_delay_ms: 500
+  max_retries: 1
+  user_agent: "RegulatoryWatcher/1.0"
+  content_types:
+    - circulars-cssf

@@ -66,6 +66,14 @@ class AnalysisConfig(BaseModel):
     max_upload_size_mb: int = 25
 
 
+class CssfDiscoveryConfig(BaseModel):
+    base_url: str = "https://www.cssf.lu/en/regulatory-framework/"
+    request_delay_ms: int = 500
+    max_retries: int = 1
+    user_agent: str = "RegulatoryWatcher/1.0"
+    content_types: list[str] = Field(default_factory=lambda: ["circulars-cssf"])
+
+
 class AppConfig(BaseModel):
     entity: EntityConfig
     sources: dict[str, SourceConfig]
@@ -74,6 +82,7 @@ class AppConfig(BaseModel):
     paths: PathsConfig
     ui: UiConfig
     analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
+    cssf_discovery: CssfDiscoveryConfig = Field(default_factory=CssfDiscoveryConfig)
 
 
 def load_config(path: Path | str) -> AppConfig:

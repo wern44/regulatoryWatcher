@@ -92,6 +92,8 @@ def create_app() -> FastAPI:
     app.state.pipeline_progress = PipelineProgress()
     from regwatch.analysis.progress import AnalysisProgress
     app.state.analysis_progress = AnalysisProgress()
+    from regwatch.discovery.progress import CssfDiscoveryProgress
+    app.state.cssf_discovery_progress = CssfDiscoveryProgress()
     app.add_middleware(FirstStartupMiddleware)
     _STATIC_DIR.mkdir(parents=True, exist_ok=True)
     app.mount(
