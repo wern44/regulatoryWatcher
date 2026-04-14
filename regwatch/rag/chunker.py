@@ -1,7 +1,7 @@
 """Chunk long regulatory text into overlapping segments for vector indexing."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import tiktoken
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -14,6 +14,8 @@ class Chunk:
     index: int
     text: str
     token_count: int
+    embed_text: str = ""
+    heading_path: list[str] = field(default_factory=list)
 
 
 def chunk_text(
@@ -37,5 +39,8 @@ def chunk_text(
     chunks: list[Chunk] = []
     for i, piece in enumerate(pieces):
         tokens = len(_ENCODER.encode(piece))
-        chunks.append(Chunk(index=i, text=piece, token_count=tokens))
+        chunks.append(Chunk(
+            index=i, text=piece, token_count=tokens,
+            embed_text=piece, heading_path=[],
+        ))
     return chunks
