@@ -442,3 +442,51 @@ class DocumentAnalysis(Base):
         UniqueConstraint("version_id", "run_id", name="uq_document_analysis_version_run"),
         Index("ix_document_analysis_regulation_created", "regulation_id", "created_at"),
     )
+
+
+class DiscoveryRun(Base):
+    __tablename__ = "discovery_run"
+
+    run_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    status: Mapped[str] = mapped_column(String(20))  # RUNNING | SUCCESS | PARTIAL | FAILED
+    started_at: Mapped[datetime] = mapped_column(TZDateTime)
+    finished_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
+    triggered_by: Mapped[str] = mapped_column(String(20))  # USER_UI | USER_CLI | SCHEDULER
+    entity_types: Mapped[list[str]] = mapped_column(JSON, default=list)
+    mode: Mapped[str] = mapped_column(String(20))  # full | incremental
+
+    total_scraped: Mapped[int] = mapped_column(Integer, default=0)
+    new_count: Mapped[int] = mapped_column(Integer, default=0)
+    amended_count: Mapped[int] = mapped_column(Integer, default=0)
+    updated_count: Mapped[int] = mapped_column(Integer, default=0)
+    unchanged_count: Mapped[int] = mapped_column(Integer, default=0)
+    withdrawn_count: Mapped[int] = mapped_column(Integer, default=0)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    items: Mapped[list[DiscoveryRunItem]] = relationship(
+        back_populates="run", cascade="all, delete-orphan"
+    )
+
+
+class DiscoveryRunItem(Base):
+    __tablename__ = "discovery_run_item"
+
+    item_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(
+        ForeignKey("discovery_run.run_id", ondelete="CASCADE"), index=True
+    )
+    regulation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("regulation.regulation_id", ondelete="SET NULL"), nullable=True
+    )
+    reference_number: Mapped[str] = mapped_column(String(100), index=True)
+    outcome: Mapped[str] = mapped_column(
+        String(30)
+    )  # NEW | AMENDED | UPDATED_METADATA | UNCHANGED | WITHDRAWN | FAILED
+    detail_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    entity_types: Mapped[list[str]] = mapped_column(JSON, default=list)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=lambda: datetime.now(UTC))
+
+    run: Mapped[DiscoveryRun] = relationship(back_populates="items")
