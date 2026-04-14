@@ -7,10 +7,14 @@ from pathlib import Path
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from regwatch.db.models import DocumentVersion, PipelineRun
+from regwatch.db.models import DocumentVersion, ExtractionFieldType, PipelineRun
 from regwatch.domain.types import RawDocument
 from regwatch.llm.client import HealthStatus
 from regwatch.pipeline.extract.pdf import extract_pdf
+from regwatch.services.extraction_fields import (
+    ExtractionFieldService,
+    FieldProtectedError,
+)
 from regwatch.services.settings import SettingsService
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -145,6 +149,90 @@ async def upload_pdf(
         session.commit()
 
     return RedirectResponse(url="/settings", status_code=303)
+
+
+@router.get("/extraction", response_class=HTMLResponse)
+def extraction_fields_page(request: Request) -> HTMLResponse:
+    templates = request.app.state.templates
+    with request.app.state.session_factory() as session:
+        fields = ExtractionFieldService(session).list()
+    return templates.TemplateResponse(
+        request,
+        "settings/extraction.html",
+        {
+            "active": "settings",
+            "fields": fields,
+            "data_types": list(ExtractionFieldType),
+        },
+    )
+
+
+@router.post("/extraction")
+def create_extraction_field(
+    request: Request,
+    name: str = Form(...),
+    label: str = Form(...),
+    description: str = Form(...),
+    data_type: str = Form(...),
+    enum_values: str = Form(""),
+    display_order: int = Form(100),
+) -> RedirectResponse:
+    try:
+        dtype = ExtractionFieldType(data_type)
+    except ValueError as e:
+        raise HTTPException(400, f"Invalid data_type: {data_type}") from e
+    enum_list = (
+        [v.strip() for v in enum_values.split(",") if v.strip()]
+        if dtype is ExtractionFieldType.ENUM
+        else None
+    )
+    with request.app.state.session_factory() as session:
+        svc = ExtractionFieldService(session)
+        svc.create(
+            name=name,
+            label=label,
+            description=description,
+            data_type=dtype,
+            enum_values=enum_list,
+            display_order=display_order,
+        )
+        session.commit()
+    return RedirectResponse("/settings/extraction", status_code=303)
+
+
+@router.post("/extraction/{field_id}/update")
+def update_extraction_field(
+    request: Request,
+    field_id: int,
+    label: str = Form(...),
+    description: str = Form(...),
+    display_order: int = Form(100),
+    is_active: bool = Form(False),
+) -> RedirectResponse:
+    with request.app.state.session_factory() as session:
+        try:
+            ExtractionFieldService(session).update(
+                field_id,
+                label=label,
+                description=description,
+                display_order=display_order,
+                is_active=is_active,
+            )
+            session.commit()
+        except FieldProtectedError as e:
+            raise HTTPException(400, str(e)) from e
+    return RedirectResponse("/settings/extraction", status_code=303)
+
+
+@router.post("/extraction/{field_id}/delete")
+def delete_extraction_field(request: Request, field_id: int) -> RedirectResponse:
+    with request.app.state.session_factory() as session:
+        try:
+            ExtractionFieldService(session).delete(field_id)
+            session.commit()
+        except FieldProtectedError as e:
+            raise HTTPException(400, str(e)) from e
+    return RedirectResponse("/settings/extraction", status_code=303)
 
 
 # extract_pdf/RawDocument imports are kept for backward compatibility with the
