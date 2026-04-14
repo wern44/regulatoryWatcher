@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -85,10 +86,58 @@ def _is_eu_directive(reg: Regulation) -> bool:
     return len(celex) >= 6 and celex[5] == "L"
 
 
+_PREFIX_TOKENS = {
+    "circular", "directive", "regulation", "règlement", "reglement",
+    "richtlinie", "verordnung", "act", "law", "loi", "gesetz",
+    # Authority prefixes that sometimes appear ahead of the number
+    "eba", "esma", "cssf", "eu",
+}
+
+
+def _normalize_reference(raw: str) -> str:
+    """Collapse an LLM-emitted reference to a canonical matching form."""
+    # Lowercase, replace dashes/underscores with slashes, collapse whitespace
+    text = raw.strip().lower()
+    text = re.sub(r"[-_]+", "/", text)
+    text = re.sub(r"\s+", " ", text)
+    # Strip common prefix tokens at the start
+    tokens = text.split(" ")
+    while tokens and tokens[0] in _PREFIX_TOKENS:
+        tokens.pop(0)
+    text = " ".join(tokens)
+    # Collapse remaining spaces into slashes; the canonical catalog form uses '/'
+    text = text.replace(" ", "/")
+    text = re.sub(r"/+", "/", text)
+    return text.strip("/")
+
+
 def _resolve_reference(session: Session, ref: str) -> Regulation | None:
     ref = ref.strip()
-    return session.scalar(
+    if not ref:
+        return None
+    # Fast path: exact match on reference_number or celex_id
+    exact = session.scalar(
         select(Regulation).where(
             (Regulation.reference_number == ref) | (Regulation.celex_id == ref)
         )
     )
+    if exact is not None:
+        return exact
+    # Fuzzy path: normalize both sides and look for a unique match
+    target = _normalize_reference(ref)
+    if not target:
+        return None
+    matches: list[Regulation] = []
+    for reg in session.query(Regulation).all():
+        candidate = _normalize_reference(reg.reference_number)
+        if candidate and candidate == target:
+            matches.append(reg)
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        logger.warning(
+            "Ambiguous reference %r: matches %d catalog entries (%s)",
+            ref, len(matches),
+            ", ".join(r.reference_number for r in matches),
+        )
+    return None

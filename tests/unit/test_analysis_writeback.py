@@ -194,3 +194,71 @@ def test_writeback_deadline_routes_to_application_for_eu_regulation():
         # Regulation, not directive → application_date, not transposition_deadline
         assert reg.application_date == date(2025, 6, 30)
         assert reg.transposition_deadline is None
+
+
+def test_resolve_reference_fuzzy_prefix():
+    """CSSF Circular 12/552 should resolve to catalog's CSSF 12/552."""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        old, _ = _seed(s, reference="CSSF 11/498")
+        new, v = _seed(s, reference="CSSF 12/552")
+        run = _make_run(s, v.version_id)
+        a = DocumentAnalysis(
+            run_id=run.run_id, version_id=v.version_id, regulation_id=new.regulation_id,
+            status=DocumentAnalysisStatus.SUCCESS,
+            document_relationship="REPLACES",
+            relationship_target="CSSF Circular 11/498",  # fuzzy
+        )
+        s.add(a); s.flush()
+        apply_writeback(s, a)
+        s.refresh(old)
+        assert old.replaced_by_id == new.regulation_id
+
+
+def test_resolve_reference_separator_variant():
+    """CSSF 12-552 should resolve to catalog's CSSF 12/552."""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        old, _ = _seed(s, reference="CSSF 11/498")
+        new, v = _seed(s, reference="CSSF 12/552")
+        run = _make_run(s, v.version_id)
+        a = DocumentAnalysis(
+            run_id=run.run_id, version_id=v.version_id, regulation_id=new.regulation_id,
+            status=DocumentAnalysisStatus.SUCCESS,
+            document_relationship="REPLACES",
+            relationship_target="CSSF 11-498",  # dash instead of slash
+        )
+        s.add(a); s.flush()
+        apply_writeback(s, a)
+        s.refresh(old)
+        assert old.replaced_by_id == new.regulation_id
+
+
+def test_resolve_reference_ambiguous_returns_none(caplog):
+    """If normalization produces multiple candidate matches, skip + warn."""
+    import logging
+    caplog.set_level(logging.WARNING)
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        # Two catalog entries that collapse to the same normalized form
+        old_a, _ = _seed(s, reference="CSSF 11/498")
+        old_b, _ = _seed(s, reference="Circular 11/498")  # crafted collision
+        new, v = _seed(s, reference="CSSF 12/552")
+        run = _make_run(s, v.version_id)
+        a = DocumentAnalysis(
+            run_id=run.run_id, version_id=v.version_id, regulation_id=new.regulation_id,
+            status=DocumentAnalysisStatus.SUCCESS,
+            document_relationship="REPLACES",
+            relationship_target="11/498",  # ambiguous between both
+        )
+        s.add(a); s.flush()
+        apply_writeback(s, a)
+        s.refresh(old_a)
+        s.refresh(old_b)
+        # Neither should be touched
+        assert old_a.replaced_by_id is None
+        assert old_b.replaced_by_id is None
+        assert any("ambig" in r.message.lower() or "multiple" in r.message.lower() for r in caplog.records)
