@@ -532,6 +532,45 @@ class CssfDiscoveryService:
             s.commit()
         return counts
 
+    def reclassify_cssf_web_ict(self) -> dict[str, int]:
+        """Re-run the heuristic on every CSSF_WEB regulation and update is_ict.
+
+        Respects :class:`RegulationOverride` (``SET_ICT`` / ``UNSET_ICT`` rows
+        are never touched). Unlike :meth:`backfill_titles_and_descriptions`,
+        this can flip ``is_ict`` ``True -> False`` when the heuristic no
+        longer matches (e.g. after a keyword-list change that tightened
+        word-boundary rules). Returns counts of flipped rows.
+        """
+        counts = {
+            "set_true": 0,
+            "set_false": 0,
+            "skipped_override": 0,
+            "unchanged": 0,
+        }
+        with self._sf() as s:
+            regs = s.scalars(
+                select(Regulation).where(Regulation.source_of_truth == "CSSF_WEB")
+            ).all()
+            for reg in regs:
+                override = self._ict_override(s, reg.reference_number)
+                if override is not None:
+                    counts["skipped_override"] += 1
+                    continue
+                new_is_ict = is_ict_by_heuristic(
+                    title=reg.title or "",
+                    description="",  # we don't persist description; rely on title
+                )
+                if new_is_ict == reg.is_ict:
+                    counts["unchanged"] += 1
+                    continue
+                reg.is_ict = new_is_ict
+                # If the heuristic is unsure (False), route to LLM via
+                # needs_review; if it is now True, no further review needed.
+                reg.needs_review = not new_is_ict
+                counts["set_true" if new_is_ict else "set_false"] += 1
+            s.commit()
+        return counts
+
     def _write_item(
         self, run_id: int, regulation_id: int | None,
         reference_number: str, outcome: str,

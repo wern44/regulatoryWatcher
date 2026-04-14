@@ -32,19 +32,43 @@ from regwatch.discovery.heuristics import is_ict_by_heuristic
         ),
         ("AIFM reporting obligations under Article 24 AIFMD", "Quarterly reporting.", False),
         ("", "", False),
-        # Word-boundary weakness check: "rice" shouldn't match "ict" (substring would)
-        # We intentionally USE substring match; document that this is lenient.
-        # Commented out — substring IS the intended behaviour:
-        # ("Price circular", "", False),
     ],
 )
 def test_is_ict_by_heuristic(title, description, expected):
     assert is_ict_by_heuristic(title=title, description=description) is expected
 
 
-def test_keyword_list_is_frozenset_and_lowercase():
-    from regwatch.discovery.heuristics import _ICT_KEYWORDS
-    assert isinstance(_ICT_KEYWORDS, frozenset)
-    for kw in _ICT_KEYWORDS:
-        assert kw == kw.lower(), f"keyword not lowercase: {kw!r}"
-        assert kw.strip() == kw, f"keyword has whitespace: {kw!r}"
+@pytest.mark.parametrize(
+    "title,description,expected",
+    [
+        # Regressions from live run — these must NOT match anymore
+        ("FATF statements concerning high-risk jurisdictions", "", False),
+        ("Adoption of the EBA Guidelines on internal controls", "", False),
+        ("Restrictive measures against Iran", "", False),
+        ("Conflict of interest disclosures", "", False),
+        ("Districts within the CSSF remit", "", False),
+        # True positives must still pass
+        ("ICT risk management", "", True),
+        ("IT governance framework", "", True),
+        ("Regulation on cybersecurity", "", True),
+        ("DORA transposition", "", True),
+        ("Cloud services guidelines", "", True),
+        ("NIS2 transposition", "", True),
+        # Phrases still substring-match
+        ("Outsourcing arrangements", "", True),
+        ("Third-party risk management", "", True),
+        ("Operational resilience framework", "", True),
+        ("", "Rules on business continuity.", True),
+    ],
+)
+def test_is_ict_by_heuristic_word_boundary(title, description, expected):
+    assert is_ict_by_heuristic(title=title, description=description) is expected
+
+
+def test_keyword_buckets_are_lowercase_frozensets():
+    from regwatch.discovery.heuristics import _PHRASE_KEYWORDS, _WORD_BOUNDARY_KEYWORDS
+    for bucket in (_WORD_BOUNDARY_KEYWORDS, _PHRASE_KEYWORDS):
+        assert isinstance(bucket, frozenset)
+        for kw in bucket:
+            assert kw == kw.lower()
+            assert kw.strip() == kw

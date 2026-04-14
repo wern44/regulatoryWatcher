@@ -223,6 +223,61 @@ def test_backfill_skips_rows_with_unparseable_reference(tmp_path):
     assert counts["updated"] == 0
 
 
+def test_reclassify_flips_false_positive(tmp_path):
+    sf = _setup_db(tmp_path)
+    with sf() as s:
+        # Pre-insert a CSSF_WEB row flagged is_ict=True under the OLD heuristic
+        # that the new word-boundary heuristic rejects ("ict" in "jurisdictions").
+        s.add(Regulation(
+            type=RegulationType.CSSF_CIRCULAR,
+            reference_number="CSSF 22/822",
+            title="Circular CSSF 22/822 FATF statements concerning high-risk jurisdictions",
+            issuing_authority="CSSF",
+            lifecycle_stage=LifecycleStage.IN_FORCE,
+            is_ict=True,  # stale flag from the old substring heuristic
+            needs_review=False,
+            url="",
+            source_of_truth="CSSF_WEB",
+        ))
+        s.commit()
+
+    counts = _svc(sf).reclassify_cssf_web_ict()
+    assert counts["set_false"] == 1
+
+    with sf() as s:
+        reg = s.query(Regulation).filter_by(reference_number="CSSF 22/822").one()
+        assert reg.is_ict is False
+        assert reg.needs_review is True  # routed to LLM classify
+
+
+def test_reclassify_respects_override(tmp_path):
+    sf = _setup_db(tmp_path)
+    with sf() as s:
+        s.add(Regulation(
+            type=RegulationType.CSSF_CIRCULAR,
+            reference_number="CSSF 22/822",
+            title="FATF statements concerning high-risk jurisdictions",
+            issuing_authority="CSSF",
+            lifecycle_stage=LifecycleStage.IN_FORCE,
+            is_ict=True,
+            needs_review=False,
+            url="",
+            source_of_truth="CSSF_WEB",
+        ))
+        s.add(RegulationOverride(
+            reference_number="CSSF 22/822",
+            action="SET_ICT",
+            created_at=datetime.now(UTC),
+        ))
+        s.commit()
+
+    counts = _svc(sf).reclassify_cssf_web_ict()
+    assert counts["skipped_override"] == 1
+    with sf() as s:
+        reg = s.query(Regulation).filter_by(reference_number="CSSF 22/822").one()
+        assert reg.is_ict is True  # override respected
+
+
 def test_all_failed_when_listing_500s(tmp_path):
     sf = _setup_db(tmp_path)
 

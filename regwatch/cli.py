@@ -311,6 +311,16 @@ def discover_cssf(
             ),
         ),
     ] = False,
+    reclassify: Annotated[
+        bool,
+        typer.Option(
+            "--reclassify",
+            help=(
+                "Re-run ICT heuristic on all CSSF_WEB rows (can flip "
+                "True->False); respects RegulationOverride."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Discover CSSF circulars for the configured authorizations."""
     cfg = _get_config()
@@ -324,6 +334,15 @@ def discover_cssf(
         )
         counts = service.backfill_titles_and_descriptions(triggered_by="USER_CLI")
         typer.echo(f"Backfill complete: {counts}")
+        return
+
+    if reclassify:
+        service = CssfDiscoveryService(
+            session_factory=sf,
+            config=cfg.cssf_discovery,
+        )
+        counts = service.reclassify_cssf_web_ict()
+        typer.echo(f"Reclassification complete: {counts}")
         return
 
     # Resolve entity types
