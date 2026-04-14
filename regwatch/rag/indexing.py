@@ -53,6 +53,7 @@ def index_version(
             lifecycle_stage=reg.lifecycle_stage.value,
             is_ict=reg.is_ict,
             authorization_types=authorization_types,
+            heading_path=c.heading_path,
         )
         session.add(row)
         chunk_rows.append(row)
@@ -60,7 +61,7 @@ def index_version(
     session.flush()
 
     for row, c in zip(chunk_rows, chunks, strict=True):
-        vector = ollama.embed(c.text)
+        vector = ollama.embed(c.embed_text)
         packed = _pack_f32(vector)
         session.execute(
             sa_text(
