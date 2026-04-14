@@ -367,3 +367,75 @@ class ExtractionField(Base):
     canonical_field: Mapped[str | None] = mapped_column(String(100), nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, default=100)
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=lambda: datetime.now(UTC))
+
+
+class AnalysisRunStatus(StrEnum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    SUCCESS = "SUCCESS"
+    PARTIAL = "PARTIAL"
+    FAILED = "FAILED"
+
+
+class DocumentAnalysisStatus(StrEnum):
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+
+
+class AnalysisRun(Base):
+    __tablename__ = "analysis_run"
+
+    run_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    status: Mapped[AnalysisRunStatus] = mapped_column(Enum(AnalysisRunStatus))
+    queued_version_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
+    started_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
+    llm_model: Mapped[str] = mapped_column(String(100))
+    triggered_by: Mapped[str] = mapped_column(String(20))  # USER_UI | USER_CLI
+    error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    analyses: Mapped[list[DocumentAnalysis]] = relationship(
+        back_populates="run", cascade="all, delete-orphan"
+    )
+
+
+class DocumentAnalysis(Base):
+    __tablename__ = "document_analysis"
+
+    analysis_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("analysis_run.run_id", ondelete="CASCADE"))
+    version_id: Mapped[int] = mapped_column(
+        ForeignKey("document_version.version_id", ondelete="CASCADE"), index=True
+    )
+    regulation_id: Mapped[int] = mapped_column(
+        ForeignKey("regulation.regulation_id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[DocumentAnalysisStatus] = mapped_column(Enum(DocumentAnalysisStatus))
+    error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_llm_output: Mapped[str | None] = mapped_column(Text, nullable=True)
+    was_truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    main_points: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scope_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    applicable_entity_types: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    is_ict: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    ict_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_relevant_to_managed_entities: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    relevance_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    implementation_deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
+    deadline_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    document_relationship: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    relationship_target: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    keywords: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+
+    custom_fields: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    llm_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    token_usage: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=lambda: datetime.now(UTC))
+
+    run: Mapped[AnalysisRun] = relationship(back_populates="analyses")
+
+    __table_args__ = (
+        UniqueConstraint("version_id", "run_id", name="uq_document_analysis_version_run"),
+        Index("ix_document_analysis_regulation_created", "regulation_id", "created_at"),
+    )
