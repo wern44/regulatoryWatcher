@@ -28,6 +28,7 @@ dependencies = [
   "python-slugify>=8.0",
   "tiktoken>=0.7",
   "python-multipart>=0.0.9",
+  "beautifulsoup4>=4.12",
 ]
 
 [project.optional-dependencies]
