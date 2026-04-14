@@ -24,6 +24,7 @@ class RetrievalFilters:
     authorization_type: str | None = None  # "AIFM" or "CHAPTER15_MANCO"
     lifecycle_stages: list[str] = field(default_factory=list)
     regulation_ids: list[int] = field(default_factory=list)
+    version_ids: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -51,7 +52,7 @@ class HybridRetriever:
         query_vec = self._ollama.embed(query)
         # Pull a larger candidate pool from each retriever, then fuse and filter
         # client-side during hydration.
-        pool = max(self._top_k * 3, 30)
+        pool = max(self._top_k * (6 if filters.version_ids else 3), 30)
         dense_hits = self._dense_search(query_vec, k=pool)
         sparse_hits = self._sparse_search(query, k=pool)
         fused_ids = _reciprocal_rank_fusion(dense_hits, sparse_hits, k=60)
@@ -117,6 +118,8 @@ class HybridRetriever:
                 filters.regulation_ids
                 and r.regulation_id not in filters.regulation_ids
             ):
+                continue
+            if filters.version_ids and r.version_id not in filters.version_ids:
                 continue
             if filters.authorization_type is not None and (
                 not r.authorization_types
