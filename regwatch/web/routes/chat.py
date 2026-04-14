@@ -1,14 +1,30 @@
 """Chat routes."""
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from regwatch.db.models import ChatSession
 from regwatch.rag.chat_service import ChatService
 from regwatch.rag.retrieval import RetrievalFilters
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+
+@router.post("/ask", response_class=PlainTextResponse)
+def chat_ask_adhoc(
+    request: Request,
+    query: Annotated[str, Form(...)],
+    version_ids: Annotated[list[int] | None, Form()] = None,
+) -> PlainTextResponse:
+    """Session-less scoped Q&A: returns the generated answer as plain text."""
+    filters = RetrievalFilters(version_ids=list(version_ids or []))
+    with request.app.state.session_factory() as session:
+        svc = ChatService(session, ollama=request.app.state.llm_client)
+        answer = svc.ask_adhoc(query, filters=filters)
+    return PlainTextResponse(answer)
 
 
 @router.get("", response_class=HTMLResponse)

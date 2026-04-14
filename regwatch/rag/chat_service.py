@@ -32,11 +32,18 @@ class ChatService:
         self._session.flush()
         return row
 
-    def ask(self, session_id: int, question: str) -> ChatMessage:
+    def ask(
+        self,
+        session_id: int,
+        question: str,
+        *,
+        filters: RetrievalFilters | None = None,
+    ) -> ChatMessage:
         cs = self._session.get(ChatSession, session_id)
         if cs is None:
             raise ValueError(f"ChatSession {session_id} not found")
-        filters = RetrievalFilters(**cs.filters)
+        if filters is None:
+            filters = RetrievalFilters(**cs.filters)
 
         self._session.add(
             ChatMessage(
@@ -64,6 +71,21 @@ class ChatService:
         self._session.add(assistant)
         self._session.flush()
         return assistant
+
+    def ask_adhoc(
+        self,
+        question: str,
+        *,
+        filters: RetrievalFilters | None = None,
+    ) -> str:
+        """Session-less Q&A: retrieve + generate without persisting messages."""
+        if filters is None:
+            filters = RetrievalFilters()
+        chunks = self._retriever.retrieve(question, filters)
+        result = generate_answer(
+            self._ollama, AnswerRequest(question=question, chunks=chunks)
+        )
+        return result.answer
 
     def list_messages(self, session_id: int) -> list[ChatMessage]:
         return (
