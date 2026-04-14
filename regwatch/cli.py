@@ -69,6 +69,7 @@ def _build_llm(cfg: AppConfig) -> LLMClient:
         base_url=cfg.llm.base_url,
         chat_model=chat_model,
         embedding_model=embedding_model,
+        timeout=float(cfg.analysis.llm_call_timeout_seconds),
     )
 
 
@@ -203,6 +204,7 @@ def run_pipeline(
         base_url=cfg.llm.base_url,
         chat_model=cfg.llm.chat_model or "",
         embedding_model=cfg.llm.embedding_model or "",
+        timeout=float(cfg.analysis.llm_call_timeout_seconds),
     )
 
     engine = create_app_engine(cfg.paths.db_file)

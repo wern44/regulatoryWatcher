@@ -87,6 +87,7 @@ def create_app() -> FastAPI:
         base_url=config.llm.base_url,
         chat_model=chat_model,
         embedding_model=embedding_model,
+        timeout=float(config.analysis.llm_call_timeout_seconds),
     )
     app.state.pipeline_progress = PipelineProgress()
     from regwatch.analysis.progress import AnalysisProgress
