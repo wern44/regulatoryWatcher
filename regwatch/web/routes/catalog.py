@@ -156,36 +156,47 @@ def add_regulation(
 @router.post("/catalog/analyse")
 def catalog_analyse(
     request: Request,
-    regulation_ids: Annotated[list[int], Form()],
+    regulation_ids: Annotated[list[int] | None, Form()] = None,
+    version_ids: Annotated[list[int] | None, Form()] = None,
 ) -> RedirectResponse:
     sf = request.app.state.session_factory
     cfg = request.app.state.config
     llm = request.app.state.llm_client
     progress = request.app.state.analysis_progress
 
-    # Resolve selected regulations -> their current version_ids.
-    with sf() as s:
-        regs = (
-            s.query(Regulation)
-            .filter(Regulation.regulation_id.in_(regulation_ids))
-            .all()
-        )
-        version_ids: list[int] = []
-        for r in regs:
-            v = next((v for v in r.versions if v.is_current), None)
-            if v is not None:
-                version_ids.append(v.version_id)
-    if not version_ids:
-        return RedirectResponse(
-            "/catalog?error=no-current-versions", status_code=303
-        )
+    regulation_ids = regulation_ids or []
+    version_ids = version_ids or []
+
+    if not regulation_ids and not version_ids:
+        return RedirectResponse("/catalog?error=no-selection", status_code=303)
+
+    # If version_ids supplied, use them directly. Otherwise resolve
+    # regulation_ids -> current versions.
+    if version_ids:
+        resolved_version_ids: list[int] = list(version_ids)
+    else:
+        with sf() as s:
+            regs = (
+                s.query(Regulation)
+                .filter(Regulation.regulation_id.in_(regulation_ids))
+                .all()
+            )
+            resolved_version_ids = []
+            for r in regs:
+                v = next((v for v in r.versions if v.is_current), None)
+                if v is not None:
+                    resolved_version_ids.append(v.version_id)
+        if not resolved_version_ids:
+            return RedirectResponse(
+                "/catalog?error=no-current-versions", status_code=303
+            )
 
     # Create the AnalysisRun row synchronously so we can redirect to its page.
     llm_model = getattr(llm, "chat_model", "") or ""
     with sf() as s:
         run = AnalysisRun(
             status=AnalysisRunStatus.RUNNING,
-            queued_version_ids=version_ids,
+            queued_version_ids=resolved_version_ids,
             started_at=datetime.now(UTC),
             llm_model=llm_model,
             triggered_by="USER_UI",
@@ -205,10 +216,10 @@ def catalog_analyse(
     )
 
     def _worker() -> None:
-        progress.start(run_id, len(version_ids))
+        progress.start(run_id, len(resolved_version_ids))
         try:
             runner.queue_and_run(
-                version_ids,
+                resolved_version_ids,
                 triggered_by="USER_UI",
                 llm_model=llm_model,
                 existing_run_id=run_id,

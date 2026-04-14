@@ -13,7 +13,7 @@
         <p class="text-slate-500 mt-2">
           <em>Not analysed yet.</em>
           <form method="post" action="/catalog/analyse" class="inline">
-            <input type="hidden" name="regulation_ids" value="{{ regulation.regulation_id }}">
+            <input type="hidden" name="version_ids" value="{{ v.version_id }}">
             <button type="submit"
                     class="ml-2 px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded">
               Analyse this version
@@ -77,7 +77,7 @@
 
         <div class="mt-3 flex gap-2">
           <form method="post" action="/catalog/analyse" class="inline">
-            <input type="hidden" name="regulation_ids" value="{{ regulation.regulation_id }}">
+            <input type="hidden" name="version_ids" value="{{ v.version_id }}">
             <button type="submit"
                     class="px-3 py-1 border border-slate-300 hover:bg-slate-50 text-sm rounded">
               Re-analyse this version
