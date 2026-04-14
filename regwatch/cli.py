@@ -1,13 +1,15 @@
 """Typer-based CLI for the Regulatory Watcher."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Annotated
 
 import typer
 from sqlalchemy import text as sa_text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
+from regwatch.analysis.runner import AnalysisRunner
 from regwatch.config import AppConfig, load_config
 from regwatch.db.engine import create_app_engine
 from regwatch.db.models import (
@@ -20,6 +22,7 @@ from regwatch.db.models import (
 from regwatch.db.schema_sync import sync_schema
 from regwatch.db.seed import load_seed
 from regwatch.db.virtual_tables import create_virtual_tables
+from regwatch.llm.client import LLMClient
 
 app = typer.Typer(help="Regulatory Watcher CLI.")
 
@@ -34,10 +37,12 @@ _state = _State()
 @app.callback()
 def main(
     config: Annotated[
-        Path, typer.Option("--config", "-c", help="Path to config.yaml")
-    ] = Path("config.yaml"),
+        Path | None, typer.Option("--config", "-c", help="Path to config.yaml")
+    ] = None,
 ) -> None:
     """Load the configuration for the invoked command."""
+    if config is None:
+        config = Path(os.environ.get("REGWATCH_CONFIG", "config.yaml"))
     _state.config = load_config(config)
 
 
@@ -45,6 +50,20 @@ def _get_config() -> AppConfig:
     if _state.config is None:
         raise RuntimeError("Config not loaded")
     return _state.config
+
+
+def _build_llm(cfg: AppConfig) -> LLMClient:
+    from regwatch.services.settings import SettingsService
+    engine = create_app_engine(cfg.paths.db_file)
+    with Session(engine) as s:
+        svc = SettingsService(s)
+        chat_model = svc.get("chat_model") or cfg.llm.chat_model or ""
+        embedding_model = svc.get("embedding_model") or cfg.llm.embedding_model or ""
+    return LLMClient(
+        base_url=cfg.llm.base_url,
+        chat_model=chat_model,
+        embedding_model=embedding_model,
+    )
 
 
 @app.command("init-db")
@@ -288,3 +307,58 @@ def dump_pipeline_runs(
             f"{r.run_id:>6} {r.status:<10} {r.events_created:>6} "
             f"{r.versions_created:>8}  {r.started_at}"
         )
+
+
+@app.command("analyse")
+def analyse(
+    reg: Annotated[
+        list[str] | None, typer.Option("--reg", help="Regulation reference (repeatable)")
+    ] = None,
+    all_ict: Annotated[
+        bool, typer.Option("--all-ict", help="Analyse every ICT regulation")
+    ] = False,
+) -> None:
+    """Run analysis against selected regulations' current versions."""
+    cfg = _get_config()
+    engine = create_app_engine(cfg.paths.db_file)
+    sf = sessionmaker(engine, expire_on_commit=False)
+
+    with sf() as s:
+        q = s.query(Regulation)
+        if all_ict:
+            q = q.filter(Regulation.is_ict == True)  # noqa: E712
+        elif reg:
+            q = q.filter(Regulation.reference_number.in_(reg))
+        else:
+            typer.echo("Specify --reg REF (repeatable) or --all-ict")
+            raise typer.Exit(code=2)
+        regs = q.all()
+        if not regs:
+            typer.echo("No matching regulations.")
+            raise typer.Exit(code=1)
+        version_ids: list[int] = []
+        for r in regs:
+            v = next((v for v in r.versions if v.is_current), None)
+            if v is not None:
+                version_ids.append(v.version_id)
+            else:
+                typer.echo(f"[!] {r.reference_number} has no current version; skipping")
+        if not version_ids:
+            typer.echo("Nothing to analyse.")
+            raise typer.Exit(code=1)
+
+    llm = _build_llm(cfg)
+    runner = AnalysisRunner(
+        session_factory=sf, llm=llm, max_document_tokens=cfg.analysis.max_document_tokens,
+    )
+    run_id = runner.queue_and_run(
+        version_ids, triggered_by="USER_CLI", llm_model=llm.chat_model,
+    )
+
+    from regwatch.services.analysis import AnalysisService
+    with sf() as s:
+        run = AnalysisService(s).get_run(run_id)
+    typer.echo(f"Run {run_id}: {run.status}")
+    for a in run.analyses:
+        mark = "[OK]" if a.status == "SUCCESS" else "[X]"
+        typer.echo(f"  {mark} version {a.version_id}: {a.error_detail or 'ok'}")
