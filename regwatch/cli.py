@@ -25,6 +25,7 @@ from regwatch.db.seed import load_seed
 from regwatch.db.virtual_tables import create_virtual_tables
 from regwatch.llm.client import LLMClient
 from regwatch.services.analysis import AnalysisService
+from regwatch.services.upload import UploadRejectedError, save_upload
 
 app = typer.Typer(help="Regulatory Watcher CLI.")
 
@@ -366,3 +367,46 @@ def analyse(
     for a in run.analyses:
         mark = "[OK]" if a.status == "SUCCESS" else "[X]"
         typer.echo(f"  {mark} version {a.version_id}: {a.error_detail or 'ok'}")
+
+
+@app.command("upload")
+def upload(
+    ref: Annotated[
+        str, typer.Option("--reg", help="Regulation reference (e.g. 'CSSF 12/552')")
+    ],
+    file_path: Annotated[
+        Path, typer.Argument(help="Local PDF or HTML file to upload")
+    ],
+) -> None:
+    """Upload a document manually and create a new version for the regulation."""
+    cfg = _get_config()
+    engine = create_app_engine(cfg.paths.db_file)
+    sf = sessionmaker(engine, expire_on_commit=False)
+
+    if not file_path.exists() or not file_path.is_file():
+        typer.echo(f"File not found: {file_path}")
+        raise typer.Exit(code=2)
+
+    uploads_dir_str = getattr(cfg.paths, "uploads_dir", None) or cfg.paths.pdf_archive
+    uploads_dir = Path(uploads_dir_str)
+    data = file_path.read_bytes()
+
+    with sf() as s:
+        reg = s.query(Regulation).filter_by(reference_number=ref).one_or_none()
+        if reg is None:
+            typer.echo(f"No regulation with reference '{ref}'")
+            raise typer.Exit(code=1)
+        try:
+            result = save_upload(
+                session=s, regulation_id=reg.regulation_id,
+                filename=file_path.name, data=data,
+                uploads_dir=uploads_dir,
+                max_size_mb=cfg.analysis.max_upload_size_mb,
+            )
+        except UploadRejectedError as e:
+            typer.echo(f"Upload rejected: {e}")
+            raise typer.Exit(code=1) from e
+        s.commit()
+
+    status = "new" if result.created else "deduped (same content already exists)"
+    typer.echo(f"Uploaded -> version {result.version_id} ({status})")
