@@ -108,6 +108,69 @@ def test_list_circulars_uses_mock_transport_and_stops_on_empty_page() -> None:
     assert any("/page/2/" in str(c.url) for c in calls)
 
 
+def test_list_circulars_skips_pages_with_no_cssf_matches() -> None:
+    """Pagination must NOT terminate when a page has items but none match _REF_RE.
+
+    Only an empty ``<li.library-element>`` list (raw_count=0) ends the walk.
+    The real CSSF listing interleaves EU regulations (rejected by ``_REF_RE``)
+    with CSSF circulars, so a page of 20 non-CSSF rows is expected and the
+    walker must continue past it.
+    """
+    cssf_row = '''
+    <li class="library-element">
+      <div class="library-element__title">
+        <a href="/en/Document/circular-cssf-25-893/">Circular CSSF 25/893</a>
+      </div>
+      <div class="library-element__subtitle">Scope text</div>
+      <div class="date--published">Published on 10.10.2025</div>
+    </li>
+    '''
+    non_cssf_row = '''
+    <li class="library-element">
+      <div class="library-element__title">
+        <a href="/en/Document/foo/">Council Implementing Regulation (EU) 2025/1476</a>
+      </div>
+      <div class="library-element__subtitle">Scope</div>
+      <div class="date--published">Published on 18.07.2025</div>
+    </li>
+    '''
+
+    page1 = f"<html><body><ul>{cssf_row}</ul></body></html>"
+    page2 = f"<html><body><ul>{non_cssf_row * 5}</ul></body></html>"  # 5 non-CSSF
+    page3 = (
+        "<html><body><ul>"
+        f"{cssf_row.replace('25/893', '25/880').replace('cssf-25-893', 'cssf-25-880')}"
+        "</ul></body></html>"
+    )
+    page4 = "<html><body><ul></ul></body></html>"  # no library-element items
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if "/page/2/" in path:
+            return httpx.Response(200, text=page2)
+        if "/page/3/" in path:
+            return httpx.Response(200, text=page3)
+        if "/page/4/" in path:
+            return httpx.Response(200, text=page4)
+        if path.rstrip("/").endswith("/regulatory-framework"):
+            return httpx.Response(200, text=page1)
+        return httpx.Response(200, text=page4)
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.Client(transport=transport, base_url="https://www.cssf.lu")
+
+    rows = list(list_circulars("aifms", client=client, request_delay_ms=0))
+    refs = [r.reference_number for r in rows]
+    assert "CSSF 25/893" in refs, (
+        f"expected page 1 CSSF row to yield; got {refs}"
+    )
+    assert "CSSF 25/880" in refs, (
+        "expected page 3 CSSF row to yield "
+        f"(page 2's non-CSSF content must NOT stop pagination); got {refs}"
+    )
+    assert len(rows) == 2
+
+
 def test_list_circulars_respects_max_pages() -> None:
     page1_html = (FIXTURES / "listing_aifms_page1.html").read_text(encoding="utf-8")
     calls: list[httpx.Request] = []

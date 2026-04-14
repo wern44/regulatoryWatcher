@@ -32,6 +32,12 @@ _CSSF_ENTITY_SLUGS: dict[str, str] = {
     "aifms": "aifms",
 }
 
+# Sanity cap for listing pagination. The real CSSF listing has well under 100
+# pages per facet; this only guards against the site ever returning HTTP 200
+# on a non-existent page with a non-empty body (which would otherwise loop
+# forever since we key the stop condition on ``raw_count == 0``).
+_MAX_PAGES_HARD_CEILING = 200
+
 
 class CssfScraperError(RuntimeError):
     """Base class for scraper errors."""
@@ -92,7 +98,13 @@ def list_circulars(
     max_pages: int | None = None,
     request_delay_ms: int = 500,
 ) -> Iterator[CircularListingRow]:
-    """Paginate the filtered listing. Stops when a page yields zero rows.
+    """Paginate the filtered listing. Stops when a page has no ``li.library-element``.
+
+    The CSSF listing interleaves CSSF circulars with EU regulations (which
+    ``_REF_RE`` deliberately rejects). A page with 20 non-CSSF items is still
+    a valid page and we must keep walking: pagination only terminates when
+    the raw ``<li.library-element>`` count on the page is 0 (i.e. the page
+    truly does not exist / has no items).
 
     Args:
         entity_slug: FacetWP entity_type slug, e.g. ``"aifms"``.
@@ -113,6 +125,13 @@ def list_circulars(
         while True:
             if max_pages is not None and page > max_pages:
                 return
+            if page > _MAX_PAGES_HARD_CEILING:
+                logger.warning(
+                    "Hit hard pagination ceiling (%d) at slug=%s",
+                    _MAX_PAGES_HARD_CEILING,
+                    entity_slug,
+                )
+                return
             url = _build_listing_url(page)
             resp = client.get(
                 url,
@@ -122,10 +141,11 @@ def list_circulars(
                 },
             )
             resp.raise_for_status()
-            rows = list(_parse_listing_html(resp.text))
-            if not rows:
+            matched, raw_count = _parse_listing_page(resp.text)
+            if raw_count == 0:
+                # No ``li.library-element`` items at all -> past the last page.
                 return
-            yield from rows
+            yield from matched
             page += 1
             if request_delay_ms > 0:
                 time.sleep(request_delay_ms / 1000)
@@ -140,8 +160,14 @@ def _build_listing_url(page: int) -> str:
     return urljoin(_BASE_URL, f"{_LISTING_PATH}page/{page}/")
 
 
-def _parse_listing_html(html: str) -> Iterator[CircularListingRow]:
-    """Extract listing rows from the ``li.library-element`` markup.
+def _parse_listing_page(html: str) -> tuple[list[CircularListingRow], int]:
+    """Return ``(matched_rows, raw_row_count)`` for a listing page.
+
+    ``raw_row_count`` is the number of ``<li.library-element>`` items present
+    in the page regardless of whether they match ``_REF_RE``. A ``raw_count``
+    of 0 means "no page / past the end" and is the only signal that should
+    terminate pagination. ``matched_rows`` is the subset that produced a
+    parseable ``CircularListingRow`` (i.e. had a CSSF/IML reference number).
 
     The listing DOM looks like::
 
@@ -161,10 +187,19 @@ def _parse_listing_html(html: str) -> Iterator[CircularListingRow]:
         </li>
     """
     soup = BeautifulSoup(html, "html.parser")
-    for item in soup.select("li.library-element"):
+    raw_items = soup.select("li.library-element")
+    matched: list[CircularListingRow] = []
+    for item in raw_items:
         row = _row_from_library_element(item)
         if row is not None:
-            yield row
+            matched.append(row)
+    return matched, len(raw_items)
+
+
+def _parse_listing_html(html: str) -> Iterator[CircularListingRow]:
+    """Back-compat wrapper: yield only the matched rows for a listing page."""
+    matched, _ = _parse_listing_page(html)
+    yield from matched
 
 
 def _row_from_library_element(item: Tag) -> CircularListingRow | None:
