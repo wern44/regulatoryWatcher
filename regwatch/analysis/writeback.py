@@ -23,7 +23,10 @@ def apply_writeback(session: Session, analysis: DocumentAnalysis) -> None:
     """Update canonical fields on the parent Regulation from this analysis.
 
     Only runs when this analysis belongs to the regulation's CURRENT version.
-    Respects RegulationOverride rows for is_ict.
+    For is_ict: DEFERS to RegulationOverride — if any SET_ICT/UNSET_ICT/EXCLUDE
+    override exists, writeback does not touch is_ict. Applying the positive
+    action of a SET_ICT/UNSET_ICT override is the responsibility of
+    DiscoveryService.classify_catalog, not writeback.
     """
     current_version_id = session.scalar(
         select(DocumentVersion.version_id)
@@ -74,7 +77,12 @@ def apply_writeback(session: Session, analysis: DocumentAnalysis) -> None:
 
 
 def _is_eu_directive(reg: Regulation) -> bool:
-    return reg.type is RegulationType.EU_DIRECTIVE or bool(reg.celex_id)
+    if reg.type is RegulationType.EU_DIRECTIVE:
+        return True
+    celex = reg.celex_id or ""
+    # CELEX sector/type: e.g. 32022L2556 — the single letter after the year
+    # marks the document type. 'L' = directive.
+    return len(celex) >= 6 and celex[5] == "L"
 
 
 def _resolve_reference(session: Session, ref: str) -> Regulation | None:

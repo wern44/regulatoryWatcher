@@ -133,3 +133,64 @@ def test_writeback_deadline_routes_to_transposition_for_eu_directive():
         s.refresh(reg)
         assert reg.transposition_deadline == date(2025, 1, 17)
         assert reg.application_date is None
+
+
+def test_writeback_noop_when_version_not_current():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        reg, v1 = _seed(s)  # v1 is_current=True
+        # Add a new current version v2; v1 becomes non-current
+        v1.is_current = False
+        v2 = DocumentVersion(
+            regulation_id=reg.regulation_id, version_number=2, is_current=True,
+            fetched_at=datetime.now(UTC), source_url="x", content_hash="h2",
+        )
+        s.add(v2); s.flush()
+
+        run = _make_run(s, v1.version_id)
+        # Analysis is for OLD version v1 — should NOT mutate regulation
+        a = DocumentAnalysis(
+            run_id=run.run_id, version_id=v1.version_id, regulation_id=reg.regulation_id,
+            status=DocumentAnalysisStatus.SUCCESS,
+            is_ict=True,  # would flip if writeback proceeded
+            applicable_entity_types=["AIFM"],
+        )
+        s.add(a); s.flush()
+        apply_writeback(s, a)
+        s.refresh(reg)
+        # is_ict was seeded to False and should remain False (non-current version is no-op)
+        assert reg.is_ict is False
+        assert reg.applicable_entity_types is None
+
+
+def test_writeback_deadline_routes_to_application_for_eu_regulation():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        # EU_REGULATION with CELEX sector "R" (not directive); MiCA example
+        reg = Regulation(
+            type=RegulationType.EU_REGULATION, reference_number="MiCA",
+            celex_id="32023R1114", title="MiCA", issuing_authority="EU",
+            lifecycle_stage=LifecycleStage.IN_FORCE, url="x", source_of_truth="SEED",
+            is_ict=False,
+        )
+        s.add(reg); s.flush()
+        v = DocumentVersion(
+            regulation_id=reg.regulation_id, version_number=1, is_current=True,
+            fetched_at=datetime.now(UTC), source_url="x", content_hash="h",
+        )
+        s.add(v); s.flush()
+        run = _make_run(s, v.version_id)
+        a = DocumentAnalysis(
+            run_id=run.run_id, version_id=v.version_id, regulation_id=reg.regulation_id,
+            status=DocumentAnalysisStatus.SUCCESS,
+            implementation_deadline=date(2025, 6, 30),
+            document_relationship="NEW",
+        )
+        s.add(a); s.flush()
+        apply_writeback(s, a)
+        s.refresh(reg)
+        # Regulation, not directive → application_date, not transposition_deadline
+        assert reg.application_date == date(2025, 6, 30)
+        assert reg.transposition_deadline is None
