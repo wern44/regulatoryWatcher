@@ -27,6 +27,15 @@ class AnswerResponse:
     cited_chunk_ids: list[int]
 
 
+def _format_context_block(chunk: RetrievedChunk) -> str:
+    """Format a chunk for the LLM prompt, including heading_path if present."""
+    header = f"[chunk {chunk.chunk_id} | regulation_id={chunk.regulation_id}"
+    if chunk.heading_path:
+        header += f" | {' > '.join(chunk.heading_path)}"
+    header += "]"
+    return f"{header}\n{chunk.text}"
+
+
 def generate_answer(
     ollama: LLMClient, request: AnswerRequest
 ) -> AnswerResponse:
@@ -37,8 +46,7 @@ def generate_answer(
         )
 
     context_blocks = "\n\n".join(
-        f"[chunk {c.chunk_id} | regulation_id={c.regulation_id}]\n{c.text}"
-        for c in request.chunks
+        _format_context_block(c) for c in request.chunks
     )
     user_prompt = f"Context:\n{context_blocks}\n\nQuestion: {request.question}"
 

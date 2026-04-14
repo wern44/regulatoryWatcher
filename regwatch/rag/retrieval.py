@@ -36,6 +36,7 @@ class RetrievedChunk:
     is_ict: bool
     lifecycle_stage: str
     score: float
+    heading_path: list[str] = field(default_factory=list)
 
 
 class HybridRetriever:
@@ -135,6 +136,7 @@ class HybridRetriever:
                     is_ict=r.is_ict,
                     lifecycle_stage=r.lifecycle_stage,
                     score=1.0 / (i + 1),
+                    heading_path=list(r.heading_path or []),
                 )
             )
         return out

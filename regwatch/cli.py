@@ -287,31 +287,59 @@ def reindex(
 @app.command("chat")
 def chat(
     question: Annotated[str, typer.Argument(help="Your question")],
+    version: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--version",
+            help="Limit retrieval to a document_version id (repeatable)",
+        ),
+    ] = None,
+    reg: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--reg",
+            help=(
+                "Limit retrieval to a regulation reference; expands to its "
+                "CURRENT version (repeatable)"
+            ),
+        ),
+    ] = None,
 ) -> None:
     """One-shot RAG: retrieve and answer a single question."""
     cfg = _get_config()
-    from regwatch.llm.client import LLMClient
-    from regwatch.rag.answer import AnswerRequest, generate_answer
-    from regwatch.rag.retrieval import HybridRetriever, RetrievalFilters
+    from regwatch.rag.chat_service import ChatService
+    from regwatch.rag.retrieval import RetrievalFilters
 
-    llm = LLMClient(
-        base_url=cfg.llm.base_url,
-        chat_model=cfg.llm.chat_model or "",
-        embedding_model=cfg.llm.embedding_model or "",
-    )
+    llm = _build_llm(cfg)
 
     engine = create_app_engine(cfg.paths.db_file)
-    with Session(engine) as session:
-        retriever = HybridRetriever(
-            session, ollama=llm, top_k=cfg.rag.retrieval_k
-        )
-        chunks = retriever.retrieve(question, RetrievalFilters())
-        result = generate_answer(
-            llm, AnswerRequest(question=question, chunks=chunks)
-        )
-    typer.echo(result.answer)
-    if result.cited_chunk_ids:
-        typer.echo(f"\nCited chunks: {result.cited_chunk_ids}")
+    sf = sessionmaker(engine, expire_on_commit=False)
+
+    version_ids: list[int] = list(version or [])
+    if reg:
+        with sf() as s:
+            regs = (
+                s.query(Regulation)
+                .filter(Regulation.reference_number.in_(reg))
+                .all()
+            )
+            missing = set(reg) - {r.reference_number for r in regs}
+            for ref in missing:
+                typer.echo(f"[!] no regulation with reference '{ref}'; skipping")
+            for r in regs:
+                current = next((v for v in r.versions if v.is_current), None)
+                if current is not None:
+                    version_ids.append(current.version_id)
+                else:
+                    typer.echo(
+                        f"[!] {r.reference_number} has no current version; skipping"
+                    )
+
+    filters = RetrievalFilters(version_ids=version_ids)
+    with sf() as session:
+        svc = ChatService(session, ollama=llm, top_k=cfg.rag.retrieval_k)
+        answer = svc.ask_adhoc(question, filters=filters)
+    typer.echo(answer)
 
 
 @app.command("dump-pipeline-runs")

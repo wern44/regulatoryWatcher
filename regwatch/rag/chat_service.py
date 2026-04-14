@@ -6,10 +6,10 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from regwatch.db.models import ChatMessage, ChatSession
+from regwatch.db.models import ChatMessage, ChatSession, Regulation
 from regwatch.llm.client import LLMClient
 from regwatch.rag.answer import AnswerRequest, generate_answer
-from regwatch.rag.retrieval import HybridRetriever, RetrievalFilters
+from regwatch.rag.retrieval import HybridRetriever, RetrievalFilters, RetrievedChunk
 
 
 class ChatService:
@@ -85,7 +85,35 @@ class ChatService:
         result = generate_answer(
             self._ollama, AnswerRequest(question=question, chunks=chunks)
         )
+        trailer = self._render_citations(chunks)
+        if trailer:
+            return f"{result.answer}\n\n{trailer}"
         return result.answer
+
+    def _render_citations(self, chunks: list[RetrievedChunk]) -> str:
+        """Format citations as "[ref · heading_path]" joined by spaces."""
+        if not chunks:
+            return ""
+        reg_ids = {c.regulation_id for c in chunks}
+        refs: dict[int, str] = {
+            r.regulation_id: r.reference_number
+            for r in (
+                self._session.query(Regulation)
+                .filter(Regulation.regulation_id.in_(reg_ids))
+                .all()
+            )
+        }
+        labels: list[str] = []
+        seen: set[str] = set()
+        for c in chunks:
+            ref = refs.get(c.regulation_id, f"reg {c.regulation_id}")
+            path = " > ".join(c.heading_path or [])
+            label = f"[{ref} · {path}]" if path else f"[{ref}]"
+            if label in seen:
+                continue
+            seen.add(label)
+            labels.append(label)
+        return "Sources: " + " ".join(labels)
 
     def list_messages(self, session_id: int) -> list[ChatMessage]:
         return (
