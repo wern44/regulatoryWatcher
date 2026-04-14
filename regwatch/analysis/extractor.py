@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -12,6 +11,7 @@ from sqlalchemy.orm import Session
 from regwatch.analysis.fields import build_prompt_schema, coerce_value
 from regwatch.db.models import ExtractionField
 from regwatch.llm.client import LLMClient
+from regwatch.llm.json_parser import extract_json_object
 
 logger = logging.getLogger(__name__)
 
@@ -42,20 +42,6 @@ def _truncate_to_budget(text: str, max_tokens: int) -> tuple[str, bool]:
     return text[:budget], True
 
 
-def _extract_json_object(raw: str) -> dict[str, Any]:
-    """Tolerant JSON parser - accepts ```json fenced blocks and leading prose."""
-    stripped = raw.strip()
-    if stripped.startswith("```"):
-        stripped = re.sub(r"^```(?:json)?\s*", "", stripped)
-        stripped = re.sub(r"\s*```$", "", stripped)
-    # Locate the first '{' and matching last '}' to tolerate trailing text.
-    first = stripped.find("{")
-    last = stripped.rfind("}")
-    if first == -1 or last <= first:
-        raise json.JSONDecodeError("no JSON object found", stripped, 0)
-    return json.loads(stripped[first : last + 1])
-
-
 def extract(
     *,
     session: Session,
@@ -82,7 +68,7 @@ def extract(
         )
 
     try:
-        data = _extract_json_object(raw)
+        data = extract_json_object(raw)
     except json.JSONDecodeError as e:
         return ExtractionResult(
             status="FAILED", raw_output=raw, was_truncated=was_truncated,

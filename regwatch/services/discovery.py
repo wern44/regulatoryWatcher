@@ -1,7 +1,6 @@
 """LLM-driven regulation discovery and classification."""
 from __future__ import annotations
 
-import json
 import logging
 
 from sqlalchemy.orm import Session
@@ -14,6 +13,7 @@ from regwatch.db.models import (
     RegulationType,
 )
 from regwatch.llm.client import LLMClient
+from regwatch.llm.json_parser import extract_json_array, extract_json_object
 
 logger = logging.getLogger(__name__)
 
@@ -116,11 +116,11 @@ class DiscoveryService:
                 system=_DISCOVER_SYSTEM.format(auth_types=", ".join(auth_types)),
                 user=f"Current catalog:\n{catalog_text}",
             )
-            data = json.loads(reply.strip())
+            data = extract_json_array(reply)
             if not isinstance(data, list):
                 return 0
-        except Exception:  # noqa: BLE001
-            logger.warning("LLM regulation discovery failed")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("LLM regulation discovery failed: %s", e)
             return 0
 
         added = 0
@@ -172,9 +172,9 @@ class DiscoveryService:
             ),
         )
         try:
-            return json.loads(reply.strip())
-        except json.JSONDecodeError:
-            logger.warning("LLM returned invalid JSON for %s", reg.reference_number)
+            return extract_json_object(reply)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("LLM classification failed for %s: %s", reg.reference_number, e)
             return None
 
     def _load_overrides(self) -> dict[tuple[str, str], RegulationOverride]:

@@ -267,3 +267,50 @@ def test_classify_handles_llm_error(tmp_path: Path) -> None:
     svc = DiscoveryService(session, llm=llm)
     count = svc.classify_catalog()
     assert count == 0  # No updates when LLM fails
+
+
+def test_discover_missing_parses_fenced_json_reply(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    llm = MagicMock()
+    llm.chat.return_value = '''```json
+[
+  {"reference_number": "CSSF 20/750",
+   "title": "ICT and security risk management",
+   "issuing_authority": "CSSF",
+   "type": "CSSF_CIRCULAR",
+   "is_ict": true,
+   "dora_pillar": "ICT_RISK_MGMT",
+   "url": "https://example.test/20-750"}
+]
+```'''
+    svc = DiscoveryService(session, llm=llm)
+    added = svc.discover_missing(["AIFM"])
+    session.commit()
+    assert added == 1
+    reg = session.query(Regulation).filter_by(reference_number="CSSF 20/750").one()
+    assert reg.is_ict is True
+    assert reg.source_of_truth == "DISCOVERED"
+
+
+def test_discover_missing_tolerates_prose_before_json(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    llm = MagicMock()
+    llm.chat.return_value = (
+        "Here are some missing regulations you might want to include:\n"
+        '[{"reference_number": "CSSF 22/806", "title": "Outsourcing arrangements", '
+        '"issuing_authority": "CSSF", "type": "CSSF_CIRCULAR", "is_ict": true}]'
+    )
+    svc = DiscoveryService(session, llm=llm)
+    added = svc.discover_missing(["AIFM"])
+    session.commit()
+    assert added == 1
+
+
+def test_discover_missing_returns_0_on_unparseable_reply(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    llm = MagicMock()
+    llm.chat.return_value = "I'm not sure, please ask again."
+    svc = DiscoveryService(session, llm=llm)
+    added = svc.discover_missing(["AIFM"])
+    session.commit()
+    assert added == 0
