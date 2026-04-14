@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from regwatch.db.models import DocumentVersion, Regulation
+from regwatch.services.analysis import AnalysisService
 from regwatch.services.updates import UpdateService
 
 router = APIRouter()
@@ -29,6 +30,12 @@ def regulation_detail(request: Request, regulation_id: int) -> HTMLResponse:
         )
         latest_diff = current.change_summary if current is not None else None
 
+        analysis_svc = AnalysisService(session)
+        analyses_by_version = {
+            v.version_id: analysis_svc.analyses_for_version(v.version_id)
+            for v in versions
+        }
+
         payload = {
             "active": "catalog",
             "regulation": {
@@ -41,6 +48,7 @@ def regulation_detail(request: Request, regulation_id: int) -> HTMLResponse:
             },
             "versions": versions,
             "latest_diff": latest_diff,
+            "analyses_by_version": analyses_by_version,
         }
 
     return templates.TemplateResponse(

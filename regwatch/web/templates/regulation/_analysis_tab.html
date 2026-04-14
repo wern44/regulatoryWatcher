@@ -1,0 +1,130 @@
+<section id="analysis" class="space-y-4 mt-6">
+  <h2 class="text-xl font-bold border-b pb-1">Analysis</h2>
+  {% for v in versions %}
+    {% set analyses = analyses_by_version.get(v.version_id, []) %}
+    <div class="rounded border border-slate-200 bg-white p-4">
+      <h3 class="font-semibold text-lg">
+        Version {{ v.version_number }}
+        {% if v.is_current %}
+          <span class="ml-2 text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">current</span>
+        {% endif %}
+      </h3>
+      {% if not analyses %}
+        <p class="text-slate-500 mt-2">
+          <em>Not analysed yet.</em>
+          <form method="post" action="/catalog/analyse" class="inline">
+            <input type="hidden" name="regulation_ids" value="{{ regulation.regulation_id }}">
+            <button type="submit"
+                    class="ml-2 px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded">
+              Analyse this version
+            </button>
+          </form>
+        </p>
+      {% else %}
+        {% set latest = analyses[0] %}
+        <dl class="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-x-4 gap-y-2 mt-3 text-sm">
+          <dt class="font-semibold">Main points</dt>
+          <dd><pre class="whitespace-pre-wrap font-sans">{{ latest.main_points or "—" }}</pre></dd>
+
+          <dt class="font-semibold">Scope</dt>
+          <dd>{{ latest.scope_description or "—" }}</dd>
+
+          <dt class="font-semibold">Applicable entity types</dt>
+          <dd>{{ (latest.applicable_entity_types or [])|join(", ") or "—" }}</dd>
+
+          <dt class="font-semibold">ICT / DORA</dt>
+          <dd>
+            {{ latest.is_ict if latest.is_ict is not none else "—" }}
+            {% if latest.ict_reasoning %} — {{ latest.ict_reasoning }}{% endif %}
+          </dd>
+
+          <dt class="font-semibold">Relevant to our entities</dt>
+          <dd>
+            {{ latest.is_relevant_to_managed_entities if latest.is_relevant_to_managed_entities is not none else "—" }}
+            {% if latest.relevance_reasoning %} — {{ latest.relevance_reasoning }}{% endif %}
+          </dd>
+
+          <dt class="font-semibold">Implementation deadline</dt>
+          <dd>
+            {{ latest.implementation_deadline or "—" }}
+            {% if latest.deadline_description %} ({{ latest.deadline_description }}){% endif %}
+          </dd>
+
+          <dt class="font-semibold">Relationship</dt>
+          <dd>
+            {{ latest.document_relationship or "—" }}
+            {% if latest.relationship_target %} &rarr; {{ latest.relationship_target }}{% endif %}
+          </dd>
+
+          <dt class="font-semibold">Keywords</dt>
+          <dd>{{ (latest.keywords or [])|join(", ") or "—" }}</dd>
+
+          {% for k, val in latest.custom_fields.items() %}
+            <dt class="font-semibold">{{ k }}</dt>
+            <dd>{{ val }}</dd>
+          {% endfor %}
+        </dl>
+
+        <p class="mt-3 text-xs text-slate-500">
+          Analysed {{ latest.created_at }}
+          {% if latest.was_truncated %} &middot; document text was truncated{% endif %}
+          {% if latest.coercion_errors %}
+            &middot; <span class="text-amber-700">
+              {{ latest.coercion_errors|length }} field(s) could not be parsed
+            </span>
+          {% endif %}
+        </p>
+
+        <div class="mt-3 flex gap-2">
+          <form method="post" action="/catalog/analyse" class="inline">
+            <input type="hidden" name="regulation_ids" value="{{ regulation.regulation_id }}">
+            <button type="submit"
+                    class="px-3 py-1 border border-slate-300 hover:bg-slate-50 text-sm rounded">
+              Re-analyse this version
+            </button>
+          </form>
+        </div>
+
+        {% if latest.raw_llm_output %}
+          <details class="mt-3">
+            <summary class="cursor-pointer text-sm text-slate-600">Raw LLM output</summary>
+            <pre class="text-xs bg-slate-50 p-2 mt-2 rounded overflow-x-auto">{{ latest.raw_llm_output }}</pre>
+          </details>
+        {% endif %}
+
+        {% if latest.coercion_errors %}
+          <details class="mt-2">
+            <summary class="cursor-pointer text-sm text-amber-700">
+              Fields that failed to parse
+            </summary>
+            <ul class="text-xs mt-2 space-y-1">
+              {% for field_name, msg in latest.coercion_errors.items() %}
+                <li><code>{{ field_name }}</code>: {{ msg }}</li>
+              {% endfor %}
+            </ul>
+          </details>
+        {% endif %}
+
+        {% if analyses|length > 1 %}
+          <details class="mt-3">
+            <summary class="cursor-pointer text-sm text-slate-600">
+              Previous runs ({{ analyses|length - 1 }})
+            </summary>
+            <ul class="text-xs mt-2 space-y-1">
+              {% for a in analyses[1:] %}
+                <li>
+                  {{ a.created_at }}
+                  &mdash;
+                  <span class="{% if a.status == 'SUCCESS' %}text-green-700{% else %}text-red-700{% endif %}">
+                    {{ a.status }}
+                  </span>
+                  {% if a.error_detail %} &mdash; {{ a.error_detail }}{% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          </details>
+        {% endif %}
+      {% endif %}
+    </div>
+  {% endfor %}
+</section>
