@@ -281,8 +281,18 @@ def _parse_detail_html(html: str, *, source_url: str) -> CircularDetail:
     # --- Related documents: amends / supersedes refs ---------------------
     amends_refs, supersedes_refs = _extract_related_refs(soup, reference_number)
 
-    # --- Description: pull the first substantive paragraph if available --
-    description = _extract_description(soup)
+    # --- Description: prefer the dedicated subtitle block, else fall back
+    # to the first substantive paragraph of the body content.
+    description = ""
+    subtitle_el = soup.select_one(".single-news__subtitle")
+    if subtitle_el is not None:
+        p = subtitle_el.find("p")
+        description = (
+            p.get_text(" ", strip=True) if p is not None
+            else subtitle_el.get_text(" ", strip=True)
+        )
+    if not description:
+        description = _extract_description(soup)
 
     return CircularDetail(
         reference_number=reference_number,

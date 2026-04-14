@@ -301,11 +301,30 @@ def discover_cssf(
             help="AIFM or CHAPTER15_MANCO (repeatable; default: all configured)",
         ),
     ] = None,
+    backfill: Annotated[
+        bool,
+        typer.Option(
+            "--backfill",
+            help=(
+                "Re-fetch detail pages for all CSSF_WEB rows, update titles "
+                "and re-run the ICT heuristic against the subtitle."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Discover CSSF circulars for the configured authorizations."""
     cfg = _get_config()
     engine = create_app_engine(cfg.paths.db_file)
     sf = sessionmaker(engine, expire_on_commit=False)
+
+    if backfill:
+        service = CssfDiscoveryService(
+            session_factory=sf,
+            config=cfg.cssf_discovery,
+        )
+        counts = service.backfill_titles_and_descriptions(triggered_by="USER_CLI")
+        typer.echo(f"Backfill complete: {counts}")
+        return
 
     # Resolve entity types
     if entity:

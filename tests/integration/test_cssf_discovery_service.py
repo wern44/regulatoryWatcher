@@ -162,6 +162,67 @@ def test_stubs_created_for_unknown_amendment_targets(tmp_path):
         assert stubs, "expected stub rows for amendment targets"
 
 
+def test_backfill_updates_titles_and_tags_ict(tmp_path):
+    sf = _setup_db(tmp_path)
+    # Pre-seed a CSSF_WEB regulation with a bare title + no ICT flag.
+    with sf() as s:
+        s.add(Regulation(
+            type=RegulationType.CSSF_CIRCULAR,
+            reference_number="CSSF 22/806",
+            title="Circular CSSF 22/806",  # bare ref only
+            issuing_authority="CSSF",
+            lifecycle_stage=LifecycleStage.IN_FORCE,
+            is_ict=False,
+            needs_review=True,
+            url="https://example.test/",
+            source_of_truth="CSSF_WEB",
+        ))
+        s.commit()
+
+    client = httpx.Client(
+        transport=_mock_transport(), base_url="https://www.cssf.lu",
+    )
+    counts = _svc(sf, client=client).backfill_titles_and_descriptions()
+    assert counts["updated"] >= 1
+    # "outsourcing" is in the ICT keyword list, so the heuristic should trip.
+    assert counts["newly_ict"] >= 1
+
+    with sf() as s:
+        reg = s.query(Regulation).filter_by(reference_number="CSSF 22/806").one()
+        assert "outsourcing" in reg.title.lower()
+        assert reg.is_ict is True
+        assert reg.needs_review is False
+
+    # Idempotency: a second pass should not double-update the title.
+    counts2 = _svc(sf, client=client).backfill_titles_and_descriptions()
+    assert counts2["updated"] == 0
+    assert counts2["newly_ict"] == 0
+
+
+def test_backfill_skips_rows_with_unparseable_reference(tmp_path):
+    sf = _setup_db(tmp_path)
+    with sf() as s:
+        s.add(Regulation(
+            type=RegulationType.CSSF_CIRCULAR,
+            reference_number="NOT A REAL REF",
+            title="Bare",
+            issuing_authority="CSSF",
+            lifecycle_stage=LifecycleStage.IN_FORCE,
+            is_ict=False,
+            needs_review=True,
+            url="",
+            source_of_truth="CSSF_WEB",
+        ))
+        s.commit()
+
+    client = httpx.Client(
+        transport=_mock_transport(), base_url="https://www.cssf.lu",
+    )
+    counts = _svc(sf, client=client).backfill_titles_and_descriptions()
+    assert counts["no_url"] == 1
+    assert counts["updated"] == 0
+
+
 def test_all_failed_when_listing_500s(tmp_path):
     sf = _setup_db(tmp_path)
 

@@ -141,6 +141,107 @@ def test_fetch_circular_detail_raises_on_404() -> None:
         )
 
 
+def test_parse_detail_extracts_subtitle_description() -> None:
+    html = (FIXTURES / "detail_22_806.html").read_text(encoding="utf-8")
+    d = _parse_detail_html(
+        html, source_url="https://example/circular-cssf-22-806/"
+    )
+    assert d.description == "on outsourcing arrangements", (
+        f"got: {d.description!r}"
+    )
+
+
+def test_compose_title_prefers_informative_clean_title() -> None:
+    from datetime import date
+
+    from regwatch.discovery.cssf_scraper import (
+        CircularDetail,
+        CircularListingRow,
+    )
+    from regwatch.services.cssf_discovery import _compose_title
+
+    detail = CircularDetail(
+        reference_number="CSSF 22/806",
+        clean_title="Circular CSSF 22/806 on outsourcing arrangements",
+        description="on outsourcing arrangements",
+        published_at=date(2022, 4, 22),
+    )
+    listing = CircularListingRow(
+        reference_number="CSSF 22/806",
+        raw_title="x",
+        description="y",
+        publication_date=date(2022, 4, 22),
+        detail_url="u",
+    )
+    assert _compose_title(detail, listing) == (
+        "Circular CSSF 22/806 on outsourcing arrangements"
+    )
+
+
+def test_compose_title_combines_ref_and_subtitle_when_clean_title_is_bare() -> None:
+    from datetime import date
+
+    from regwatch.discovery.cssf_scraper import (
+        CircularDetail,
+        CircularListingRow,
+    )
+    from regwatch.services.cssf_discovery import _compose_title
+
+    detail = CircularDetail(
+        reference_number="CSSF 25/896",
+        clean_title="Circular CSSF 25/896",  # bare -- just the ref
+        description="on residential real estate reporting",
+        published_at=date(2025, 5, 1),
+    )
+    listing = CircularListingRow(
+        reference_number="CSSF 25/896",
+        raw_title="",
+        description="",
+        publication_date=date(2025, 5, 1),
+        detail_url="u",
+    )
+    assert _compose_title(detail, listing) == (
+        "Circular CSSF 25/896 on residential real estate reporting"
+    )
+
+
+def test_compose_title_handles_missing_reference_number() -> None:
+    from datetime import date
+
+    from regwatch.discovery.cssf_scraper import (
+        CircularDetail,
+        CircularListingRow,
+    )
+    from regwatch.services.cssf_discovery import _compose_title
+
+    detail = CircularDetail(
+        reference_number="",
+        clean_title="",
+        description="",
+        published_at=date(2025, 1, 1),
+    )
+    listing = CircularListingRow(
+        reference_number="",
+        raw_title="Some fallback title",
+        description="",
+        publication_date=date(2025, 1, 1),
+        detail_url="u",
+    )
+    # No ref -> should return the listing title without any "Circular " prefix.
+    assert _compose_title(detail, listing) == "Some fallback title"
+
+
+def test_slug_from_reference() -> None:
+    from regwatch.services.cssf_discovery import _slug_from_reference
+
+    assert _slug_from_reference("CSSF 22/806") == "circular-cssf-22-806"
+    assert (
+        _slug_from_reference("CSSF-CPDI 26/50") == "circular-cssf-cpdi-26-50"
+    )
+    assert _slug_from_reference("garbage") is None
+    assert _slug_from_reference("") is None
+
+
 def test_fetch_circular_detail_parses_body() -> None:
     html = (FIXTURES / "detail_22_806.html").read_text(encoding="utf-8")
 

@@ -8,6 +8,7 @@ RegulationOverride precedence.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Literal
@@ -43,6 +44,59 @@ CSSF_ENTITY_SLUGS: dict[AuthorizationType, str] = {
     AuthorizationType.AIFM: "aifms",
     AuthorizationType.CHAPTER15_MANCO: "management-companies-chapter-15",
 }
+
+
+def _compose_title(detail: CircularDetail, listing: CircularListingRow) -> str:
+    """Build the stored regulation title.
+
+    Prefer the detail page's ``clean_title`` when it carries information
+    beyond the bare reference number; otherwise combine the reference with
+    the subtitle (``detail.description``) so downstream pages read
+    "Circular CSSF 25/896 on outsourcing arrangements" instead of the
+    bare ref.
+    """
+    bare = (detail.clean_title or "").strip()
+    ref = (detail.reference_number or "").strip()
+    listing_raw = (listing.raw_title or "").strip()
+
+    bare_is_just_ref = False
+    if ref:
+        bare_is_just_ref = (
+            bare.lower() == f"circular {ref}".lower()
+            or bare == ref
+        )
+
+    if bare and not bare_is_just_ref:
+        return bare
+
+    subtitle = (detail.description or "").strip()
+    if ref and subtitle:
+        return f"Circular {ref} {subtitle}".strip()
+    # No reference number available: fall back to the listing title without
+    # prefixing so we don't end up with "Circular  <title>".
+    if not ref:
+        if bare:
+            return bare
+        if listing_raw:
+            return listing_raw
+        return ""
+    if listing_raw and listing_raw != bare:
+        return listing_raw
+    return bare or ref
+
+
+def _slug_from_reference(ref: str) -> str | None:
+    """Convert ``'CSSF 22/806'`` to ``'circular-cssf-22-806'``.
+
+    Returns ``None`` if the reference does not fit the expected shape
+    (``<PREFIX> NN/NNN`` where ``PREFIX`` is ``CSSF``, ``CSSF-SOMETHING``,
+    ``IML`` or similar).
+    """
+    m = re.match(r"^([A-Z]+(?:-[A-Z]+)?)\s+(\d+)/(\d+)$", ref.strip())
+    if not m:
+        return None
+    prefix = m.group(1).lower()
+    return f"circular-{prefix}-{m.group(2)}-{m.group(3)}"
 
 
 class CssfDiscoveryService:
@@ -265,18 +319,21 @@ class CssfDiscoveryService:
         self, s: Session, detail: CircularDetail,
         listing: CircularListingRow, auth_type: AuthorizationType,
     ) -> Regulation:
+        composed_title = _compose_title(detail, listing)
         override = self._ict_override(s, detail.reference_number)
         if override == "SET_ICT":
             is_ict = True
         elif override == "UNSET_ICT":
             is_ict = False
         else:
-            is_ict = is_ict_by_heuristic(title=detail.clean_title, description=detail.description)
+            is_ict = is_ict_by_heuristic(
+                title=composed_title, description=detail.description
+            )
 
         reg = Regulation(
             type=RegulationType.CSSF_CIRCULAR,
             reference_number=detail.reference_number,
-            title=detail.clean_title or listing.raw_title,
+            title=composed_title,
             issuing_authority="CSSF",
             publication_date=detail.published_at or listing.publication_date,
             lifecycle_stage=LifecycleStage.IN_FORCE,
@@ -398,7 +455,7 @@ class CssfDiscoveryService:
         self, reg: Regulation, detail: CircularDetail, listing: CircularListingRow
     ) -> bool:
         changed = False
-        new_title = detail.clean_title or listing.raw_title
+        new_title = _compose_title(detail, listing)
         if new_title and reg.title != new_title and reg.source_of_truth != "SEED":
             reg.title = new_title
             changed = True
@@ -407,6 +464,73 @@ class CssfDiscoveryService:
             reg.url = new_url
             changed = True
         return changed
+
+    def backfill_titles_and_descriptions(
+        self,
+        *,
+        triggered_by: str = "USER_CLI",
+    ) -> dict[str, int]:
+        """Re-fetch detail pages for every ``CSSF_WEB`` regulation.
+
+        Updates the stored title using :func:`_compose_title` (which now
+        incorporates the subtitle) and re-runs the ICT heuristic against
+        the richer text. Skips rows whose ``source_of_truth`` is ``SEED``
+        (consistent with :meth:`_refresh_metadata`) and rows without a
+        derivable detail URL. Returns a counts dict with keys
+        ``updated``, ``newly_ict``, ``failed``, ``no_url``.
+        """
+        del triggered_by  # reserved for future DiscoveryRun bookkeeping
+        counts = {"updated": 0, "newly_ict": 0, "failed": 0, "no_url": 0}
+        with self._sf() as s:
+            regs = s.scalars(
+                select(Regulation).where(Regulation.source_of_truth == "CSSF_WEB")
+            ).all()
+            for reg in regs:
+                slug = _slug_from_reference(reg.reference_number)
+                if slug is None:
+                    counts["no_url"] += 1
+                    continue
+                detail_url = f"https://www.cssf.lu/en/Document/{slug}/"
+                try:
+                    detail = fetch_circular_detail(
+                        detail_url,
+                        client=self._client,
+                        request_delay_ms=self._config.request_delay_ms,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(
+                        "backfill failed for %s: %s", reg.reference_number, e
+                    )
+                    counts["failed"] += 1
+                    continue
+
+                fake_listing = CircularListingRow(
+                    reference_number=detail.reference_number,
+                    raw_title=detail.clean_title,
+                    description=detail.description,
+                    publication_date=detail.published_at,
+                    detail_url=detail_url,
+                )
+                new_title = _compose_title(detail, fake_listing)
+                if (
+                    new_title
+                    and reg.title != new_title
+                    and reg.source_of_truth != "SEED"
+                ):
+                    reg.title = new_title
+                    counts["updated"] += 1
+
+                if not reg.is_ict:
+                    override = self._ict_override(s, reg.reference_number)
+                    if override is None and is_ict_by_heuristic(
+                        title=new_title or reg.title or "",
+                        description=detail.description,
+                    ):
+                        reg.is_ict = True
+                        reg.needs_review = False
+                        counts["newly_ict"] += 1
+            s.commit()
+        return counts
 
     def _write_item(
         self, run_id: int, regulation_id: int | None,
