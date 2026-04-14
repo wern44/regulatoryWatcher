@@ -321,6 +321,16 @@ def discover_cssf(
             ),
         ),
     ] = False,
+    enrich_stubs: Annotated[
+        bool,
+        typer.Option(
+            "--enrich-stubs",
+            help=(
+                "Fetch detail pages for CSSF_STUB rows and promote them to "
+                "CSSF_WEB"
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Discover CSSF circulars for the configured authorizations."""
     cfg = _get_config()
@@ -343,6 +353,15 @@ def discover_cssf(
         )
         counts = service.reclassify_cssf_web_ict()
         typer.echo(f"Reclassification complete: {counts}")
+        return
+
+    if enrich_stubs:
+        service = CssfDiscoveryService(
+            session_factory=sf,
+            config=cfg.cssf_discovery,
+        )
+        counts = service.enrich_stubs()
+        typer.echo(f"Stub enrichment complete: {counts}")
         return
 
     # Resolve entity types

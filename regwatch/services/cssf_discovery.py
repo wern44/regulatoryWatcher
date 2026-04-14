@@ -46,6 +46,31 @@ CSSF_ENTITY_SLUGS: dict[AuthorizationType, str] = {
 }
 
 
+# CSSF detail pages list applicable entities using these human-readable labels.
+# Map them to our AuthorizationType enum. Substring-match: the label as it appears
+# in ``.entities-list li`` on CSSF detail pages is checked for any of these prefixes.
+CSSF_ENTITY_LABEL_TO_AUTH: dict[str, AuthorizationType] = {
+    "Alternative investment fund manager": AuthorizationType.AIFM,
+    "AIFM": AuthorizationType.AIFM,
+    "UCITS management company": AuthorizationType.CHAPTER15_MANCO,
+    "UCITS management companies": AuthorizationType.CHAPTER15_MANCO,
+    "Chapter 15 management company": AuthorizationType.CHAPTER15_MANCO,
+    "Chapter 15 management companies": AuthorizationType.CHAPTER15_MANCO,
+    "Management company": AuthorizationType.CHAPTER15_MANCO,
+}
+
+
+def _map_labels_to_auth_types(labels: list[str]) -> list[AuthorizationType]:
+    """Match each label against the known prefix mapping; return deduped list."""
+    found: set[AuthorizationType] = set()
+    for label in labels:
+        norm = label.strip()
+        for prefix, auth in CSSF_ENTITY_LABEL_TO_AUTH.items():
+            if prefix.lower() in norm.lower():
+                found.add(auth)
+    return sorted(found, key=lambda a: a.value)
+
+
 def _compose_title(detail: CircularDetail, listing: CircularListingRow) -> str:
     """Build the stored regulation title.
 
@@ -569,6 +594,113 @@ class CssfDiscoveryService:
                 reg.needs_review = not new_is_ict
                 counts["set_true" if new_is_ict else "set_false"] += 1
             s.commit()
+        return counts
+
+    def enrich_stubs(
+        self, *, max_rows: int | None = None
+    ) -> dict[str, int]:
+        """Fetch detail pages for every ``CSSF_STUB`` row, update title/PDF/applicability,
+        and promote ``source_of_truth`` to ``CSSF_WEB``. Returns counts dict.
+
+        If a stub's detail URL returns 404, the row stays a STUB. A ``failed``
+        count lets you spot persistently unresolvable refs.
+        """
+        counts = {
+            "promoted": 0,
+            "failed_404": 0,
+            "failed_other": 0,
+            "no_url": 0,
+            "newly_applicable": 0,
+        }
+
+        with self._sf() as s:
+            stubs = s.scalars(
+                select(Regulation).where(Regulation.source_of_truth == "CSSF_STUB")
+            ).all()
+            refs = [(r.regulation_id, r.reference_number) for r in stubs]
+
+        if max_rows is not None:
+            refs = refs[:max_rows]
+
+        for reg_id, ref in refs:
+            slug = _slug_from_reference(ref)
+            if slug is None:
+                counts["no_url"] += 1
+                continue
+            detail_url = f"https://www.cssf.lu/en/Document/{slug}/"
+
+            try:
+                detail = fetch_circular_detail(
+                    detail_url,
+                    client=self._client,
+                    request_delay_ms=self._config.request_delay_ms,
+                )
+            except CircularNotFoundError:
+                counts["failed_404"] += 1
+                continue
+            except Exception as e:  # noqa: BLE001
+                logger.warning("enrichment fetch failed for %s: %s", ref, e)
+                counts["failed_other"] += 1
+                continue
+
+            with self._sf() as s:
+                reg = s.get(Regulation, reg_id)
+                if reg is None:
+                    continue
+
+                # Don't overwrite curated seeds (shouldn't happen for STUBs but defensive)
+                if reg.source_of_truth == "SEED":
+                    continue
+
+                fake_listing = CircularListingRow(
+                    reference_number=detail.reference_number,
+                    raw_title=detail.clean_title,
+                    description=detail.description,
+                    publication_date=detail.published_at,
+                    detail_url=detail_url,
+                )
+                new_title = _compose_title(detail, fake_listing)
+                if new_title:
+                    reg.title = new_title
+                if detail.pdf_url_en or detail.pdf_url_fr:
+                    reg.url = detail.pdf_url_en or detail.pdf_url_fr
+                if detail.published_at and reg.publication_date is None:
+                    reg.publication_date = detail.published_at
+
+                # Apply ICT heuristic (never flip True→False here; override-respecting)
+                if not reg.is_ict:
+                    override = self._ict_override(s, ref)
+                    if override is None and is_ict_by_heuristic(
+                        title=new_title or reg.title or "",
+                        description=detail.description,
+                    ):
+                        reg.is_ict = True
+                        reg.needs_review = False
+
+                # Record applicability from the detail page's own entity list
+                for auth_type in _map_labels_to_auth_types(detail.applicable_entities):
+                    before = s.scalar(
+                        select(RegulationApplicability).where(
+                            RegulationApplicability.regulation_id == reg.regulation_id,
+                            RegulationApplicability.authorization_type == auth_type.value,
+                        )
+                    )
+                    if before is None:
+                        s.add(RegulationApplicability(
+                            regulation_id=reg.regulation_id,
+                            authorization_type=auth_type.value,
+                        ))
+                        counts["newly_applicable"] += 1
+
+                # Recurse into amendment stubs (detail may reference more unknown refs)
+                self._ensure_amendment_stubs(s, detail)
+                self._sync_lifecycle_links(s, reg, detail)
+
+                # Promote from STUB to WEB
+                reg.source_of_truth = "CSSF_WEB"
+                s.commit()
+                counts["promoted"] += 1
+
         return counts
 
     def _write_item(
