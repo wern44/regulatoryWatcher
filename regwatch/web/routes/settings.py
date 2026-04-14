@@ -137,9 +137,9 @@ async def upload_pdf(
         # Use the archive extractor on the uploaded file by pointing at its URL.
         # extract_pdf wants to download — for a local file we bypass the
         # HTTP path and call its helper directly.
-        from regwatch.pipeline.extract.pdf import _extract_text  # noqa: PLC0415
+        from regwatch.pipeline.extract.pdf import extract_pdf_text  # noqa: PLC0415
 
-        text, is_protected = _extract_text(target)
+        text, is_protected = extract_pdf_text(target)
 
         version.pdf_path = str(target)
         version.pdf_extracted_text = text

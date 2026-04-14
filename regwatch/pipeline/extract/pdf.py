@@ -35,13 +35,13 @@ def extract_pdf(raw: RawDocument, archive_root: Path | str) -> PdfExtractionResu
     archive_path = subdir / f"{sha[:8]}-{slug}.pdf"
     archive_path.write_bytes(data)
 
-    text, is_protected = _extract_text(archive_path)
+    text, is_protected = extract_pdf_text(archive_path)
     return PdfExtractionResult(
         archive_path=str(archive_path), text=text, is_protected=is_protected
     )
 
 
-def _extract_text(pdf_path: Path) -> tuple[str | None, bool]:
+def extract_pdf_text(pdf_path: Path) -> tuple[str | None, bool]:
     """Return (text, is_protected). text is None iff extraction failed."""
     # Pass 1: pdfplumber (most robust for layout).
     try:

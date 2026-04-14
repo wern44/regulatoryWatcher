@@ -22,7 +22,11 @@ from regwatch.db.models import (
 from regwatch.services.analysis import AnalysisService
 from regwatch.services.discovery import DiscoveryService
 from regwatch.services.regulations import RegulationFilter, RegulationService
-from regwatch.services.upload import UploadRejectedError, save_upload
+from regwatch.services.upload import (
+    UploadRejectedError,
+    index_uploaded_version,
+    save_upload,
+)
 
 router = APIRouter()
 
@@ -251,21 +255,17 @@ async def upload_document(
             )
             s.commit()
 
-            if result.created and not result.protected:
-                from regwatch.rag.indexing import index_version
-
-                version = s.get(DocumentVersion, result.version_id)
+            if result.created:
                 auth_types = [a.type for a in cfg.entity.authorizations]
-                if version is not None:
-                    index_version(
-                        s,
-                        version,
-                        ollama=request.app.state.llm_client,
-                        chunk_size_tokens=cfg.rag.chunk_size_tokens,
-                        overlap_tokens=cfg.rag.chunk_overlap_tokens,
-                        authorization_types=auth_types,
-                    )
-                    s.commit()
+                index_uploaded_version(
+                    session=s,
+                    version_id=result.version_id,
+                    llm=request.app.state.llm_client,
+                    chunk_size_tokens=cfg.rag.chunk_size_tokens,
+                    overlap_tokens=cfg.rag.chunk_overlap_tokens,
+                    authorization_types=auth_types,
+                )
+                s.commit()
     except UploadRejectedError as e:
         return RedirectResponse(
             f"/regulations/{regulation_id}?error={e}",

@@ -12,8 +12,9 @@ import trafilatura
 from sqlalchemy.orm import Session
 
 from regwatch.db.models import DocumentVersion, Regulation
+from regwatch.llm.client import LLMClient
 from regwatch.pipeline.diff import compute_diff
-from regwatch.pipeline.extract.pdf import _extract_text as _extract_pdf_text
+from regwatch.pipeline.extract.pdf import extract_pdf_text
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,7 @@ def save_upload(
 
     if ext == ".pdf":
         pdf_path = str(dest)
-        pdf_text, protected = _extract_pdf_text(dest)
+        pdf_text, protected = extract_pdf_text(dest)
     else:
         html_str = data.decode("utf-8", errors="replace")
         extracted = trafilatura.extract(
@@ -135,3 +136,28 @@ def save_upload(
     session.add(v)
     session.flush()
     return UploadResult(version_id=v.version_id, created=True, protected=protected)
+
+
+def index_uploaded_version(
+    *,
+    session: Session,
+    version_id: int,
+    llm: LLMClient,
+    chunk_size_tokens: int,
+    overlap_tokens: int,
+    authorization_types: list[str],
+) -> int:
+    """Index a DocumentVersion's chunks. Skips protected PDFs. Returns chunk count."""
+    from regwatch.rag.indexing import index_version
+
+    v = session.get(DocumentVersion, version_id)
+    if v is None or v.pdf_is_protected:
+        return 0
+    return index_version(
+        session,
+        v,
+        ollama=llm,
+        chunk_size_tokens=chunk_size_tokens,
+        overlap_tokens=overlap_tokens,
+        authorization_types=authorization_types,
+    )

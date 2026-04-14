@@ -25,7 +25,11 @@ from regwatch.db.seed import load_seed
 from regwatch.db.virtual_tables import create_virtual_tables
 from regwatch.llm.client import LLMClient
 from regwatch.services.analysis import AnalysisService
-from regwatch.services.upload import UploadRejectedError, save_upload
+from regwatch.services.upload import (
+    UploadRejectedError,
+    index_uploaded_version,
+    save_upload,
+)
 
 app = typer.Typer(help="Regulatory Watcher CLI.")
 
@@ -407,6 +411,20 @@ def upload(
             typer.echo(f"Upload rejected: {e}")
             raise typer.Exit(code=1) from e
         s.commit()
+
+        if result.created:
+            llm = _build_llm(cfg)
+            auth_types = [a.type for a in cfg.entity.authorizations]
+            chunk_count = index_uploaded_version(
+                session=s,
+                version_id=result.version_id,
+                llm=llm,
+                chunk_size_tokens=cfg.rag.chunk_size_tokens,
+                overlap_tokens=cfg.rag.chunk_overlap_tokens,
+                authorization_types=auth_types,
+            )
+            s.commit()
+            typer.echo(f"Indexed {chunk_count} chunks.")
 
     status = "new" if result.created else "deduped (same content already exists)"
     typer.echo(f"Uploaded -> version {result.version_id} ({status})")
