@@ -14,7 +14,9 @@ from regwatch.analysis.startup import sweep_stuck_runs
 from regwatch.config import AppConfig, load_config
 from regwatch.db.engine import create_app_engine
 from regwatch.db.models import (
+    AuthorizationType,
     Base,
+    DiscoveryRun,
     DocumentChunk,
     PipelineRun,
     Regulation,
@@ -24,6 +26,7 @@ from regwatch.db.seed import load_seed
 from regwatch.db.virtual_tables import create_virtual_tables
 from regwatch.llm.client import LLMClient
 from regwatch.services.analysis import AnalysisService
+from regwatch.services.cssf_discovery import CssfDiscoveryService
 from regwatch.services.upload import (
     UploadRejectedError,
     index_uploaded_version,
@@ -284,6 +287,82 @@ def reindex(
         s.commit()
 
     typer.echo(f"Reindexed {total_versions} version(s), {total_chunks} chunk(s).")
+
+
+@app.command("discover-cssf")
+def discover_cssf(
+    full: Annotated[
+        bool, typer.Option("--full", help="Force full crawl (default: incremental)")
+    ] = False,
+    entity: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--entity",
+            help="AIFM or CHAPTER15_MANCO (repeatable; default: all configured)",
+        ),
+    ] = None,
+) -> None:
+    """Discover CSSF circulars for the configured authorizations."""
+    cfg = _get_config()
+    engine = create_app_engine(cfg.paths.db_file)
+    sf = sessionmaker(engine, expire_on_commit=False)
+
+    # Resolve entity types
+    if entity:
+        auth_types: list[AuthorizationType] = []
+        for name in entity:
+            try:
+                auth_types.append(AuthorizationType(name))
+            except ValueError as e:
+                typer.echo(
+                    f"Unknown entity: {name!r}. "
+                    f"Valid: {[e.value for e in AuthorizationType]}"
+                )
+                raise typer.Exit(code=2) from e
+    else:
+        auth_types = [AuthorizationType(a.type) for a in cfg.entity.authorizations]
+
+    if not auth_types:
+        typer.echo("No authorization types configured.")
+        raise typer.Exit(code=1)
+
+    mode = "full" if full else "incremental"
+
+    service = CssfDiscoveryService(
+        session_factory=sf,
+        config=cfg.cssf_discovery,
+    )
+
+    typer.echo(
+        f"Starting CSSF discovery: mode={mode}, "
+        f"entity_types={[e.value for e in auth_types]}"
+    )
+    run_id = service.run(
+        entity_types=auth_types,
+        mode=mode,
+        triggered_by="USER_CLI",
+    )
+
+    with sf() as s:
+        run = s.get(DiscoveryRun, run_id)
+        if run is None:
+            typer.echo(f"Run {run_id} not found after completion.")
+            raise typer.Exit(code=1)
+
+        typer.echo(f"Discovery run {run.run_id}: {run.status}")
+        typer.echo(f"  total scraped: {run.total_scraped}")
+        typer.echo(f"  NEW:          {run.new_count}")
+        typer.echo(f"  AMENDED:      {run.amended_count}")
+        typer.echo(f"  UPDATED:      {run.updated_count}")
+        typer.echo(f"  UNCHANGED:    {run.unchanged_count}")
+        typer.echo(f"  WITHDRAWN:    {run.withdrawn_count}")
+        typer.echo(f"  FAILED:       {run.failed_count}")
+        if run.error_summary:
+            typer.echo("Errors:")
+            typer.echo(run.error_summary)
+
+        if run.status != "SUCCESS":
+            raise typer.Exit(code=1)
 
 
 @app.command("chat")
