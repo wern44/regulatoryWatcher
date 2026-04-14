@@ -38,20 +38,38 @@ class AnalysisRunner:
         self._on_progress = on_progress or (lambda *_: None)
 
     def queue_and_run(
-        self, version_ids: list[int], *, triggered_by: str, llm_model: str
+        self,
+        version_ids: list[int],
+        *,
+        triggered_by: str,
+        llm_model: str,
+        existing_run_id: int | None = None,
     ) -> int:
-        """Create an AnalysisRun row, iterate the versions, return run_id."""
-        with self._sf() as s:
-            run = AnalysisRun(
-                status=AnalysisRunStatus.RUNNING,
-                queued_version_ids=list(version_ids),
-                started_at=datetime.now(UTC),
-                llm_model=llm_model,
-                triggered_by=triggered_by,
-            )
-            s.add(run)
-            s.commit()
-            run_id = run.run_id
+        """Either create an AnalysisRun or update an existing one, then iterate."""
+        if existing_run_id is None:
+            with self._sf() as s:
+                run = AnalysisRun(
+                    status=AnalysisRunStatus.RUNNING,
+                    queued_version_ids=list(version_ids),
+                    started_at=datetime.now(UTC),
+                    llm_model=llm_model,
+                    triggered_by=triggered_by,
+                )
+                s.add(run)
+                s.commit()
+                run_id = run.run_id
+        else:
+            run_id = existing_run_id
+            with self._sf() as s:
+                run = s.get(AnalysisRun, run_id)
+                if run is None:
+                    raise RuntimeError(f"No AnalysisRun {run_id}")
+                run.status = AnalysisRunStatus.RUNNING
+                if run.started_at is None:
+                    run.started_at = datetime.now(UTC)
+                if llm_model and run.llm_model != llm_model:
+                    run.llm_model = llm_model
+                s.commit()
 
         succeeded = 0
         failed = 0

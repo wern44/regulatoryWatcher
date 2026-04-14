@@ -89,6 +89,8 @@ def create_app() -> FastAPI:
         embedding_model=embedding_model,
     )
     app.state.pipeline_progress = PipelineProgress()
+    from regwatch.analysis.progress import AnalysisProgress
+    app.state.analysis_progress = AnalysisProgress()
     app.add_middleware(FirstStartupMiddleware)
     _STATIC_DIR.mkdir(parents=True, exist_ok=True)
     app.mount(

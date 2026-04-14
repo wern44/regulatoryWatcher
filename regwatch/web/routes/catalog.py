@@ -1,13 +1,22 @@
 """Catalog list view."""
 from __future__ import annotations
 
+import threading
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from regwatch.db.models import LifecycleStage, Regulation, RegulationOverride, RegulationType
+from regwatch.analysis.runner import AnalysisRunner
+from regwatch.db.models import (
+    AnalysisRun,
+    AnalysisRunStatus,
+    LifecycleStage,
+    Regulation,
+    RegulationOverride,
+    RegulationType,
+)
 from regwatch.services.discovery import DiscoveryService
 from regwatch.services.regulations import RegulationFilter, RegulationService
 
@@ -106,6 +115,83 @@ def add_regulation(
         ))
         session.commit()
     return RedirectResponse(url="/catalog", status_code=303)
+
+
+@router.post("/catalog/analyse")
+def catalog_analyse(
+    request: Request,
+    regulation_ids: Annotated[list[int], Form()],
+) -> RedirectResponse:
+    sf = request.app.state.session_factory
+    cfg = request.app.state.config
+    llm = request.app.state.llm_client
+    progress = request.app.state.analysis_progress
+
+    # Resolve selected regulations -> their current version_ids.
+    with sf() as s:
+        regs = (
+            s.query(Regulation)
+            .filter(Regulation.regulation_id.in_(regulation_ids))
+            .all()
+        )
+        version_ids: list[int] = []
+        for r in regs:
+            v = next((v for v in r.versions if v.is_current), None)
+            if v is not None:
+                version_ids.append(v.version_id)
+    if not version_ids:
+        return RedirectResponse(
+            "/catalog?error=no-current-versions", status_code=303
+        )
+
+    # Create the AnalysisRun row synchronously so we can redirect to its page.
+    llm_model = getattr(llm, "chat_model", "") or ""
+    with sf() as s:
+        run = AnalysisRun(
+            status=AnalysisRunStatus.RUNNING,
+            queued_version_ids=version_ids,
+            started_at=datetime.now(UTC),
+            llm_model=llm_model,
+            triggered_by="USER_UI",
+        )
+        s.add(run)
+        s.commit()
+        run_id = run.run_id
+
+    def _progress(done: int, total: int, label: str) -> None:
+        progress.tick(done, total, label)
+
+    runner = AnalysisRunner(
+        session_factory=sf,
+        llm=llm,
+        max_document_tokens=cfg.analysis.max_document_tokens,
+        on_progress=_progress,
+    )
+
+    def _worker() -> None:
+        progress.start(run_id, len(version_ids))
+        try:
+            runner.queue_and_run(
+                version_ids,
+                triggered_by="USER_UI",
+                llm_model=llm_model,
+                existing_run_id=run_id,
+            )
+            with sf() as s:
+                r = s.get(AnalysisRun, run_id)
+                progress.finish(r.status.value if r else "failed")
+        except Exception as e:  # noqa: BLE001
+            progress.finish("failed", error=str(e))
+            with sf() as s:
+                r = s.get(AnalysisRun, run_id)
+                if r is not None:
+                    r.status = AnalysisRunStatus.FAILED
+                    r.finished_at = datetime.now(UTC)
+                    r.error_summary = str(e)
+                    s.commit()
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return RedirectResponse(f"/analysis/runs/{run_id}", status_code=303)
 
 
 @router.post("/catalog/refresh")
