@@ -342,3 +342,28 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(TZDateTime)
 
     session: Mapped[ChatSession] = relationship(back_populates="messages")
+
+
+class ExtractionFieldType(StrEnum):
+    TEXT = "TEXT"
+    LONG_TEXT = "LONG_TEXT"
+    BOOL = "BOOL"
+    DATE = "DATE"
+    ENUM = "ENUM"
+    LIST_TEXT = "LIST_TEXT"
+
+
+class ExtractionField(Base):
+    __tablename__ = "extraction_field"
+
+    field_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    label: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text)
+    data_type: Mapped[ExtractionFieldType] = mapped_column(Enum(ExtractionFieldType))
+    enum_values: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    is_core: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    canonical_field: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    display_order: Mapped[int] = mapped_column(Integer, default=100)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=lambda: datetime.now(UTC))
