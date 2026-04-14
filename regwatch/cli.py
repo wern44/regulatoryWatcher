@@ -78,6 +78,10 @@ def init_db() -> None:
     with Session(engine) as session:
         seed_core_fields(session)
         session.commit()
+    from regwatch.analysis.startup import sweep_stuck_runs
+    with Session(engine) as session:
+        sweep_stuck_runs(session)
+        session.commit()
     typer.echo(f"Schema created in {cfg.paths.db_file}")
 
 

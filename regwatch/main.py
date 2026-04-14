@@ -53,6 +53,11 @@ def create_app() -> FastAPI:
         seed_core_fields(session)
         session.commit()
 
+    from regwatch.analysis.startup import sweep_stuck_runs
+    with session_factory() as session:
+        sweep_stuck_runs(session)
+        session.commit()
+
     # Load persisted model settings from DB, falling back to config values.
     with session_factory() as session:
         settings_svc = SettingsService(session)
