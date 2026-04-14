@@ -65,18 +65,33 @@ class CssfDiscoveryService:
         entity_types: list[AuthorizationType],
         mode: Literal["full", "incremental"],
         triggered_by: str,
+        existing_run_id: int | None = None,
     ) -> int:
-        with self._sf() as s:
-            run = DiscoveryRun(
-                status="RUNNING",
-                started_at=datetime.now(UTC),
-                triggered_by=triggered_by,
-                entity_types=[et.value for et in entity_types],
-                mode=mode,
-            )
-            s.add(run)
-            s.commit()
-            run_id = run.run_id
+        if existing_run_id is None:
+            with self._sf() as s:
+                run = DiscoveryRun(
+                    status="RUNNING",
+                    started_at=datetime.now(UTC),
+                    triggered_by=triggered_by,
+                    entity_types=[et.value for et in entity_types],
+                    mode=mode,
+                )
+                s.add(run)
+                s.commit()
+                run_id = run.run_id
+        else:
+            run_id = existing_run_id
+            with self._sf() as s:
+                run = s.get(DiscoveryRun, run_id)
+                if run is None:
+                    raise RuntimeError(f"No DiscoveryRun {run_id}")
+                run.status = "RUNNING"
+                if run.started_at is None:
+                    run.started_at = datetime.now(UTC)
+                run.triggered_by = triggered_by
+                run.entity_types = [et.value for et in entity_types]
+                run.mode = mode
+                s.commit()
 
         aggregate_error: str | None = None
         try:

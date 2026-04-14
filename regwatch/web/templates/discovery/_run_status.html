@@ -1,0 +1,111 @@
+<div id="run-status" class="space-y-3">
+  {% if not run %}
+    <p class="text-slate-500">Run not found.</p>
+  {% else %}
+    <div class="rounded border border-slate-200 bg-white p-4">
+      <p class="text-sm">
+        <span class="font-semibold">Status:</span>
+        <span class="inline-block rounded px-2 py-0.5 text-xs
+                     {% if run.status == 'SUCCESS' %}bg-green-100 text-green-800
+                     {% elif run.status == 'FAILED' %}bg-red-100 text-red-800
+                     {% elif run.status == 'PARTIAL' %}bg-amber-100 text-amber-800
+                     {% else %}bg-slate-100 text-slate-800{% endif %}">
+          {{ run.status }}
+        </span>
+        &nbsp;&middot;&nbsp; mode: {{ run.mode }}
+        &nbsp;&middot;&nbsp; entity_types: {{ run.entity_types|join(', ') }}
+      </p>
+      <p class="text-xs text-slate-500 mt-1">
+        Scraped {{ progress.total_scraped if run.status == 'RUNNING' else run.total_scraped }} row(s)
+        {% if progress.current_entity_type and run.status == 'RUNNING' %}
+          &middot; scanning {{ progress.current_entity_type }}
+        {% endif %}
+        {% if progress.current_reference and run.status == 'RUNNING' %}
+          &middot; current: {{ progress.current_reference }}
+        {% endif %}
+      </p>
+    </div>
+
+    {% if run.status in ('SUCCESS', 'PARTIAL', 'FAILED') %}
+      <div class="grid grid-cols-3 md:grid-cols-6 gap-2 text-center text-sm">
+        <div class="rounded bg-green-50 border border-green-200 p-2">
+          <div class="text-2xl font-bold text-green-800">{{ run.new_count }}</div>
+          <div class="text-xs text-green-700">new</div>
+        </div>
+        <div class="rounded bg-amber-50 border border-amber-200 p-2">
+          <div class="text-2xl font-bold text-amber-800">{{ run.amended_count }}</div>
+          <div class="text-xs text-amber-700">amended</div>
+        </div>
+        <div class="rounded bg-blue-50 border border-blue-200 p-2">
+          <div class="text-2xl font-bold text-blue-800">{{ run.updated_count }}</div>
+          <div class="text-xs text-blue-700">updated</div>
+        </div>
+        <div class="rounded bg-slate-50 border border-slate-200 p-2">
+          <div class="text-2xl font-bold text-slate-700">{{ run.unchanged_count }}</div>
+          <div class="text-xs text-slate-600">unchanged</div>
+        </div>
+        <div class="rounded bg-orange-50 border border-orange-200 p-2">
+          <div class="text-2xl font-bold text-orange-800">{{ run.withdrawn_count }}</div>
+          <div class="text-xs text-orange-700">withdrawn</div>
+        </div>
+        <div class="rounded bg-red-50 border border-red-200 p-2">
+          <div class="text-2xl font-bold text-red-800">{{ run.failed_count }}</div>
+          <div class="text-xs text-red-700">failed</div>
+        </div>
+      </div>
+
+      <div class="rounded border border-slate-200 bg-white p-4">
+        <h3 class="font-semibold mb-2">Results ({{ run["items"]|length }})</h3>
+        {% if run["items"] %}
+          <table class="min-w-full text-sm">
+            <thead>
+              <tr class="text-left text-xs text-slate-500">
+                <th class="py-1 pr-3">Reference</th>
+                <th class="py-1 pr-3">Outcome</th>
+                <th class="py-1 pr-3">Entity types</th>
+                <th class="py-1 pr-3">Note</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              {% for i in run["items"] %}
+                <tr>
+                  <td class="py-1 pr-3">
+                    {% if i.regulation_id %}
+                      <a href="/regulations/{{ i.regulation_id }}" class="text-blue-700 hover:underline">
+                        {{ i.reference_number }}
+                      </a>
+                    {% else %}
+                      {{ i.reference_number }}
+                    {% endif %}
+                  </td>
+                  <td class="py-1 pr-3">
+                    <span class="inline-block rounded px-1.5 py-0.5 text-xs
+                                 {% if i.outcome == 'NEW' %}bg-green-100 text-green-800
+                                 {% elif i.outcome == 'AMENDED' %}bg-amber-100 text-amber-800
+                                 {% elif i.outcome == 'UPDATED_METADATA' %}bg-blue-100 text-blue-800
+                                 {% elif i.outcome == 'WITHDRAWN' %}bg-orange-100 text-orange-800
+                                 {% elif i.outcome == 'FAILED' %}bg-red-100 text-red-800
+                                 {% else %}bg-slate-100 text-slate-700{% endif %}">
+                      {{ i.outcome }}
+                    </span>
+                  </td>
+                  <td class="py-1 pr-3 text-xs text-slate-600">{{ i.entity_types|join(', ') }}</td>
+                  <td class="py-1 pr-3 text-xs text-slate-600">{{ i.note or '' }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="text-slate-500 text-sm">No items recorded. (Either nothing matched the filters, or the incremental walk stopped at an already-known reference.)</p>
+        {% endif %}
+
+        {% if run.error_summary %}
+          <details class="mt-3">
+            <summary class="cursor-pointer text-sm text-slate-600">Errors</summary>
+            <pre class="text-xs bg-slate-50 p-2 mt-2 rounded whitespace-pre-wrap">{{ run.error_summary }}</pre>
+          </details>
+        {% endif %}
+      </div>
+    {% endif %}
+  {% endif %}
+</div>

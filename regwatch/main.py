@@ -116,6 +116,9 @@ def create_app() -> FastAPI:
         analysis as analysis_routes,
     )
     from regwatch.web.routes import (
+        discovery as discovery_routes,
+    )
+    from regwatch.web.routes import (
         settings as settings_routes,
     )
 
@@ -130,6 +133,7 @@ def create_app() -> FastAPI:
     app.include_router(settings_routes.router)
     app.include_router(actions.router)
     app.include_router(analysis_routes.router)
+    app.include_router(discovery_routes.router)
     app.include_router(db_admin.router)
 
     return app

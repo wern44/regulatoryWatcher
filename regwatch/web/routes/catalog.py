@@ -13,6 +13,8 @@ from regwatch.analysis.runner import AnalysisRunner
 from regwatch.db.models import (
     AnalysisRun,
     AnalysisRunStatus,
+    AuthorizationType,
+    DiscoveryRun,
     DocumentVersion,
     LifecycleStage,
     Regulation,
@@ -20,6 +22,7 @@ from regwatch.db.models import (
     RegulationType,
 )
 from regwatch.services.analysis import AnalysisService
+from regwatch.services.cssf_discovery import CssfDiscoveryService
 from regwatch.services.discovery import DiscoveryService
 from regwatch.services.regulations import RegulationFilter, RegulationService
 from regwatch.services.upload import (
@@ -287,6 +290,87 @@ async def upload_document(
         f"/regulations/{regulation_id}?uploaded=1&version_id={result.version_id}",
         status_code=303,
     )
+
+
+@router.post("/catalog/discover-cssf")
+def catalog_discover_cssf(
+    request: Request,
+    mode: Annotated[str, Form()] = "incremental",
+    entity_types: Annotated[list[str] | None, Form()] = None,
+) -> RedirectResponse:
+    """Queue a CSSF discovery run and redirect to its progress page."""
+    sf = request.app.state.session_factory
+    cfg = request.app.state.config
+    progress = request.app.state.cssf_discovery_progress
+
+    if entity_types:
+        auth_types: list[AuthorizationType] = []
+        for name in entity_types:
+            try:
+                auth_types.append(AuthorizationType(name))
+            except ValueError:
+                pass
+    else:
+        auth_types = [AuthorizationType(a.type) for a in cfg.entity.authorizations]
+
+    if not auth_types:
+        return RedirectResponse("/catalog?error=no-entity-types", status_code=303)
+
+    if mode not in ("incremental", "full"):
+        mode = "incremental"
+
+    # Create the DiscoveryRun row synchronously so the redirect target exists.
+    with sf() as s:
+        run = DiscoveryRun(
+            status="RUNNING",
+            started_at=datetime.now(UTC),
+            triggered_by="USER_UI",
+            entity_types=[et.value for et in auth_types],
+            mode=mode,
+        )
+        s.add(run)
+        s.commit()
+        run_id = run.run_id
+
+    def _progress(**kw: object) -> None:
+        progress.tick(
+            **{
+                k: v
+                for k, v in kw.items()
+                if k in ("total_scraped", "entity_type", "reference")
+            }
+        )
+
+    service = CssfDiscoveryService(
+        session_factory=sf,
+        config=cfg.cssf_discovery,
+        on_progress=_progress,
+    )
+
+    def _worker() -> None:
+        progress.start(run_id)
+        try:
+            service.run(
+                entity_types=auth_types,
+                mode=mode,  # type: ignore[arg-type]
+                triggered_by="USER_UI",
+                existing_run_id=run_id,
+            )
+            with sf() as s:
+                r = s.get(DiscoveryRun, run_id)
+                progress.finish(r.status if r else "FAILED")
+        except Exception as e:  # noqa: BLE001
+            progress.finish("FAILED", error=str(e))
+            with sf() as s:
+                r = s.get(DiscoveryRun, run_id)
+                if r is not None:
+                    r.status = "FAILED"
+                    r.finished_at = datetime.now(UTC)
+                    r.error_summary = str(e)
+                    s.commit()
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return RedirectResponse(f"/discovery/runs/{run_id}", status_code=303)
 
 
 @router.post("/catalog/refresh")
