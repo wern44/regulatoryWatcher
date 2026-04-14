@@ -17,6 +17,7 @@ from starlette.responses import RedirectResponse as StarletteRedirect
 from regwatch.config import load_config
 from regwatch.db.engine import create_app_engine
 from regwatch.db.models import Base
+from regwatch.db.schema_sync import sync_schema
 from regwatch.db.virtual_tables import create_virtual_tables
 from regwatch.llm.client import LLMClient
 from regwatch.pipeline.progress import PipelineProgress
@@ -43,6 +44,7 @@ def create_app() -> FastAPI:
 
     engine = create_app_engine(config.paths.db_file)
     Base.metadata.create_all(engine)
+    sync_schema(engine, Base.metadata)
     create_virtual_tables(engine, embedding_dim=config.llm.embedding_dim)
     session_factory = sessionmaker(engine, expire_on_commit=False)
 

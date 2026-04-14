@@ -17,6 +17,7 @@ from regwatch.db.models import (
     PipelineRun,
     Regulation,
 )
+from regwatch.db.schema_sync import sync_schema
 from regwatch.db.seed import load_seed
 from regwatch.db.virtual_tables import create_virtual_tables
 
@@ -52,6 +53,7 @@ def init_db() -> None:
     cfg = _get_config()
     engine = create_app_engine(cfg.paths.db_file)
     Base.metadata.create_all(engine)
+    sync_schema(engine, Base.metadata)
     create_virtual_tables(engine, embedding_dim=cfg.llm.embedding_dim)
     typer.echo(f"Schema created in {cfg.paths.db_file}")
 
