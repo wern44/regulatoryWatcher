@@ -13,6 +13,8 @@ from regwatch.llm.client import HealthStatus
 from regwatch.pipeline.extract.pdf import extract_pdf
 from regwatch.services.extraction_fields import (
     ExtractionFieldService,
+    FieldNameConflictError,
+    FieldNotFoundError,
     FieldProtectedError,
 )
 from regwatch.services.settings import SettingsService
@@ -188,14 +190,17 @@ def create_extraction_field(
     )
     with request.app.state.session_factory() as session:
         svc = ExtractionFieldService(session)
-        svc.create(
-            name=name,
-            label=label,
-            description=description,
-            data_type=dtype,
-            enum_values=enum_list,
-            display_order=display_order,
-        )
+        try:
+            svc.create(
+                name=name,
+                label=label,
+                description=description,
+                data_type=dtype,
+                enum_values=enum_list,
+                display_order=display_order,
+            )
+        except (FieldNameConflictError, ValueError) as e:
+            raise HTTPException(400, str(e)) from e
         session.commit()
     return RedirectResponse("/settings/extraction", status_code=303)
 
@@ -219,6 +224,8 @@ def update_extraction_field(
                 is_active=is_active,
             )
             session.commit()
+        except FieldNotFoundError as e:
+            raise HTTPException(404, str(e)) from e
         except FieldProtectedError as e:
             raise HTTPException(400, str(e)) from e
     return RedirectResponse("/settings/extraction", status_code=303)
@@ -230,6 +237,8 @@ def delete_extraction_field(request: Request, field_id: int) -> RedirectResponse
         try:
             ExtractionFieldService(session).delete(field_id)
             session.commit()
+        except FieldNotFoundError as e:
+            raise HTTPException(404, str(e)) from e
         except FieldProtectedError as e:
             raise HTTPException(400, str(e)) from e
     return RedirectResponse("/settings/extraction", status_code=303)

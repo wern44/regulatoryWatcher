@@ -1,6 +1,7 @@
 """Service for CRUD on ExtractionField with core-field protection."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
@@ -10,6 +11,14 @@ from regwatch.db.models import ExtractionField, ExtractionFieldType
 
 class FieldProtectedError(RuntimeError):
     """Raised when a user tries to delete or alter a locked attribute of a core field."""
+
+
+class FieldNotFoundError(LookupError):
+    """Raised when a field_id doesn't match any row."""
+
+
+class FieldNameConflictError(ValueError):
+    """Raised when create() is called with a name that already exists."""
 
 
 @dataclass
@@ -27,6 +36,8 @@ class ExtractionFieldDTO:
 
 
 class ExtractionFieldService:
+    _NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+
     def __init__(self, session: Session) -> None:
         self._s = session
 
@@ -39,7 +50,9 @@ class ExtractionFieldService:
         return [self._to_dto(r) for r in rows]
 
     def get(self, field_id: int) -> ExtractionFieldDTO:
-        row = self._s.query(ExtractionField).filter_by(field_id=field_id).one()
+        row = self._s.query(ExtractionField).filter_by(field_id=field_id).one_or_none()
+        if row is None:
+            raise FieldNotFoundError(f"No extraction field with id {field_id}")
         return self._to_dto(row)
 
     def create(
@@ -52,6 +65,17 @@ class ExtractionFieldService:
         enum_values: list[str] | None,
         display_order: int,
     ) -> ExtractionFieldDTO:
+        if not self._NAME_PATTERN.fullmatch(name):
+            raise ValueError(
+                f"Invalid field name {name!r}: must match {self._NAME_PATTERN.pattern}"
+            )
+        existing = (
+            self._s.query(ExtractionField).filter_by(name=name).one_or_none()
+        )
+        if existing is not None:
+            raise FieldNameConflictError(
+                f"Field with name {name!r} already exists"
+            )
         row = ExtractionField(
             name=name,
             label=label,
@@ -68,7 +92,9 @@ class ExtractionFieldService:
         return self._to_dto(row)
 
     def update(self, field_id: int, **changes: object) -> ExtractionFieldDTO:
-        row = self._s.query(ExtractionField).filter_by(field_id=field_id).one()
+        row = self._s.query(ExtractionField).filter_by(field_id=field_id).one_or_none()
+        if row is None:
+            raise FieldNotFoundError(f"No extraction field with id {field_id}")
         locked_for_core = {"name", "data_type", "canonical_field", "is_core"}
         if row.is_core:
             for k in changes.keys() & locked_for_core:
@@ -81,7 +107,9 @@ class ExtractionFieldService:
         return self._to_dto(row)
 
     def delete(self, field_id: int) -> None:
-        row = self._s.query(ExtractionField).filter_by(field_id=field_id).one()
+        row = self._s.query(ExtractionField).filter_by(field_id=field_id).one_or_none()
+        if row is None:
+            raise FieldNotFoundError(f"No extraction field with id {field_id}")
         if row.is_core:
             raise FieldProtectedError(f"Cannot delete core field '{row.name}'")
         self._s.delete(row)

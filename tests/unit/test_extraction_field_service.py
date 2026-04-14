@@ -67,3 +67,53 @@ def test_update_locks_core_immutable_columns():
     # Attempting to change name on a core field raises
     with pytest.raises(FieldProtectedError):
         svc.update(ict.field_id, name="not_allowed")
+
+
+def test_get_raises_field_not_found():
+    svc, _ = _svc()
+    from regwatch.services.extraction_fields import FieldNotFoundError
+    with pytest.raises(FieldNotFoundError):
+        svc.get(99999)
+
+
+def test_update_raises_field_not_found():
+    svc, _ = _svc()
+    from regwatch.services.extraction_fields import FieldNotFoundError
+    with pytest.raises(FieldNotFoundError):
+        svc.update(99999, label="x")
+
+
+def test_delete_raises_field_not_found():
+    svc, _ = _svc()
+    from regwatch.services.extraction_fields import FieldNotFoundError
+    with pytest.raises(FieldNotFoundError):
+        svc.delete(99999)
+
+
+def test_create_rejects_invalid_name_format():
+    svc, _ = _svc()
+    with pytest.raises(ValueError):
+        svc.create(
+            name="Invalid Name", label="x", description="x",
+            data_type=ExtractionFieldType.TEXT, enum_values=None, display_order=200,
+        )
+
+
+def test_create_rejects_empty_name():
+    svc, _ = _svc()
+    with pytest.raises(ValueError):
+        svc.create(
+            name="", label="x", description="x",
+            data_type=ExtractionFieldType.TEXT, enum_values=None, display_order=200,
+        )
+
+
+def test_create_rejects_duplicate_name():
+    svc, _ = _svc()
+    from regwatch.services.extraction_fields import FieldNameConflictError
+    # main_points is a seeded core field
+    with pytest.raises(FieldNameConflictError):
+        svc.create(
+            name="main_points", label="Dup", description="dup",
+            data_type=ExtractionFieldType.TEXT, enum_values=None, display_order=200,
+        )

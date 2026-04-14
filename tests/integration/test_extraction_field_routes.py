@@ -51,3 +51,32 @@ def test_cannot_delete_core_field(tmp_path: Path, monkeypatch) -> None:
         )
     r = c.post(f"/settings/extraction/{core_id}/delete", follow_redirects=False)
     assert r.status_code == 400
+
+
+def test_delete_missing_field_returns_404(tmp_path, monkeypatch):
+    c = _client(tmp_path, monkeypatch)
+    r = c.post("/settings/extraction/99999/delete", follow_redirects=False)
+    assert r.status_code == 404
+
+
+def test_update_missing_field_returns_404(tmp_path, monkeypatch):
+    c = _client(tmp_path, monkeypatch)
+    r = c.post(
+        "/settings/extraction/99999/update",
+        data={"label": "x", "description": "x", "display_order": "1", "is_active": "true"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 404
+
+
+def test_create_rejects_bad_name_format(tmp_path, monkeypatch):
+    c = _client(tmp_path, monkeypatch)
+    r = c.post(
+        "/settings/extraction",
+        data={
+            "name": "Bad Name With Spaces", "label": "X", "description": "x",
+            "data_type": "TEXT", "enum_values": "", "display_order": "200",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 400
