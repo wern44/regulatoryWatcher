@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Analysis run {{ run.run_id if run else run_id }} - RegWatch{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto p-6 space-y-4">
+  <h1 class="text-2xl font-bold">Analysis run {{ run.run_id if run else run_id }}</h1>
+  <div id="run-status"
+       hx-get="/analysis/runs/{{ run.run_id if run else run_id }}/status"
+       hx-trigger="every 2s"
+       hx-swap="outerHTML">
+    {% include "analysis/_run_status.html" %}
+  </div>
+</div>
+{% endblock %}
