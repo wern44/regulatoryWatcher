@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import threading
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from regwatch.analysis.runner import AnalysisRunner
@@ -21,6 +22,7 @@ from regwatch.db.models import (
 from regwatch.services.analysis import AnalysisService
 from regwatch.services.discovery import DiscoveryService
 from regwatch.services.regulations import RegulationFilter, RegulationService
+from regwatch.services.upload import UploadRejectedError, save_upload
 
 router = APIRouter()
 
@@ -222,6 +224,58 @@ def catalog_analyse(
 
     threading.Thread(target=_worker, daemon=True).start()
     return RedirectResponse(f"/analysis/runs/{run_id}", status_code=303)
+
+
+@router.post("/catalog/{regulation_id}/upload")
+async def upload_document(
+    request: Request,
+    regulation_id: int,
+    file: UploadFile,
+) -> RedirectResponse:
+    cfg = request.app.state.config
+    sf = request.app.state.session_factory
+    data = await file.read()
+
+    uploads_dir_str = getattr(cfg.paths, "uploads_dir", None) or cfg.paths.pdf_archive
+    uploads_dir = Path(uploads_dir_str)
+
+    try:
+        with sf() as s:
+            result = save_upload(
+                session=s,
+                regulation_id=regulation_id,
+                filename=file.filename or "upload",
+                data=data,
+                uploads_dir=uploads_dir,
+                max_size_mb=cfg.analysis.max_upload_size_mb,
+            )
+            s.commit()
+
+            if result.created and not result.protected:
+                from regwatch.rag.indexing import index_version
+
+                version = s.get(DocumentVersion, result.version_id)
+                auth_types = [a.type for a in cfg.entity.authorizations]
+                if version is not None:
+                    index_version(
+                        s,
+                        version,
+                        ollama=request.app.state.llm_client,
+                        chunk_size_tokens=cfg.rag.chunk_size_tokens,
+                        overlap_tokens=cfg.rag.chunk_overlap_tokens,
+                        authorization_types=auth_types,
+                    )
+                    s.commit()
+    except UploadRejectedError as e:
+        return RedirectResponse(
+            f"/regulations/{regulation_id}?error={e}",
+            status_code=303,
+        )
+
+    return RedirectResponse(
+        f"/regulations/{regulation_id}?uploaded=1&version_id={result.version_id}",
+        status_code=303,
+    )
 
 
 @router.post("/catalog/refresh")
