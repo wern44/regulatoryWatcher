@@ -12,6 +12,16 @@ from regwatch.rag.answer import AnswerRequest, generate_answer
 from regwatch.rag.retrieval import HybridRetriever, RetrievalFilters, RetrievedChunk
 
 
+def _has_active_scope(f: RetrievalFilters) -> bool:
+    return bool(
+        f.version_ids
+        or f.regulation_ids
+        or f.authorization_type
+        or f.lifecycle_stages
+        or f.is_ict is not None
+    )
+
+
 class ChatService:
     def __init__(
         self, session: Session, ollama: LLMClient, top_k: int = 10
@@ -82,6 +92,12 @@ class ChatService:
         if filters is None:
             filters = RetrievalFilters()
         chunks = self._retriever.retrieve(question, filters)
+
+        # If the user applied a scope and nothing matched, say so explicitly
+        # rather than letting the LLM hallucinate without grounding.
+        if not chunks and _has_active_scope(filters):
+            return "No indexed content matched the selected scope."
+
         result = generate_answer(
             self._ollama, AnswerRequest(question=question, chunks=chunks)
         )

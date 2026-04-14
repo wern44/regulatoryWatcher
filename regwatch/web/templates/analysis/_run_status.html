@@ -35,10 +35,14 @@
                 {{ a.status }}
               </span>
               <div>
-                <a href="/regulations/{{ a.regulation_id }}#analysis"
-                   class="text-blue-700 hover:underline">
-                  version {{ a.version_id }}
-                </a>
+                {% if a.regulation_id %}
+                  <a href="/regulations/{{ a.regulation_id }}#analysis"
+                     class="text-blue-700 hover:underline">
+                    version {{ a.version_id }}
+                  </a>
+                {% else %}
+                  <span class="text-slate-500">version {{ a.version_id }} (orphan)</span>
+                {% endif %}
                 {% if a.error_detail %}
                   <div class="text-xs text-red-700 mt-0.5">{{ a.error_detail }}</div>
                 {% endif %}

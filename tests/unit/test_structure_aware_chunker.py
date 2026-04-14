@@ -104,6 +104,30 @@ def test_oversized_article_splits_within_boundary():
     assert len(paths) == 1  # all sub-chunks share the same heading path
 
 
+def test_mid_paragraph_article_reference_is_not_a_boundary():
+    """Text with a newline followed by 'Article N' in the middle of a sentence
+    should NOT create a new chunk — only headings isolated by blank lines do."""
+    text = (
+        "Chapter I — Overview\n\n"
+        "Article 1\n"
+        "This provision references\nArticle 17 of the older law and then continues with more text.\n\n"
+        "Article 2\n"
+        "Another provision."
+    )
+    chunks = chunk_text(text, chunk_size_tokens=1000, overlap_tokens=50)
+    texts = [c.text for c in chunks]
+    # Article 1's body should contain the "Article 17" reference intact
+    assert any("Article 17 of the older law" in t for t in texts), (
+        f"mid-paragraph Article reference was wrongly split. Chunks: {texts}"
+    )
+    # Exactly Article 1 and Article 2 chunks under Chapter I
+    assert sum(
+        1
+        for c in chunks
+        if c.heading_path and c.heading_path[-1].startswith("Article ")
+    ) == 2
+
+
 def test_preamble_chunk_has_no_heading_path():
     """Text before the first structural boundary is captured as a preamble."""
     text = (

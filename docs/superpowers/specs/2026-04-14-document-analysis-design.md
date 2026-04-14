@@ -56,7 +56,7 @@ Core rows seeded at `init-db`:
 | `relevance_reasoning` | `LONG_TEXT` | — |
 | `implementation_deadline` | `DATE` | conditional — `transposition_deadline` or `application_date` based on `document_relationship` |
 | `deadline_description` | `TEXT` | — |
-| `document_relationship` | `ENUM` (`NEW`, `REPLACES`, `AMENDS`, `APPEALS`, `CLARIFIES`) | — |
+| `document_relationship` | `ENUM` (`NEW`, `REPLACES`, `AMENDS`, `REPEALS`, `CLARIFIES`) | — |
 | `relationship_target` | `TEXT` | drives `replaced_by_id` when relationship = `REPLACES` |
 | `keywords` | `LIST_TEXT` | — |
 

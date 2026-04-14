@@ -19,20 +19,20 @@ class Chunk:
     heading_path: list[str] = field(default_factory=list)
 
 
-# Level 0: Chapter (EN/FR/DE), Roman or Arabic numeral, with optional trailing text
+# Level 0: Chapter (EN/FR/DE), Roman or Arabic numeral, with optional trailing text.
+# Anchored to the start of a block's first line only — see _collect_boundaries.
 _CHAPTER = re.compile(
-    r"^\s*(?:Chapter|Chapitre|Kapitel)\s+[IVXLCM0-9]+\b.*$",
-    re.MULTILINE | re.IGNORECASE,
+    r"^\s*(?:Chapter|Chapitre|Kapitel)\s+[IVXLCM0-9]+\b.*",
+    re.IGNORECASE,
 )
-# Level 1a: Article / Artikel + digit(s) with optional sub-letter
+# Level 1a: Article / Artikel + digit(s) with optional sub-letter.
 _ARTICLE = re.compile(
-    r"^\s*(?:Article|Artikel)\s+\d+[a-z]?\b.*$",
-    re.MULTILINE | re.IGNORECASE,
+    r"^\s*(?:Article|Artikel)\s+\d+[a-z]?\b.*",
+    re.IGNORECASE,
 )
-# Level 1b: § + digit (common in German law)
+# Level 1b: § + digit (common in German law).
 _PARAGRAPH_SYMBOL = re.compile(
-    r"^\s*§\s*\d+[a-z]?\b.*$",
-    re.MULTILINE,
+    r"^\s*§\s*\d+[a-z]?\b.*",
 )
 
 
@@ -84,14 +84,35 @@ def chunk_text(
 
 
 def _collect_boundaries(text: str) -> list[tuple[int, int, str]]:
-    """Return (position, level, heading_label) tuples for all detected boundaries."""
+    """Return (position, level, heading_label) tuples for all detected boundaries.
+
+    A boundary is only emitted when a heading line is the FIRST non-empty line
+    of a blank-line-separated block. This avoids false positives where
+    PDF-extracted text wraps mid-paragraph and a sentence happens to start with
+    'Article N'.
+    """
     matches: list[tuple[int, int, str]] = []
-    for m in _CHAPTER.finditer(text):
-        matches.append((m.start(), 0, m.group(0).strip()))
-    for m in _ARTICLE.finditer(text):
-        matches.append((m.start(), 1, m.group(0).strip()))
-    for m in _PARAGRAPH_SYMBOL.finditer(text):
-        matches.append((m.start(), 1, m.group(0).strip()))
+    cursor = 0
+    for block in re.split(r"\n\s*\n", text):
+        # Locate this block's absolute offset in the original text starting
+        # from `cursor` to handle repeated-block edge cases safely.
+        abs_pos = text.find(block, cursor)
+        if abs_pos < 0:
+            cursor += len(block)
+            continue
+        cursor = abs_pos + len(block)
+
+        stripped = block.lstrip()
+        if not stripped:
+            continue
+        first_line = stripped.split("\n", 1)[0]
+        # Position of the heading line itself (skip the block's leading whitespace).
+        heading_pos = abs_pos + (len(block) - len(stripped))
+
+        if _CHAPTER.match(first_line):
+            matches.append((heading_pos, 0, first_line.strip()))
+        elif _ARTICLE.match(first_line) or _PARAGRAPH_SYMBOL.match(first_line):
+            matches.append((heading_pos, 1, first_line.strip()))
     return matches
 
 

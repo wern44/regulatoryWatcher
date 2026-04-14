@@ -111,10 +111,10 @@ _CORE_FIELDS: list[dict[str, object]] = [
         "label": "Relationship to Existing Documents",
         "description": (
             "Is this document NEW, REPLACES an existing document, AMENDS "
-            "one, APPEALS one, or CLARIFIES one?"
+            "one, REPEALS one, or CLARIFIES one?"
         ),
         "data_type": ExtractionFieldType.ENUM,
-        "enum_values": ["NEW", "REPLACES", "AMENDS", "APPEALS", "CLARIFIES"],
+        "enum_values": ["NEW", "REPLACES", "AMENDS", "REPEALS", "CLARIFIES"],
         "canonical_field": None,
         "display_order": 100,
     },
@@ -122,7 +122,7 @@ _CORE_FIELDS: list[dict[str, object]] = [
         "name": "relationship_target",
         "label": "Related Document Reference",
         "description": (
-            "If this document REPLACES, AMENDS, APPEALS or CLARIFIES another, "
+            "If this document REPLACES, AMENDS, REPEALS or CLARIFIES another, "
             "its reference (e.g. 'CSSF 12/552'). Null otherwise."
         ),
         "data_type": ExtractionFieldType.TEXT,
@@ -144,11 +144,29 @@ _CORE_FIELDS: list[dict[str, object]] = [
 
 
 def seed_core_fields(session: Session) -> int:
-    """Insert any core fields that don't yet exist. Returns the number inserted."""
-    existing = {f.name for f in session.query(ExtractionField).all()}
+    """Insert any core fields that don't yet exist. Returns the number inserted.
+
+    Also patches the document_relationship.enum_values if a legacy 'APPEALS'
+    value is present (typo fix applied after initial deployment).
+    """
+    existing_by_name = {f.name: f for f in session.query(ExtractionField).all()}
+
+    # One-time legacy patch: APPEALS -> REPEALS in document_relationship
+    legacy = existing_by_name.get("document_relationship")
+    if legacy is not None and legacy.enum_values and "APPEALS" in legacy.enum_values:
+        legacy.enum_values = [
+            "REPEALS" if v == "APPEALS" else v for v in legacy.enum_values
+        ]
+        # Also refresh the description from the canonical _CORE_FIELDS spec
+        canonical = next(
+            f for f in _CORE_FIELDS if f["name"] == "document_relationship"
+        )
+        legacy.description = canonical["description"]
+        session.flush()
+
     inserted = 0
     for spec in _CORE_FIELDS:
-        if spec["name"] in existing:
+        if spec["name"] in existing_by_name:
             continue
         row = ExtractionField(
             name=spec["name"],

@@ -134,3 +134,24 @@ def test_chat_no_scope_sees_both_versions(tmp_path, monkeypatch):
     assert r.status_code in (200, 303)
     text = r.text
     assert "2018" in text or "2024" in text
+
+
+def test_chat_scoped_to_nonexistent_version_returns_no_content_message(
+    tmp_path, monkeypatch
+):
+    """If a scope is applied but retrieval returns nothing, the service must
+    short-circuit with a fixed message rather than calling the LLM."""
+    c = _client(tmp_path, monkeypatch)
+    llm = _install_mock_llm(c)
+    _seed_two_versions(c)
+
+    bogus_version_id = 9_999_999
+    r = c.post(
+        "/chat/ask",
+        data={"query": "anything?", "version_ids": [str(bogus_version_id)]},
+        follow_redirects=False,
+    )
+    assert r.status_code in (200, 303)
+    assert "No indexed content matched the selected scope." in r.text
+    # The LLM chat endpoint must not have been called.
+    assert llm.chat.call_count == 0
