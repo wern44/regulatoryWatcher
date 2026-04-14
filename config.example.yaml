@@ -53,6 +53,11 @@ rag:
   rerank_k: 10
   enable_rerank: false
 
+analysis:
+  llm_call_timeout_seconds: 120
+  max_document_tokens: 24000
+  max_upload_size_mb: 25
+
 paths:
   db_file: "./data/app.db"
   pdf_archive: "./data/pdfs"

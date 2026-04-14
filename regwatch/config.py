@@ -60,6 +60,12 @@ class UiConfig(BaseModel):
     port: int
 
 
+class AnalysisConfig(BaseModel):
+    llm_call_timeout_seconds: int = 120
+    max_document_tokens: int = 24000
+    max_upload_size_mb: int = 25
+
+
 class AppConfig(BaseModel):
     entity: EntityConfig
     sources: dict[str, SourceConfig]
@@ -67,6 +73,7 @@ class AppConfig(BaseModel):
     rag: RagConfig
     paths: PathsConfig
     ui: UiConfig
+    analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
 
 
 def load_config(path: Path | str) -> AppConfig:
