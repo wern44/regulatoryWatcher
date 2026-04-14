@@ -67,6 +67,10 @@ FTS5 queries are sanitized via `_sanitize_fts_query` which strips punctuation an
 
 `regwatch/main.py::create_app` builds the engine, runs `Base.metadata.create_all` + `create_virtual_tables`, and stashes `config`, `session_factory`, and `ollama_client` on `app.state`. All web routes get their DB session via `request.app.state.session_factory()` and their Ollama via `request.app.state.ollama_client`. For tests, override `client.app.state.ollama_client = MagicMock()` after creating the TestClient. Never import the session factory directly.
 
+### CSSF discovery invariants
+
+`regwatch/discovery/cssf_scraper.py` is a pure-HTTP scraper with no DB access; the reconciliation lives in `regwatch/services/cssf_discovery.py`. Parser correctness is anchored to the HTML fixtures under `tests/fixtures/cssf/` — unit tests parse those files via `BeautifulSoup` and never hit the network. When the CSSF DOM changes, the `tests/live/test_cssf_live_probe.py` suite (marked `@pytest.mark.live`, excluded from default `pytest`) is the canary; refresh the fixtures per `tests/fixtures/cssf/README.md` then update the scraper's CSS selectors. Amendment-graph writes go through `RegulationLifecycleLink` and are strictly additive — `_sync_lifecycle_links` never deletes edges, and `_refresh_metadata` never overwrites `source_of_truth="SEED"` rows. Entity-slug mapping lives in `regwatch/services/cssf_discovery.py::CSSF_ENTITY_SLUGS` — one slug per `AuthorizationType`.
+
 ## Testing conventions
 
 - **Integration tests hit a fresh SQLite file in `tmp_path`** — never mock the database. See `tests/integration/test_app_smoke.py::_client` for the standard app-under-test helper; it rewrites `config.example.yaml` into `tmp_path` and reloads `regwatch.main` to force `create_app()` to re-read `REGWATCH_CONFIG`. Because the default config enables every fetch source and those sources hit the network in `fetch()`, tests that invoke the real pipeline (e.g. `test_run_pipeline_action.py`) must disable all sources except the one they're exercising — see `_cssf_only_client` for the pattern.
