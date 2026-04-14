@@ -16,7 +16,6 @@ from regwatch.db.engine import create_app_engine
 from regwatch.db.models import (
     Base,
     DocumentChunk,
-    DocumentVersion,
     PipelineRun,
     Regulation,
 )
@@ -220,44 +219,69 @@ def run_pipeline(
 
 
 @app.command("reindex")
-def reindex() -> None:
-    """Clear all chunks and re-embed every current document version."""
-    cfg = _get_config()
-    from regwatch.llm.client import LLMClient
+def reindex(
+    reg: Annotated[
+        list[str] | None, typer.Option("--reg", help="Regulation reference (repeatable)")
+    ] = None,
+    all_: Annotated[
+        bool, typer.Option("--all", help="Reindex every regulation")
+    ] = False,
+) -> None:
+    """Re-chunk and re-embed DocumentVersions with the current chunker."""
     from regwatch.rag.indexing import index_version
 
-    llm = LLMClient(
-        base_url=cfg.llm.base_url,
-        chat_model=cfg.llm.chat_model or "",
-        embedding_model=cfg.llm.embedding_model or "",
-    )
+    if not reg and not all_:
+        typer.echo("Specify --reg REF (repeatable) or --all")
+        raise typer.Exit(code=2)
 
+    cfg = _get_config()
     engine = create_app_engine(cfg.paths.db_file)
-    with Session(engine) as session:
-        # Drop all chunks (cascade removes vec/fts rows via triggers).
-        session.query(DocumentChunk).delete()
-        session.execute(sa_text("DELETE FROM document_chunk_vec"))
-        session.execute(sa_text("DELETE FROM document_chunk_fts"))
-        session.flush()
+    sf = sessionmaker(engine, expire_on_commit=False)
+    llm = _build_llm(cfg)
 
-        current = (
-            session.query(DocumentVersion)
-            .filter(DocumentVersion.is_current.is_(True))
-            .all()
-        )
-        total = 0
-        for v in current:
-            n = index_version(
-                session,
-                v,
-                ollama=llm,
-                chunk_size_tokens=cfg.rag.chunk_size_tokens,
-                overlap_tokens=cfg.rag.chunk_overlap_tokens,
-                authorization_types=[a.type for a in cfg.entity.authorizations],
-            )
-            total += n
-        session.commit()
-    typer.echo(f"Reindexed {len(current)} version(s), {total} chunk(s).")
+    auth_types = [a.type for a in cfg.entity.authorizations]
+
+    with sf() as s:
+        q = s.query(Regulation)
+        if not all_ and reg:
+            q = q.filter(Regulation.reference_number.in_(reg))
+        regs = q.all()
+        if not regs:
+            typer.echo("No matching regulations.")
+            raise typer.Exit(code=1)
+
+        total_versions = 0
+        total_chunks = 0
+        for r in regs:
+            for v in r.versions:
+                # Wipe existing chunks + virtual-table rows for this version
+                s.execute(
+                    sa_text(
+                        "DELETE FROM document_chunk_vec WHERE chunk_id IN "
+                        "(SELECT chunk_id FROM document_chunk WHERE version_id = :vid)"
+                    ),
+                    {"vid": v.version_id},
+                )
+                s.execute(
+                    sa_text(
+                        "DELETE FROM document_chunk_fts WHERE rowid IN "
+                        "(SELECT chunk_id FROM document_chunk WHERE version_id = :vid)"
+                    ),
+                    {"vid": v.version_id},
+                )
+                s.query(DocumentChunk).filter_by(version_id=v.version_id).delete()
+                s.flush()
+                n = index_version(
+                    s, v, ollama=llm,
+                    chunk_size_tokens=cfg.rag.chunk_size_tokens,
+                    overlap_tokens=cfg.rag.chunk_overlap_tokens,
+                    authorization_types=auth_types,
+                )
+                total_versions += 1
+                total_chunks += n
+        s.commit()
+
+    typer.echo(f"Reindexed {total_versions} version(s), {total_chunks} chunk(s).")
 
 
 @app.command("chat")
