@@ -14,22 +14,55 @@
     <button class="px-3 py-1 bg-slate-800 text-white rounded" type="submit">Filter</button>
   </form>
 
-  <table class="w-full bg-white border rounded shadow-sm text-sm">
-    <thead class="bg-slate-100 text-xs uppercase text-slate-600">
-      <tr>
-        <th class="text-left p-2">Reference</th>
-        <th class="text-left p-2">Title</th>
-        <th class="text-left p-2">Authority</th>
-        <th class="text-left p-2">Lifecycle</th>
-        <th class="text-left p-2">ICT</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in regulations %}
-        {% include "partials/catalog_row.html" %}
-      {% else %}
-        <tr><td colspan="5" class="p-4 text-center text-slate-500">No regulations match.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <form method="post" action="/catalog/analyse" id="catalog-form">
+    <div id="action-bar"
+         class="fixed bottom-0 inset-x-0 bg-slate-800 text-white px-6 py-3 hidden flex items-center"
+         style="z-index: 50">
+      <span><span id="selected-count">0</span> selected</span>
+      <span class="mx-3 text-slate-400">&middot;</span>
+      <button type="submit"
+              class="bg-blue-600 hover:bg-blue-500 px-3 py-1 rounded">Analyse</button>
+      <button type="button" onclick="clearSelection()"
+              class="ml-2 px-3 py-1 border border-slate-400 rounded">Clear</button>
+    </div>
+
+    <table class="w-full bg-white border rounded shadow-sm text-sm">
+      <thead class="bg-slate-100 text-xs uppercase text-slate-600">
+        <tr>
+          <th class="w-8 p-2">
+            <input type="checkbox" onchange="toggleAll(this)" aria-label="Select all">
+          </th>
+          <th class="text-left p-2">Reference</th>
+          <th class="text-left p-2">Title</th>
+          <th class="text-left p-2">Authority</th>
+          <th class="text-left p-2">Lifecycle</th>
+          <th class="text-left p-2">ICT</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in regulations %}
+          {% include "partials/catalog_row.html" %}
+        {% else %}
+          <tr><td colspan="6" class="p-4 text-center text-slate-500">No regulations match.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </form>
+
+  <script>
+    function updateActionBar() {
+      const boxes = document.querySelectorAll('input[name="regulation_ids"]:checked');
+      const bar = document.getElementById('action-bar');
+      document.getElementById('selected-count').textContent = boxes.length;
+      bar.classList.toggle('hidden', boxes.length === 0);
+    }
+    function clearSelection() {
+      document.querySelectorAll('input[name="regulation_ids"]').forEach(b => b.checked = false);
+      updateActionBar();
+    }
+    function toggleAll(master) {
+      document.querySelectorAll('input[name="regulation_ids"]').forEach(b => b.checked = master.checked);
+      updateActionBar();
+    }
+  </script>
 {% endblock %}

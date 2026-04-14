@@ -1,4 +1,11 @@
 <tr class="border-t">
+  <td class="p-2">
+    <input type="checkbox"
+           name="regulation_ids"
+           value="{{ r.regulation_id }}"
+           onchange="updateActionBar()"
+           aria-label="Select {{ r.reference_number }}">
+  </td>
   <td class="p-2 font-mono">
     <a class="hover:underline" href="/regulations/{{ r.regulation_id }}">{{ r.reference_number }}</a>
   </td>
