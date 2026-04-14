@@ -16,7 +16,7 @@ class DocumentAnalysisDTO:
     analysis_id: int
     run_id: int
     version_id: int
-    regulation_id: int
+    regulation_id: int | None
     status: str
     error_detail: str | None
     was_truncated: bool
@@ -33,6 +33,7 @@ class DocumentAnalysisDTO:
     relationship_target: str | None
     keywords: list[str] | None
     custom_fields: dict[str, Any]
+    coercion_errors: dict[str, str] | None
     created_at: datetime
     raw_llm_output: str | None
 
@@ -111,6 +112,7 @@ class AnalysisService:
             relationship_target=row.relationship_target,
             keywords=row.keywords,
             custom_fields=row.custom_fields or {},
+            coercion_errors=row.coercion_errors,
             created_at=row.created_at,
             raw_llm_output=row.raw_llm_output,
         )

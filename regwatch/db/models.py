@@ -409,8 +409,8 @@ class DocumentAnalysis(Base):
     version_id: Mapped[int] = mapped_column(
         ForeignKey("document_version.version_id", ondelete="CASCADE"), index=True
     )
-    regulation_id: Mapped[int] = mapped_column(
-        ForeignKey("regulation.regulation_id", ondelete="CASCADE"), index=True
+    regulation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("regulation.regulation_id", ondelete="CASCADE"), index=True, nullable=True
     )
     status: Mapped[DocumentAnalysisStatus] = mapped_column(Enum(DocumentAnalysisStatus))
     error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -431,6 +431,7 @@ class DocumentAnalysis(Base):
     keywords: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
 
     custom_fields: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    coercion_errors: Mapped[dict[str, str] | None] = mapped_column(JSON, nullable=True)
     llm_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     token_usage: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=lambda: datetime.now(UTC))

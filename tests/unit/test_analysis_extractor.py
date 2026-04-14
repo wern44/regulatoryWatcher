@@ -59,6 +59,25 @@ def test_extract_flags_truncation():
     assert result.was_truncated is True
 
 
+def test_extract_records_coercion_errors():
+    s = _session_with_fields()
+    llm = MagicMock()
+    # implementation_deadline=BOGUS will break date.fromisoformat
+    llm.chat.return_value = (
+        '{"is_ict": true, "implementation_deadline": "Q3 2026", '
+        '"keywords": ["ICT"]}'
+    )
+    result = extract(
+        session=s, llm=llm, regulation_metadata="meta",
+        document_text="doc", max_tokens=10000,
+    )
+    assert result.status == "SUCCESS"
+    assert result.values["implementation_deadline"] is None
+    assert "implementation_deadline" in result.coercion_errors
+    assert "Q3 2026" in result.coercion_errors["implementation_deadline"] or \
+           "ValueError" in result.coercion_errors["implementation_deadline"]
+
+
 def test_extract_marks_failed_on_bad_json():
     s = _session_with_fields()
     llm = MagicMock()

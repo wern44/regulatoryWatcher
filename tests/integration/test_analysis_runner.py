@@ -101,3 +101,25 @@ def test_runner_marks_partial_on_mixed_failures():
             a.status.value for a in s.query(DocumentAnalysis).all()
         )
         assert statuses == ["FAILED", "SUCCESS"]
+
+
+def test_runner_persists_coercion_errors():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    sf = sessionmaker(engine, expire_on_commit=False)
+    version_id = _seed_one(sf)
+
+    llm = MagicMock()
+    llm.chat.return_value = (
+        '{"is_ict": true, "implementation_deadline": "Q3 2026", '
+        '"keywords": ["ICT"]}'
+    )
+    runner = AnalysisRunner(session_factory=sf, llm=llm, max_document_tokens=5000)
+    runner.queue_and_run([version_id], triggered_by="USER_CLI", llm_model="t")
+
+    with sf() as s:
+        a = s.query(DocumentAnalysis).one()
+        assert a.status is DocumentAnalysisStatus.SUCCESS
+        assert a.implementation_deadline is None
+        assert a.coercion_errors is not None
+        assert "implementation_deadline" in a.coercion_errors

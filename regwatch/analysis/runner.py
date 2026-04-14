@@ -121,6 +121,7 @@ class AnalysisRunner:
             )
             self._assign_core_values(a, result.values)
             a.custom_fields = self._collect_custom_values(s, result.values)
+            a.coercion_errors = result.coercion_errors or None
             s.add(a)
             s.flush()
             apply_writeback(s, a)
@@ -155,12 +156,10 @@ class AnalysisRunner:
         s: Session, run_id: int, version_id: int, regulation_id: int | None,
         error: str, *, raw: str = "", was_truncated: bool = False,
     ) -> None:
-        # regulation_id may be None if we couldn't load the version. Store 0 as a
-        # sentinel so the row is visible in the run listing; FKs are not enforced
-        # in the default SQLite config.
+        # regulation_id=None is allowed for orphan-version failure rows (column is nullable).
         a = DocumentAnalysis(
             run_id=run_id, version_id=version_id,
-            regulation_id=regulation_id or 0,
+            regulation_id=regulation_id,
             status=DocumentAnalysisStatus.FAILED,
             error_detail=error, raw_llm_output=raw, was_truncated=was_truncated,
         )

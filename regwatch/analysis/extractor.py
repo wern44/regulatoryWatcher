@@ -31,6 +31,7 @@ class ExtractionResult:
     raw_output: str
     was_truncated: bool
     values: dict[str, Any] = field(default_factory=dict)
+    coercion_errors: dict[str, str] = field(default_factory=dict)
     error: str | None = None
 
 
@@ -94,6 +95,7 @@ def extract(
         .all()
     )
     values: dict[str, Any] = {}
+    coercion_errors: dict[str, str] = {}
     for f in fields:
         raw_val = data.get(f.name)
         try:
@@ -101,6 +103,8 @@ def extract(
         except Exception as e:  # noqa: BLE001
             logger.warning("Coercion failed for %s: %s", f.name, e)
             values[f.name] = None
+            coercion_errors[f.name] = f"{type(e).__name__}: {e}"
     return ExtractionResult(
-        status="SUCCESS", raw_output=raw, was_truncated=was_truncated, values=values,
+        status="SUCCESS", raw_output=raw, was_truncated=was_truncated,
+        values=values, coercion_errors=coercion_errors,
     )
