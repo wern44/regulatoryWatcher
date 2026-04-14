@@ -48,6 +48,11 @@ def create_app() -> FastAPI:
     create_virtual_tables(engine, embedding_dim=config.llm.embedding_dim)
     session_factory = sessionmaker(engine, expire_on_commit=False)
 
+    from regwatch.db.extraction_field_seed import seed_core_fields
+    with session_factory() as session:
+        seed_core_fields(session)
+        session.commit()
+
     # Load persisted model settings from DB, falling back to config values.
     with session_factory() as session:
         settings_svc = SettingsService(session)

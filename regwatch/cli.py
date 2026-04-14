@@ -55,6 +55,10 @@ def init_db() -> None:
     Base.metadata.create_all(engine)
     sync_schema(engine, Base.metadata)
     create_virtual_tables(engine, embedding_dim=cfg.llm.embedding_dim)
+    from regwatch.db.extraction_field_seed import seed_core_fields
+    with Session(engine) as session:
+        seed_core_fields(session)
+        session.commit()
     typer.echo(f"Schema created in {cfg.paths.db_file}")
 
 
