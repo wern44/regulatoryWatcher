@@ -42,3 +42,35 @@ single commit so both move together.
 
 - `listing_aifms_page1.html` — first page of `?fwp_entity_type=aifms&fwp_content_type=circulars-cssf`. 20 `li.library-element` rows.
 - `detail_22_806.html` — detail page for Circular CSSF 22/806 (outsourcing). Chosen because it has a stable `(as amended by CSSF 25/883)` parenthetical and a rich "Related documents" section, exercising both amendment parsers.
+
+### Publication-type matrix fixtures (filter matrix)
+
+Six additional listing fixtures, one per non-CSSF-circular publication type, plus a sample
+detail page for each type that has at least one AIFM-tagged document.
+
+**How these work**: the CSSF regulatory-framework page accepts `?entity_type=<id>&content_type=<id>`
+as server-side filter query parameters (numeric WordPress term IDs, confirmed via `data-href`
+attributes in the rendered DOM). No JavaScript rendering is required.
+
+| Listing fixture | Rows | Filter |
+|---|---|---|
+| `listing_aifms_cssf-regulation.html` | 4 | entity=502 + content=575 |
+| `listing_aifms_law.html` | 13 | entity=502 + content=585 |
+| `listing_aifms_grand-ducal-regulation.html` | 4 | entity=502 + content=553 |
+| `listing_aifms_ministerial-regulation.html` | 20 (page 1) | entity=502 + content=591 |
+| `listing_aifms_annex-to-a-cssf-circular.html` | 2 | entity=502 + content=5843 |
+| `listing_aifms_professional-standard.html` | 0 | entity=502 + content=1377 |
+
+The `professional-standard` listing has 0 rows — verified live: no AIFM-tagged professional
+standards exist on the CSSF site. No detail fixture is captured for this type.
+
+### How to refresh the publication-type matrix fixtures
+
+Run the one-shot helper script (no Playwright required — plain httpx):
+
+```bash
+python scripts/capture_cssf_fixtures.py
+```
+
+The script reads `config.example.yaml` for the publication-type list and filter IDs,
+fetches each `AIFM × publication-type` combination, and overwrites the fixture files in place.
