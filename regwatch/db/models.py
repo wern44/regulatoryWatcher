@@ -511,7 +511,7 @@ class RegulationDiscoverySource(Base):
     )
     first_seen_at: Mapped[datetime] = mapped_column(TZDateTime)
     last_seen_run_id: Mapped[int] = mapped_column(
-        ForeignKey("discovery_run.run_id", ondelete="CASCADE")
+        ForeignKey("discovery_run.run_id", ondelete="CASCADE"), index=True
     )
     last_seen_at: Mapped[datetime] = mapped_column(TZDateTime)
 

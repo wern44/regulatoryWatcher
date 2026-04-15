@@ -1,6 +1,8 @@
 from datetime import UTC, datetime
 
+import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from regwatch.db.models import (
@@ -93,8 +95,6 @@ def test_regulation_discovery_source_round_trip():
 
 def test_regulation_discovery_source_unique_constraint():
     """(regulation_id, entity_type, content_type) must be unique."""
-    from sqlalchemy.exc import IntegrityError
-
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as s:
@@ -134,12 +134,8 @@ def test_regulation_discovery_source_unique_constraint():
             first_seen_run_id=run.run_id, first_seen_at=now,
             last_seen_run_id=run.run_id, last_seen_at=now,
         ))
-        try:
+        with pytest.raises(IntegrityError):
             s.commit()
-            raised = False
-        except IntegrityError:
-            raised = True
-        assert raised, "expected IntegrityError on duplicate (reg, entity, content_type)"
 
 
 def test_discovery_run_retired_count_defaults_zero():
