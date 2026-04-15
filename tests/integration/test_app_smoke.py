@@ -39,3 +39,14 @@ def test_root_returns_dashboard(tmp_path: Path, monkeypatch) -> None:
     assert response.status_code == 200
     assert "RegWatch" in response.text
     assert "Dashboard" in response.text
+
+
+def test_settings_page_shows_full_reconciliation_button(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
+    resp = client.get("/settings")
+    assert resp.status_code == 200
+    body = resp.text
+    assert "CSSF catalog reconciliation" in body
+    assert "Run full CSSF reconciliation" in body
+    assert 'action="/catalog/discover-cssf"' in body
+    assert 'name="mode" value="full"' in body
