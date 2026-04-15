@@ -3,45 +3,24 @@
 Run manually with:
     pytest -m live tests/live/test_cssf_live_probe.py -v
 
-Purpose: catch DOM / slug regressions on the real site before they cascade
+Purpose: catch DOM regressions on the real site before they cascade
 into a silent production discovery failure.
+
+Note: the listing probe (parametrized by entity filter IDs) lives in the
+Playwright-driven integration tests introduced in Task 5. Only the
+detail-page parse check is kept here as it does not depend on the
+listing mechanism.
 """
 from __future__ import annotations
-
-import itertools
 
 import httpx
 import pytest
 
-from regwatch.config import CssfDiscoveryConfig
 from regwatch.discovery.cssf_scraper import (
-    CircularListingRow,
     fetch_circular_detail,
-    list_circulars,
 )
 
 pytestmark = pytest.mark.live
-
-_DEFAULT_SLUGS = sorted(set(CssfDiscoveryConfig().entity_slugs.values()))
-
-
-@pytest.mark.parametrize("slug", _DEFAULT_SLUGS)
-def test_listing_yields_at_least_one_row(slug: str) -> None:
-    """Each configured entity slug should still return at least one listing row."""
-    with httpx.Client(
-        headers={"User-Agent": "RegulatoryWatcher/1.0 (live probe)"},
-        timeout=30.0,
-        follow_redirects=True,
-    ) as client:
-        rows = list(itertools.islice(
-            list_circulars(slug, client=client, max_pages=1, request_delay_ms=0),
-            20,
-        ))
-    assert rows, f"listing for slug {slug!r} returned zero rows — DOM or filter may have changed"
-    for row in rows:
-        assert isinstance(row, CircularListingRow)
-        assert row.reference_number
-        assert row.detail_url.startswith("http")
 
 
 def test_detail_page_parses_known_circular() -> None:

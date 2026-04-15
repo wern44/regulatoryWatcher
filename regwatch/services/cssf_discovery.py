@@ -169,16 +169,17 @@ class CssfDiscoveryService:
         aggregate_error: str | None = None
         try:
             for et in entity_types:
-                slug = self._config.entity_slugs.get(et.value)
-                if slug is None:
-                    logger.warning("no slug mapped for %s; skipping", et.value)
+                entity_filter_id = self._config.entity_filter_ids.get(et.value)
+                if entity_filter_id is None:
+                    logger.warning("no filter_id mapped for %s; skipping", et.value)
                     continue
                 try:
-                    self._run_for_slug(run_id, et, slug, mode)
+                    self._run_for_slug(run_id, et, str(entity_filter_id), mode)
                 except Exception as e:  # noqa: BLE001
-                    logger.exception("slug %s failed", slug)
+                    logger.exception("entity_filter_id %s failed", entity_filter_id)
+                    msg = f"{entity_filter_id}: {e}"
                     aggregate_error = (
-                        f"{aggregate_error}\n{slug}: {e}" if aggregate_error else f"{slug}: {e}"
+                        f"{aggregate_error}\n{msg}" if aggregate_error else msg
                     )
         finally:
             self._finalize_run(run_id, aggregate_error)

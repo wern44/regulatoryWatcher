@@ -20,6 +20,14 @@ See `docs/superpowers/specs/2026-04-08-regulatory-watcher-design.md` for the ful
     cp config.example.yaml config.yaml
     # Edit config.yaml to point at your data directory and Ollama instance.
 
+### Playwright (for CSSF listing crawl)
+
+After installing dependencies, install the Chromium browser binary once:
+
+```bash
+playwright install chromium
+```
+
 ## CLI usage
 
 Initialise the database and load the curated regulation catalog:

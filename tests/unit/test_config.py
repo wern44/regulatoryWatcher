@@ -133,22 +133,22 @@ ui:
   host: "127.0.0.1"
   port: 8000
 cssf_discovery:
-  entity_slugs:
-    AIFM: aifms
-    CHAPTER15_MANCO: management-companies-chapter-15
+  entity_filter_ids:
+    AIFM: 502
+    CHAPTER15_MANCO: 2001
   publication_types:
-    - { label: "CSSF circular", slug: circulars-cssf, type: CSSF_CIRCULAR }
-    - { label: "Law", slug: laws, type: LU_LAW }
+    - { label: "CSSF circular", filter_id: 567, type: CSSF_CIRCULAR }
+    - { label: "Law", filter_id: 585, type: LU_LAW }
 '''
     p = tmp_path / "c.yaml"
     p.write_text(cfg_text, encoding="utf-8")
     cfg = load_config(p)
-    assert cfg.cssf_discovery.entity_slugs["AIFM"] == "aifms"
-    assert cfg.cssf_discovery.entity_slugs["CHAPTER15_MANCO"] == "management-companies-chapter-15"
+    assert cfg.cssf_discovery.entity_filter_ids["AIFM"] == 502
+    assert cfg.cssf_discovery.entity_filter_ids["CHAPTER15_MANCO"] == 2001
     assert len(cfg.cssf_discovery.publication_types) == 2
-    assert cfg.cssf_discovery.publication_types[0].slug == "circulars-cssf"
+    assert cfg.cssf_discovery.publication_types[0].filter_id == 567
     assert cfg.cssf_discovery.publication_types[0].type == "CSSF_CIRCULAR"
-    assert cfg.cssf_discovery.publication_types[1].slug == "laws"
+    assert cfg.cssf_discovery.publication_types[1].filter_id == 585
 
 
 def test_cssf_discovery_config_no_content_types_field():
@@ -162,9 +162,9 @@ def test_cssf_discovery_config_rejects_unknown_keys():
     with pytest.raises(ValidationError):
         CssfDiscoveryConfig(publication_type=[])  # singular typo
     with pytest.raises(ValidationError):
-        CssfDiscoveryConfig(entity_slug={})  # singular typo
+        CssfDiscoveryConfig(entity_filter_id={})  # singular typo
 
 
 def test_publication_type_config_rejects_unknown_keys():
     with pytest.raises(ValidationError):
-        PublicationTypeConfig(label="x", slug="y", type="z", extra_field="oops")
+        PublicationTypeConfig(label="x", filter_id=567, type="z", extra_field="oops")

@@ -67,9 +67,9 @@ class AnalysisConfig(BaseModel):
 
 
 class PublicationTypeConfig(BaseModel):
-    label: str         # human-readable, e.g. "CSSF circular"
-    slug: str          # FacetWP slug, e.g. "circulars-cssf"
-    type: str          # RegulationType enum value, e.g. "CSSF_CIRCULAR"
+    label: str       # human-readable, e.g. "CSSF circular"
+    filter_id: int   # WordPress term ID, e.g. 567
+    type: str        # RegulationType enum value, e.g. "CSSF_CIRCULAR"
 
     model_config = {"extra": "forbid"}
 
@@ -79,10 +79,12 @@ class CssfDiscoveryConfig(BaseModel):
     request_delay_ms: int = 500
     max_retries: int = 1
     user_agent: str = "RegulatoryWatcher/1.0"
-    entity_slugs: dict[str, str] = Field(
+    playwright_navigation_timeout_ms: int = 30000
+    playwright_filter_settle_ms: int = 2000
+    entity_filter_ids: dict[str, int] = Field(
         default_factory=lambda: {
-            "AIFM": "aifms",
-            "CHAPTER15_MANCO": "management-companies-chapter-15",
+            "AIFM": 502,
+            "CHAPTER15_MANCO": 2001,
         }
     )
     publication_types: list[PublicationTypeConfig] = Field(default_factory=list)
