@@ -43,6 +43,10 @@ _VALID_LIFECYCLE = {
 }
 
 
+_CATALOG_FILTER_COOKIE = "catalog_filters"
+_CATALOG_COOKIE_MAX_AGE = 60 * 60 * 24 * 30  # 30 days
+
+
 @router.get("/catalog", response_class=HTMLResponse)
 def catalog(
     request: Request,
@@ -51,8 +55,24 @@ def catalog(
     lifecycle: str | None = None,
     ict: str | None = None,
     show_amendments: bool = False,
-) -> HTMLResponse:
+    reset: bool = False,
+):
     templates = request.app.state.templates
+
+    # --- Filter persistence ---
+    # If the user asked to reset, clear the cookie and show defaults.
+    if reset:
+        resp = RedirectResponse(url="/catalog", status_code=303)
+        resp.delete_cookie(_CATALOG_FILTER_COOKIE)
+        return resp
+
+    # If the URL has no query string at all and a previous filter cookie
+    # exists, restore the saved filter by redirecting.
+    raw_qs = str(request.url.query or "")
+    if not raw_qs:
+        saved = request.cookies.get(_CATALOG_FILTER_COOKIE)
+        if saved:
+            return RedirectResponse(url=f"/catalog?{saved}", status_code=303)
 
     # Normalise authorization. The filter-bar form submits the empty string
     # ("Any authorisation") which a strict Literal type would 422 on.
@@ -136,7 +156,7 @@ def catalog(
 
     # Pass effective_lifecycle, effective_ict, show_amendments to the template
     # so the dropdowns show the current selection correctly.
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "catalog/list.html",
         {
@@ -150,6 +170,15 @@ def catalog(
             "amendment_counts": amendment_counts,
         },
     )
+    # Persist the current filter query string so a bare /catalog visit
+    # (e.g. coming back via a detail-page back-link) restores it.
+    if raw_qs:
+        response.set_cookie(
+            _CATALOG_FILTER_COOKIE, raw_qs,
+            max_age=_CATALOG_COOKIE_MAX_AGE,
+            httponly=True, samesite="lax",
+        )
+    return response
 
 
 @router.post("/catalog/{regulation_id}/set-ict")
