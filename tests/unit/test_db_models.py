@@ -295,6 +295,14 @@ def test_datetime_round_trip_timezone_aware(tmp_path: Path) -> None:
     assert delta.total_seconds() >= 0
 
 
+def test_regulation_type_includes_new_publication_types() -> None:
+    values = {t.value for t in RegulationType}
+    assert "CSSF_CIRCULAR_ANNEX" in values
+    assert "PROFESSIONAL_STANDARD" in values
+    assert "LU_GRAND_DUCAL_REGULATION" in values
+    assert "LU_MINISTERIAL_REGULATION" in values
+
+
 def test_is_current_uniqueness_enforced(tmp_path: Path) -> None:
     session = _fresh_session(tmp_path)
     reg = _make_regulation(session)
