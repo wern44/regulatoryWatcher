@@ -71,6 +71,8 @@ class PublicationTypeConfig(BaseModel):
     slug: str          # FacetWP slug, e.g. "circulars-cssf"
     type: str          # RegulationType enum value, e.g. "CSSF_CIRCULAR"
 
+    model_config = {"extra": "forbid"}
+
 
 class CssfDiscoveryConfig(BaseModel):
     base_url: str = "https://www.cssf.lu/en/regulatory-framework/"
@@ -84,6 +86,8 @@ class CssfDiscoveryConfig(BaseModel):
         }
     )
     publication_types: list[PublicationTypeConfig] = Field(default_factory=list)
+
+    model_config = {"extra": "forbid"}
 
 
 class AppConfig(BaseModel):

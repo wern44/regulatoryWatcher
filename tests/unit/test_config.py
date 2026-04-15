@@ -1,8 +1,15 @@
 from pathlib import Path
 
+import pytest
 import yaml
+from pydantic import ValidationError
 
-from regwatch.config import AppConfig, load_config
+from regwatch.config import (
+    AppConfig,
+    CssfDiscoveryConfig,
+    PublicationTypeConfig,
+    load_config,
+)
 
 
 def test_load_config_parses_example_yaml(tmp_path: Path) -> None:
@@ -94,9 +101,6 @@ def test_load_config_rejects_unknown_authorization_type(tmp_path: Path) -> None:
         )
     )
 
-    import pytest
-    from pydantic import ValidationError
-
     with pytest.raises(ValidationError):
         load_config(config_file)
 
@@ -138,7 +142,6 @@ cssf_discovery:
 '''
     p = tmp_path / "c.yaml"
     p.write_text(cfg_text, encoding="utf-8")
-    from regwatch.config import load_config
     cfg = load_config(p)
     assert cfg.cssf_discovery.entity_slugs["AIFM"] == "aifms"
     assert cfg.cssf_discovery.entity_slugs["CHAPTER15_MANCO"] == "management-companies-chapter-15"
@@ -150,6 +153,18 @@ cssf_discovery:
 
 def test_cssf_discovery_config_no_content_types_field():
     """The old content_types field is gone; no backward-compat shim."""
-    from regwatch.config import CssfDiscoveryConfig
     cfg = CssfDiscoveryConfig()
     assert not hasattr(cfg, "content_types")
+
+
+def test_cssf_discovery_config_rejects_unknown_keys():
+    """Typos in the YAML (e.g. publication_type:) should fail loudly."""
+    with pytest.raises(ValidationError):
+        CssfDiscoveryConfig(publication_type=[])  # singular typo
+    with pytest.raises(ValidationError):
+        CssfDiscoveryConfig(entity_slug={})  # singular typo
+
+
+def test_publication_type_config_rejects_unknown_keys():
+    with pytest.raises(ValidationError):
+        PublicationTypeConfig(label="x", slug="y", type="z", extra_field="oops")
