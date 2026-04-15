@@ -1,11 +1,17 @@
 from datetime import date
 
+import pytest
 from sqlalchemy.orm import sessionmaker
 from typer.testing import CliRunner
 
 from regwatch.cli import app
 from regwatch.db.engine import create_app_engine
 from regwatch.db.models import Base, DiscoveryRun, Regulation
+
+
+@pytest.fixture
+def runner():
+    return CliRunner()
 
 
 def _setup(tmp_path, monkeypatch):
@@ -135,3 +141,104 @@ def test_discover_cssf_enrich_stubs_flag_rejected(tmp_path, monkeypatch):
     assert result.exit_code != 0
     # Error message directs user away from the removed flag.
     assert "enrich-stubs" in result.output.lower()
+
+
+def test_discover_cssf_restrict_publication_type(runner, monkeypatch, tmp_path):
+    """--publication-type CSSF_CIRCULAR restricts to one matrix column."""
+    db, sf = _setup(tmp_path, monkeypatch)
+    captured = {}
+
+    # Write a real DiscoveryRun row so the CLI post-run lookup succeeds.
+    from datetime import UTC, datetime
+
+    with sf() as s:
+        from regwatch.db.models import DiscoveryRun
+        run = DiscoveryRun(
+            status="SUCCESS",
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+            triggered_by="USER_CLI",
+            entity_types=["AIFM"],
+            mode="incremental",
+        )
+        s.add(run)
+        s.commit()
+        stub_run_id = run.run_id
+
+    class _StubService:
+        def __init__(self, **kw):
+            pass
+
+        def run(self, *, entity_types, mode, triggered_by,
+                existing_run_id=None, dry_run=False, restrict_pub_slug=None,
+                **kwargs):
+            captured["entity_types"] = [
+                e.value if hasattr(e, "value") else e for e in entity_types
+            ]
+            captured["restrict_pub_slug"] = restrict_pub_slug
+            captured["dry_run"] = dry_run
+            return stub_run_id
+
+    monkeypatch.setattr("regwatch.cli.CssfDiscoveryService", _StubService)
+
+    result = runner.invoke(app, [
+        "discover-cssf",
+        "--publication-type", "CSSF_CIRCULAR",
+    ])
+    assert result.exit_code == 0, result.output
+    # pub type maps to its config slug via lookup; our config.example has
+    # CSSF_CIRCULAR -> filter_id=567 -> (the slug arg passed is the pub label
+    # or the filter_id — whichever the service expects). Per the plan:
+    # `restrict_pub_slug` carries a publication-type *discriminator* (label
+    # or enum value) that the service filters its config list by. Accept
+    # either form — assert it's non-None.
+    assert captured["restrict_pub_slug"] is not None
+    assert captured["dry_run"] is False
+
+
+def test_discover_cssf_dry_run_flag_passed(runner, monkeypatch, tmp_path):
+    """--dry-run flows through to service.run(dry_run=True)."""
+    db, sf = _setup(tmp_path, monkeypatch)
+    captured = {}
+
+    # Write a real DiscoveryRun row so the CLI post-run lookup succeeds.
+    from datetime import UTC, datetime
+
+    with sf() as s:
+        from regwatch.db.models import DiscoveryRun
+        run = DiscoveryRun(
+            status="SUCCESS",
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+            triggered_by="USER_CLI",
+            entity_types=["AIFM"],
+            mode="incremental",
+        )
+        s.add(run)
+        s.commit()
+        stub_run_id = run.run_id
+
+    class _StubService:
+        def __init__(self, **kw):
+            pass
+
+        def run(self, *, dry_run=False, **kw):
+            captured["dry_run"] = dry_run
+            return stub_run_id
+
+    monkeypatch.setattr("regwatch.cli.CssfDiscoveryService", _StubService)
+
+    result = runner.invoke(app, ["discover-cssf", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert captured["dry_run"] is True
+
+
+def test_discover_cssf_unknown_publication_type_rejected(runner, tmp_path, monkeypatch):
+    """Typos in --publication-type produce a clear error."""
+    _setup(tmp_path, monkeypatch)
+    result = runner.invoke(app, [
+        "discover-cssf",
+        "--publication-type", "NOT_A_REAL_TYPE",
+    ])
+    assert result.exit_code != 0
+    assert "publication-type" in result.output.lower() or "not_a_real_type" in result.output.lower()

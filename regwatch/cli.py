@@ -331,11 +331,40 @@ def discover_cssf(
             help="Removed; filter-matrix crawl promotes stubs automatically.",
         ),
     ] = False,
+    publication_type: Annotated[
+        str | None,
+        typer.Option(
+            "--publication-type",
+            help=(
+                "Restrict to a single publication-type column by "
+                "RegulationType enum value (e.g. CSSF_CIRCULAR). "
+                "Auto-retire is disabled in this mode."
+            ),
+        ),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Execute the crawl but commit nothing. Skips retire.",
+        ),
+    ] = False,
 ) -> None:
     """Discover CSSF circulars for the configured authorizations."""
     cfg = _get_config()
     engine = create_app_engine(cfg.paths.db_file)
     sf = sessionmaker(engine, expire_on_commit=False)
+
+    # Validate --publication-type before doing anything else.
+    if publication_type is not None:
+        configured_types = {p.type for p in cfg.cssf_discovery.publication_types}
+        configured_labels = {p.label for p in cfg.cssf_discovery.publication_types}
+        if publication_type not in configured_types and publication_type not in configured_labels:
+            typer.echo(
+                f"Unknown --publication-type: {publication_type!r}. "
+                f"Valid values (from config): {sorted(configured_types)}"
+            )
+            raise typer.Exit(code=2)
 
     if backfill:
         service = CssfDiscoveryService(
@@ -397,6 +426,8 @@ def discover_cssf(
         entity_types=auth_types,
         mode=mode,
         triggered_by="USER_CLI",
+        dry_run=dry_run,
+        restrict_pub_slug=publication_type,
     )
 
     with sf() as s:

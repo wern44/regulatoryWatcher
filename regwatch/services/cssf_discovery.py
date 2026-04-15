@@ -132,6 +132,10 @@ class CssfDiscoveryService:
         self._config = config
         self._client = http_client
         self._on_progress = on_progress or (lambda **_: None)
+        # Defaults set here so instance methods never AttributeError before
+        # run() is called.
+        self._dry_run: bool = False
+        self._restrict_pub_slug: str | None = None
 
     def run(
         self,
@@ -140,7 +144,25 @@ class CssfDiscoveryService:
         mode: Literal["full", "incremental"],
         triggered_by: str,
         existing_run_id: int | None = None,
+        dry_run: bool = False,
+        restrict_pub_slug: str | None = None,
     ) -> int:
+        self._dry_run = dry_run
+        self._restrict_pub_slug = restrict_pub_slug
+
+        # Resolve the publication-type matrix for this run.
+        pubs_to_use = list(self._config.publication_types)
+        if restrict_pub_slug is not None:
+            pubs_to_use = [
+                p for p in pubs_to_use
+                if p.label == restrict_pub_slug or p.type == restrict_pub_slug
+            ]
+            if not pubs_to_use:
+                raise ValueError(
+                    f"restrict_pub_slug={restrict_pub_slug!r} matched no "
+                    f"publication_type in config"
+                )
+
         if existing_run_id is None:
             with self._sf() as s:
                 run = DiscoveryRun(
@@ -174,7 +196,7 @@ class CssfDiscoveryService:
                 if entity_filter_id is None:
                     logger.warning("no filter_id mapped for %s; skipping", et.value)
                     continue
-                for pub in self._config.publication_types:
+                for pub in pubs_to_use:
                     try:
                         self._run_for_cell(run_id, et, entity_filter_id, pub, mode)
                     except Exception as e:  # noqa: BLE001
@@ -297,7 +319,8 @@ class CssfDiscoveryService:
                 reg = self._create_regulation(s, detail, listing, auth_type, pub)
                 self._ensure_amendment_stubs(s, detail)
                 self._sync_lifecycle_links(s, reg, detail)
-                s.commit()
+                if not self._dry_run:
+                    s.commit()
                 self._write_item(
                     run_id, reg.regulation_id, canonical_ref, "NEW",
                     listing.detail_url, auth_type.value, pub.label, note=None,
@@ -325,7 +348,8 @@ class CssfDiscoveryService:
                 self._ensure_amendment_stubs(s, detail)
                 self._sync_lifecycle_links(s, existing, detail)
                 self._refresh_metadata(existing, detail, listing)
-                s.commit()
+                if not self._dry_run:
+                    s.commit()
                 self._write_item(
                     run_id, existing.regulation_id, canonical_ref, "AMENDED",
                     listing.detail_url, auth_type.value, pub.label,
@@ -339,7 +363,8 @@ class CssfDiscoveryService:
 
             changed = self._refresh_metadata(existing, detail, listing)
             if changed:
-                s.commit()
+                if not self._dry_run:
+                    s.commit()
                 self._write_item(
                     run_id, existing.regulation_id, canonical_ref, "UPDATED_METADATA",
                     listing.detail_url, auth_type.value, pub.label, note=None,
@@ -350,7 +375,8 @@ class CssfDiscoveryService:
                 )
                 return "UPDATED_METADATA"
 
-            s.commit()
+            if not self._dry_run:
+                s.commit()
             self._write_item(
                 run_id, existing.regulation_id, canonical_ref, "UNCHANGED",
                 listing.detail_url, auth_type.value, pub.label, note=None,
@@ -394,7 +420,8 @@ class CssfDiscoveryService:
             else:
                 existing.last_seen_run_id = run_id
                 existing.last_seen_at = now
-            s.commit()
+            if not self._dry_run:
+                s.commit()
 
     def _reference_exists(self, ref: str) -> bool:
         with self._sf() as s:
@@ -415,7 +442,8 @@ class CssfDiscoveryService:
             )
             if existing is not None:
                 existing.lifecycle_stage = LifecycleStage.REPEALED
-                s.commit()
+                if not self._dry_run:
+                    s.commit()
                 self._write_item(
                     run_id, existing.regulation_id, listing.reference_number, "WITHDRAWN",
                     listing.detail_url, auth_type.value, pub.label, note="detail 404",
@@ -756,7 +784,8 @@ class CssfDiscoveryService:
                 content_type=content_type,
                 note=note,
             ))
-            s.commit()
+            if not self._dry_run:
+                s.commit()
 
     def _finalize_run(self, run_id: int, error: str | None) -> None:
         with self._sf() as s:
@@ -796,7 +825,10 @@ class CssfDiscoveryService:
 
             # Retire CSSF_WEB regulations absent from this run — only on SUCCESS.
             # A PARTIAL/FAILED run must never wipe the catalog.
-            if run.status == "SUCCESS":
+            # A dry-run or single-column restriction also skips retire: we
+            # can't prove global absence from an incomplete crawl.
+            skip_retire = self._dry_run or self._restrict_pub_slug is not None
+            if run.status == "SUCCESS" and not skip_retire:
                 run.retired_count = self.retire_missing(run_id)
             else:
                 run.retired_count = 0
