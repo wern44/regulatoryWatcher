@@ -327,10 +327,8 @@ def discover_cssf(
         bool,
         typer.Option(
             "--enrich-stubs",
-            help=(
-                "Fetch detail pages for CSSF_STUB rows and promote them to "
-                "CSSF_WEB"
-            ),
+            hidden=True,
+            help="Removed; filter-matrix crawl promotes stubs automatically.",
         ),
     ] = False,
 ) -> None:
@@ -358,13 +356,12 @@ def discover_cssf(
         return
 
     if enrich_stubs:
-        service = CssfDiscoveryService(
-            session_factory=sf,
-            config=cfg.cssf_discovery,
+        typer.echo(
+            "--enrich-stubs has been removed. Run `regwatch discover-cssf` "
+            "(the full filter-matrix crawl); stubs are promoted automatically "
+            "when re-observed in any matrix cell."
         )
-        counts = service.enrich_stubs()
-        typer.echo(f"Stub enrichment complete: {counts}")
-        return
+        raise typer.Exit(code=2)
 
     # Resolve entity types
     if entity:

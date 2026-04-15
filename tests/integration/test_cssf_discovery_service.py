@@ -283,66 +283,6 @@ def test_reclassify_respects_override(tmp_path):
         assert reg.is_ict is True  # override respected
 
 
-def test_enrich_stubs_promotes_to_web_and_sets_applicability(tmp_path):
-    sf = _setup_db(tmp_path)
-    # Seed a STUB with a ref whose slug maps cleanly
-    with sf() as s:
-        s.add(Regulation(
-            type=RegulationType.CSSF_CIRCULAR,
-            reference_number="CSSF 22/806",
-            title="CSSF 22/806",   # placeholder
-            issuing_authority="CSSF",
-            lifecycle_stage=LifecycleStage.IN_FORCE,
-            is_ict=False, needs_review=True, url="",
-            source_of_truth="CSSF_STUB",
-        ))
-        s.commit()
-
-    client = httpx.Client(transport=_mock_transport(), base_url="https://www.cssf.lu")
-    counts = _svc(sf, client=client).enrich_stubs()
-    assert counts["promoted"] >= 1
-    assert counts["newly_applicable"] >= 1
-
-    with sf() as s:
-        reg = s.query(Regulation).filter_by(reference_number="CSSF 22/806").one()
-        assert reg.source_of_truth == "CSSF_WEB"
-        assert "outsourcing" in (reg.title or "")
-        # Applicability rows populated from detail page
-        appls = s.query(RegulationApplicability).filter_by(
-            regulation_id=reg.regulation_id
-        ).all()
-        types = {a.authorization_type for a in appls}
-        # Detail fixture (22/806) lists "Alternative investment fund managers" among entities
-        assert "AIFM" in types
-
-
-def test_enrich_stubs_counts_404(tmp_path):
-    sf = _setup_db(tmp_path)
-    with sf() as s:
-        s.add(Regulation(
-            type=RegulationType.CSSF_CIRCULAR,
-            reference_number="CSSF 99/999",  # made up — will 404
-            title="CSSF 99/999",
-            issuing_authority="CSSF",
-            lifecycle_stage=LifecycleStage.IN_FORCE,
-            is_ict=False, needs_review=True, url="",
-            source_of_truth="CSSF_STUB",
-        ))
-        s.commit()
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(404)
-
-    client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://www.cssf.lu")
-    counts = _svc(sf, client=client).enrich_stubs()
-    assert counts["failed_404"] >= 1
-    assert counts["promoted"] == 0
-
-    with sf() as s:
-        reg = s.query(Regulation).filter_by(reference_number="CSSF 99/999").one()
-        assert reg.source_of_truth == "CSSF_STUB"  # unchanged
-
-
 def test_map_labels_to_auth_types():
     from regwatch.services.cssf_discovery import _map_labels_to_auth_types
     assert AuthorizationType.AIFM in _map_labels_to_auth_types(

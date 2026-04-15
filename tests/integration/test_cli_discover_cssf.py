@@ -126,3 +126,12 @@ def test_cli_discover_cssf_exits_1_on_failure(tmp_path, monkeypatch):
     result = CliRunner().invoke(app, ["discover-cssf", "--full", "--entity", "AIFM"])
     assert result.exit_code == 1, result.output
     assert "FAILED" in result.output
+
+
+def test_discover_cssf_enrich_stubs_flag_rejected(tmp_path, monkeypatch):
+    """--enrich-stubs is removed; CLI exits non-zero with a clear error."""
+    _setup(tmp_path, monkeypatch)
+    result = CliRunner().invoke(app, ["discover-cssf", "--enrich-stubs"])
+    assert result.exit_code != 0
+    # Error message directs user away from the removed flag.
+    assert "enrich-stubs" in result.output.lower()
