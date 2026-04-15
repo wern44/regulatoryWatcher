@@ -1,17 +1,19 @@
 """Regulation catalog queries exposed to the UI layer."""
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
 from typing import Literal
 
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from regwatch.db.models import (
     LifecycleStage,
     Regulation,
     RegulationApplicability,
+    RegulationLifecycleLink,
 )
 
 
@@ -98,3 +100,66 @@ def _to_dto(r: Regulation) -> RegulationDTO:
         needs_review=r.needs_review,
         dora_pillar=r.dora_pillar.value if r.dora_pillar else None,
     )
+
+
+def build_amendment_indexes(
+    session: Session,
+) -> tuple[dict[int, int], dict[int, list[int]]]:
+    """Build two maps for the current regulation catalog.
+
+    Returns:
+        (effective_parent_id, children_by_parent_id) where:
+        - effective_parent_id[reg_id] = the top-level regulation_id this
+          reg rolls up to. If reg is itself top-level, the value equals reg_id.
+        - children_by_parent_id[parent_id] = list of non-top-level
+          regulation_ids whose effective parent is this parent (parent excluded).
+
+    Semantics:
+    - A regulation with NO outgoing AMENDS edge to a non-REPEALED target
+      is top-level.
+    - Otherwise, walk outgoing AMENDS edges (pick any one if multiple) to
+      non-REPEALED targets until we reach a top-level regulation.
+    - Cycles are broken by a visited-set guard (defensive; shouldn't happen
+      in practice but we don't trust data blindly).
+    """
+    # Load all regulations + their lifecycle stages
+    regs: dict[int, Regulation] = {
+        r.regulation_id: r
+        for r in session.scalars(select(Regulation)).all()
+    }
+    # Load AMENDS edges: for each reg, list of target_ids where target is non-REPEALED.
+    outgoing: dict[int, list[int]] = defaultdict(list)
+    links = session.scalars(
+        select(RegulationLifecycleLink).where(
+            RegulationLifecycleLink.relation == "AMENDS"
+        )
+    ).all()
+    for link in links:
+        target = regs.get(link.to_regulation_id)
+        if target is None or target.lifecycle_stage == LifecycleStage.REPEALED:
+            continue
+        outgoing[link.from_regulation_id].append(link.to_regulation_id)
+
+    # Walk each reg to its top-level
+    effective_parent_id: dict[int, int] = {}
+    for rid in regs:
+        current = rid
+        visited: set[int] = set()
+        while True:
+            if current in visited:
+                # cycle — declare current as top-level to stop
+                break
+            visited.add(current)
+            nxt = outgoing.get(current)
+            if not nxt:
+                break
+            current = nxt[0]  # pick first target (multi-parent not modelled yet)
+        effective_parent_id[rid] = current
+
+    # Invert to get children
+    children_by_parent: dict[int, list[int]] = defaultdict(list)
+    for child_id, parent_id in effective_parent_id.items():
+        if child_id != parent_id:
+            children_by_parent[parent_id].append(child_id)
+
+    return effective_parent_id, dict(children_by_parent)

@@ -5,6 +5,25 @@
   <h1 class="text-2xl font-bold mt-2 mb-1">{{ regulation.reference_number }}</h1>
   <div class="text-slate-600 mb-4">{{ regulation.title }}</div>
 
+  {% if direct_parent_info %}
+  <div class="rounded border border-blue-200 bg-blue-50 text-blue-900 px-3 py-2 mb-4 text-sm">
+    {% if direct_parent_info.is_repealed %}
+      <strong>Amends</strong>
+      <a href="/regulations/{{ direct_parent_info.regulation_id }}"
+         class="underline">{{ direct_parent_info.reference_number }}</a>
+      &mdash; {{ direct_parent_info.title }}.
+      The parent circular has been <strong>REPEALED</strong>, so this
+      amendment is shown here as a standalone regulation.
+    {% else %}
+      This circular amends
+      <a href="/regulations/{{ direct_parent_info.regulation_id }}"
+         class="underline font-semibold">{{ direct_parent_info.reference_number }}</a>
+      &mdash; {{ direct_parent_info.title }}.
+      Changes introduced by this amendment apply to the parent circular.
+    {% endif %}
+  </div>
+  {% endif %}
+
   <div class="flex flex-wrap gap-2 mb-4">
     <span class="px-2 py-0.5 rounded bg-slate-100 text-xs">{{ regulation.lifecycle_stage }}</span>
     <span class="px-2 py-0.5 rounded bg-slate-100 text-xs">{{ regulation.issuing_authority }}</span>
@@ -122,6 +141,34 @@
         {% endfor %}
       </tbody>
     </table>
+  </section>
+  {% endif %}
+
+  {% if amendment_rows %}
+  <section id="amendments" class="bg-white p-4 rounded shadow-sm border mt-6">
+    <h2 class="text-lg font-semibold mb-2">Amendments ({{ amendment_rows|length }})</h2>
+    <p class="text-xs text-slate-500 mb-3">
+      Circulars that amend this regulation. Each is a separate legal
+      instrument with its own PDF and analysis, but they apply on top of
+      this parent.
+    </p>
+    <ul class="divide-y divide-slate-100">
+      {% for a in amendment_rows %}
+      <li class="py-2 flex items-center justify-between">
+        <div>
+          <a href="/regulations/{{ a.regulation_id }}"
+             class="font-medium text-blue-700 hover:underline">
+            {{ a.reference_number }}
+          </a>
+          {% if a.is_ict %}<span class="ml-2 px-1.5 py-0.5 bg-purple-100 text-purple-800 text-xs rounded font-semibold">ICT</span>{% endif %}
+          <div class="text-xs text-slate-600">{{ a.title }}</div>
+        </div>
+        <div class="text-xs text-slate-500">
+          {% if a.publication_date %}{{ a.publication_date.strftime('%Y-%m-%d') }}{% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
   </section>
   {% endif %}
 {% endblock %}

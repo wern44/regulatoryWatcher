@@ -42,6 +42,11 @@
     </select>
     <input type="text" name="search" value="{{ flt.search or '' }}" placeholder="Search..."
            class="border rounded px-2 py-1 flex-1">
+    <label class="flex items-center gap-1 px-2">
+      <input type="checkbox" name="show_amendments" value="true"
+             {% if show_amendments %}checked{% endif %}>
+      <span class="text-xs">Show amendments</span>
+    </label>
     <button class="px-3 py-1 bg-slate-800 text-white rounded" type="submit">Filter</button>
   </form>
 

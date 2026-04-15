@@ -2,13 +2,21 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
+from sqlalchemy import select
 
-from regwatch.db.models import DocumentVersion, Regulation
+from regwatch.db.models import (
+    DocumentVersion,
+    LifecycleStage,
+    Regulation,
+    RegulationLifecycleLink,
+)
 from regwatch.services.analysis import AnalysisService
 from regwatch.services.cssf_discovery import CssfDiscoveryService, _slug_from_reference
+from regwatch.services.regulations import build_amendment_indexes
 from regwatch.services.updates import UpdateService
 
 router = APIRouter()
@@ -72,6 +80,48 @@ def regulation_detail(request: Request, regulation_id: int) -> HTMLResponse:
         # and it isn't a bare PDF.
         source_url = "" if cssf_page_url or pdf_url else stored_url
 
+        # Amendment grouping: children and parent info
+        _effective_parent_id, children_by_parent_id = build_amendment_indexes(session)
+
+        child_ids = children_by_parent_id.get(regulation_id, [])
+        amendment_rows: list[dict] = []
+        if child_ids:
+            kids = session.scalars(
+                select(Regulation).where(Regulation.regulation_id.in_(child_ids))
+            ).all()
+            kids.sort(
+                key=lambda k: (k.publication_date or date.min, k.reference_number),
+                reverse=True,
+            )
+            amendment_rows = [
+                {
+                    "regulation_id": k.regulation_id,
+                    "reference_number": k.reference_number,
+                    "title": k.title,
+                    "publication_date": k.publication_date,
+                    "is_ict": k.is_ict,
+                }
+                for k in kids
+            ]
+
+        # Parent info: direct outgoing AMENDS target (may be REPEALED)
+        direct_parent_info: dict | None = None
+        direct_links = session.scalars(
+            select(RegulationLifecycleLink).where(
+                RegulationLifecycleLink.from_regulation_id == regulation_id,
+                RegulationLifecycleLink.relation == "AMENDS",
+            )
+        ).all()
+        if direct_links:
+            parent_reg = session.get(Regulation, direct_links[0].to_regulation_id)
+            if parent_reg is not None:
+                direct_parent_info = {
+                    "regulation_id": parent_reg.regulation_id,
+                    "reference_number": parent_reg.reference_number,
+                    "title": parent_reg.title,
+                    "is_repealed": parent_reg.lifecycle_stage == LifecycleStage.REPEALED,
+                }
+
         payload = {
             "active": "catalog",
             "regulation": {
@@ -88,6 +138,8 @@ def regulation_detail(request: Request, regulation_id: int) -> HTMLResponse:
             "versions": versions,
             "latest_diff": latest_diff,
             "analyses_by_version": analyses_by_version,
+            "amendment_rows": amendment_rows,
+            "direct_parent_info": direct_parent_info,
         }
 
     sources_svc = CssfDiscoveryService(

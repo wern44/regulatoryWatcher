@@ -24,7 +24,11 @@ from regwatch.db.models import (
 from regwatch.services.analysis import AnalysisService
 from regwatch.services.cssf_discovery import CssfDiscoveryService
 from regwatch.services.discovery import DiscoveryService
-from regwatch.services.regulations import RegulationFilter, RegulationService
+from regwatch.services.regulations import (
+    RegulationFilter,
+    RegulationService,
+    build_amendment_indexes,
+)
 from regwatch.services.upload import (
     UploadRejectedError,
     index_uploaded_version,
@@ -46,6 +50,7 @@ def catalog(
     search: str | None = None,
     lifecycle: str | None = None,
     ict: str | None = None,
+    show_amendments: bool = False,
 ) -> HTMLResponse:
     templates = request.app.state.templates
 
@@ -82,6 +87,22 @@ def catalog(
         svc = RegulationService(session)
         regs = svc.list(flt)
 
+        effective_parent_id, children_by_parent_id = build_amendment_indexes(session)
+
+        if not show_amendments:
+            # Drop any reg whose effective parent isn't itself
+            regs = [
+                r for r in regs
+                if effective_parent_id.get(r.regulation_id) == r.regulation_id
+            ]
+
+        # Count amendments per displayed reg (flattened — chain counted as all descendants)
+        amendment_counts: dict[int, int] = {}
+        for r in regs:
+            amendment_counts[r.regulation_id] = len(
+                children_by_parent_id.get(r.regulation_id, [])
+            )
+
         # Compute per-regulation analysis status for the column.
         analysis_svc = AnalysisService(session)
         current_by_reg: dict[int, int] = dict(
@@ -105,8 +126,8 @@ def catalog(
             else:
                 status_by_reg[r.regulation_id] = "ok"
 
-    # Pass effective_lifecycle and effective_ict to the template so the
-    # dropdowns show the current selection correctly.
+    # Pass effective_lifecycle, effective_ict, show_amendments to the template
+    # so the dropdowns show the current selection correctly.
     return templates.TemplateResponse(
         request,
         "catalog/list.html",
@@ -117,6 +138,8 @@ def catalog(
             "status_by_reg": status_by_reg,
             "effective_lifecycle": effective_lifecycle,
             "effective_ict": effective_ict,
+            "show_amendments": show_amendments,
+            "amendment_counts": amendment_counts,
         },
     )
 
