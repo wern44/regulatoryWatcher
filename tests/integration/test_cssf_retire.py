@@ -57,7 +57,8 @@ def _mk_run(s: Session, status: str = "SUCCESS") -> int:
         status=status, started_at=datetime.now(UTC),
         triggered_by="TEST", entity_types=["AIFM"], mode="full",
     )
-    s.add(run); s.commit()
+    s.add(run)
+    s.commit()
     return run.run_id
 
 
@@ -83,7 +84,7 @@ def test_retire_marks_unseen_cssf_web_as_repealed(sf):
         reg_b = _mk_reg(s, "CSSF 99/002")
         _mk_source(s, reg_b, old_run)
         # Never seen
-        reg_c = _mk_reg(s, "CSSF 99/003")
+        _mk_reg(s, "CSSF 99/003")
 
     svc = CssfDiscoveryService(session_factory=sf, config=_stub_cfg())
     count = svc.retire_missing(current_run)
@@ -160,8 +161,8 @@ def test_retire_skipped_when_run_status_not_success(sf):
 def test_retire_writes_discovery_run_items(sf):
     with sf() as s:
         run_id = _mk_run(s, status="SUCCESS")
-        reg_a = _mk_reg(s, "CSSF 99/A")
-        reg_b = _mk_reg(s, "CSSF 99/B")
+        _mk_reg(s, "CSSF 99/A")
+        _mk_reg(s, "CSSF 99/B")
         # Neither seen in run -> both retire.
 
     svc = CssfDiscoveryService(session_factory=sf, config=_stub_cfg())
@@ -179,8 +180,9 @@ def test_retire_writes_discovery_run_items(sf):
 
 def test_reactivation_flips_repealed_to_in_force(sf):
     """When _reconcile_row sees an existing REPEALED CSSF_WEB row, flip to IN_FORCE."""
-    from regwatch.discovery.cssf_scraper import CircularListingRow, CircularDetail
     from unittest.mock import patch
+
+    from regwatch.discovery.cssf_scraper import CircularDetail, CircularListingRow
 
     with sf() as s:
         run_id = _mk_run(s)
@@ -202,11 +204,11 @@ def test_reactivation_flips_repealed_to_in_force(sf):
         applicable_entities=[], pdf_url_en=None, pdf_url_fr=None,
         published_at=None, updated_at=None, description="",
     )
+    from regwatch.db.models import AuthorizationType
     svc = CssfDiscoveryService(session_factory=sf, config=_stub_cfg())
     pub = _stub_cfg().publication_types[0]
-    from regwatch.db.models import AuthorizationType
     with patch("regwatch.services.cssf_discovery.fetch_circular_detail", return_value=detail):
-        outcome = svc._reconcile_row(run_id, AuthorizationType.AIFM, pub, listing)
+        svc._reconcile_row(run_id, AuthorizationType.AIFM, pub, listing)
 
     with sf() as s:
         reg = s.get(Regulation, reg_id)
