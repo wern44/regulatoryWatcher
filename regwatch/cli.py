@@ -20,6 +20,7 @@ from regwatch.db.models import (
     DocumentChunk,
     PipelineRun,
     Regulation,
+    RegulationOverride,
 )
 from regwatch.db.schema_sync import sync_schema
 from regwatch.db.seed import load_seed
@@ -479,6 +480,69 @@ def discover_cssf(
 
         if run.status != "SUCCESS":
             raise typer.Exit(code=1)
+
+
+@app.command("keep-active")
+def keep_active(
+    ref: Annotated[
+        str,
+        typer.Argument(help="Regulation reference (e.g. 'CSSF 20/750')"),
+    ],
+    reason: Annotated[
+        str,
+        typer.Option(
+            "--reason",
+            help="Free-form justification for keeping this regulation active.",
+        ),
+    ] = "Manual keep via CLI",
+) -> None:
+    """Exempt a regulation from the CSSF filter-matrix auto-retire sweep.
+
+    Idempotent: running twice for the same ref updates the reason rather
+    than creating a duplicate row.
+    """
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+
+    cfg = _get_config()
+    engine = create_app_engine(cfg.paths.db_file)
+    sf = sessionmaker(engine, expire_on_commit=False)
+
+    with sf() as s:
+        reg = s.scalar(
+            select(Regulation).where(Regulation.reference_number == ref)
+        )
+        if reg is None:
+            typer.echo(f"No regulation with reference {ref!r}.")
+            raise typer.Exit(code=1)
+
+        existing = s.scalar(
+            select(RegulationOverride).where(
+                RegulationOverride.reference_number == ref,
+                RegulationOverride.action == "KEEP_ACTIVE",
+            )
+        )
+        if existing is not None:
+            existing.reason = reason
+            s.commit()
+            typer.echo(
+                f"Updated existing KEEP_ACTIVE override for {ref!r} ({reg.title})."
+            )
+        else:
+            s.add(RegulationOverride(
+                reference_number=ref,
+                action="KEEP_ACTIVE",
+                reason=reason,
+                created_at=datetime.now(UTC),
+            ))
+            s.commit()
+            typer.echo(
+                f"Added KEEP_ACTIVE override for {ref!r} ({reg.title})."
+            )
+        typer.echo(
+            "This regulation will be exempt from the filter-matrix auto-retire sweep."
+        )
 
 
 @app.command("chat")
