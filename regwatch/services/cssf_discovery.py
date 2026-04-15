@@ -354,6 +354,10 @@ class CssfDiscoveryService:
                     )
                     return "UNCHANGED"
 
+        outcome: str
+        reg_id: int | None = None
+        note: str | None = None
+
         with self._sf() as s:
             existing = s.scalar(
                 select(Regulation).where(Regulation.reference_number == canonical_ref)
@@ -364,71 +368,50 @@ class CssfDiscoveryService:
                 self._sync_lifecycle_links(s, reg, detail)
                 if not self._dry_run:
                     s.commit()
-                self._write_item(
-                    run_id, reg.regulation_id, canonical_ref, "NEW",
-                    listing.detail_url, auth_type.value, pub.label, note=None,
-                )
-                self._upsert_discovery_source(
-                    run_id=run_id, regulation_id=reg.regulation_id,
-                    entity_type=auth_type.value, content_type=pub.label,
-                )
-                return "NEW"
+                outcome = "NEW"
+                reg_id = reg.regulation_id
+            else:
+                self._ensure_applicability(s, existing, auth_type)
 
-            self._ensure_applicability(s, existing, auth_type)
+                # Reactivation: a previously-retired row is back in the matrix.
+                if (
+                    existing.source_of_truth == "CSSF_WEB"
+                    and existing.lifecycle_stage == LifecycleStage.REPEALED
+                ):
+                    existing.lifecycle_stage = LifecycleStage.IN_FORCE
 
-            # Reactivation: a previously-retired row is back in the matrix.
-            if (
-                existing.source_of_truth == "CSSF_WEB"
-                and existing.lifecycle_stage == LifecycleStage.REPEALED
-            ):
-                existing.lifecycle_stage = LifecycleStage.IN_FORCE
+                current = self._current_amendment_links(s, existing)
+                incoming = set(detail.amended_by_refs)
+                amended = incoming - current["AMENDED_BY"]
 
-            current = self._current_amendment_links(s, existing)
-            incoming = set(detail.amended_by_refs)
-            amended = incoming - current["AMENDED_BY"]
+                if amended:
+                    self._ensure_amendment_stubs(s, detail)
+                    self._sync_lifecycle_links(s, existing, detail)
+                    self._refresh_metadata(existing, detail, listing)
+                    outcome = "AMENDED"
+                    note = f"new amendments: {sorted(amended)}"
+                elif self._refresh_metadata(existing, detail, listing):
+                    outcome = "UPDATED_METADATA"
+                else:
+                    outcome = "UNCHANGED"
 
-            if amended:
-                self._ensure_amendment_stubs(s, detail)
-                self._sync_lifecycle_links(s, existing, detail)
-                self._refresh_metadata(existing, detail, listing)
                 if not self._dry_run:
                     s.commit()
-                self._write_item(
-                    run_id, existing.regulation_id, canonical_ref, "AMENDED",
-                    listing.detail_url, auth_type.value, pub.label,
-                    note=f"new amendments: {sorted(amended)}",
-                )
-                self._upsert_discovery_source(
-                    run_id=run_id, regulation_id=existing.regulation_id,
-                    entity_type=auth_type.value, content_type=pub.label,
-                )
-                return "AMENDED"
+                reg_id = existing.regulation_id
 
-            changed = self._refresh_metadata(existing, detail, listing)
-            if changed:
-                if not self._dry_run:
-                    s.commit()
-                self._write_item(
-                    run_id, existing.regulation_id, canonical_ref, "UPDATED_METADATA",
-                    listing.detail_url, auth_type.value, pub.label, note=None,
-                )
-                self._upsert_discovery_source(
-                    run_id=run_id, regulation_id=existing.regulation_id,
-                    entity_type=auth_type.value, content_type=pub.label,
-                )
-                return "UPDATED_METADATA"
-
-            if not self._dry_run:
-                s.commit()
-            self._write_item(
-                run_id, existing.regulation_id, canonical_ref, "UNCHANGED",
-                listing.detail_url, auth_type.value, pub.label, note=None,
-            )
+        # Session is now closed. Audit / provenance writes happen AFTER the
+        # outer session's transaction ends, so the connection's lock is released
+        # before _write_item or _upsert_discovery_source try to acquire one.
+        self._write_item(
+            run_id, reg_id, canonical_ref, outcome,
+            listing.detail_url, auth_type.value, pub.label, note=note,
+        )
+        if reg_id is not None:
             self._upsert_discovery_source(
-                run_id=run_id, regulation_id=existing.regulation_id,
+                run_id=run_id, regulation_id=reg_id,
                 entity_type=auth_type.value, content_type=pub.label,
             )
-            return "UNCHANGED"
+        return outcome
 
     # ----- helpers -----
 
