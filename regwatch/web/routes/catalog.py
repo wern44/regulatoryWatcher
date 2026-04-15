@@ -45,6 +45,7 @@ def catalog(
     authorization: Literal["AIFM", "CHAPTER15_MANCO"] | None = None,
     search: str | None = None,
     lifecycle: str | None = None,
+    ict: str | None = None,
 ) -> HTMLResponse:
     templates = request.app.state.templates
 
@@ -60,10 +61,22 @@ def catalog(
         lifecycle_stages = ["IN_FORCE"]
         effective_lifecycle = "IN_FORCE"
 
+    # Resolve ICT
+    if ict == "ict":
+        is_ict_filter: bool | None = True
+        effective_ict = "ict"
+    elif ict == "non-ict":
+        is_ict_filter = False
+        effective_ict = "non-ict"
+    else:
+        is_ict_filter = None
+        effective_ict = ""
+
     flt = RegulationFilter(
         authorization_type=authorization,
         search=search,
         lifecycle_stages=lifecycle_stages,
+        is_ict=is_ict_filter,
     )
     with request.app.state.session_factory() as session:
         svc = RegulationService(session)
@@ -92,8 +105,8 @@ def catalog(
             else:
                 status_by_reg[r.regulation_id] = "ok"
 
-    # Pass effective_lifecycle to the template so the dropdown shows the
-    # current selection correctly (even when lifecycle was None in the URL).
+    # Pass effective_lifecycle and effective_ict to the template so the
+    # dropdowns show the current selection correctly.
     return templates.TemplateResponse(
         request,
         "catalog/list.html",
@@ -103,6 +116,7 @@ def catalog(
             "flt": flt,
             "status_by_reg": status_by_reg,
             "effective_lifecycle": effective_lifecycle,
+            "effective_ict": effective_ict,
         },
     )
 

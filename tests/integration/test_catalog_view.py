@@ -123,3 +123,64 @@ def test_catalog_lifecycle_repealed_filter(tmp_path: Path, monkeypatch) -> None:
     assert resp.status_code == 200
     assert "LIVE 01" not in resp.text
     assert "DEAD 01" in resp.text
+
+
+def _seed_ict(sf) -> None:  # type: ignore[no-untyped-def]
+    """Seed one ICT and one non-ICT in-force regulation."""
+    with sf() as s:
+        s.add(Regulation(
+            type=RegulationType.CSSF_CIRCULAR,
+            reference_number="ICT 01",
+            title="ICT One",
+            issuing_authority="CSSF",
+            lifecycle_stage=LifecycleStage.IN_FORCE,
+            is_ict=True,
+            needs_review=False,
+            url="",
+            source_of_truth="CSSF_WEB",
+        ))
+        s.add(Regulation(
+            type=RegulationType.CSSF_CIRCULAR,
+            reference_number="GEN 01",
+            title="Generic One",
+            issuing_authority="CSSF",
+            lifecycle_stage=LifecycleStage.IN_FORCE,
+            is_ict=False,
+            needs_review=False,
+            url="",
+            source_of_truth="CSSF_WEB",
+        ))
+        s.commit()
+
+
+def test_catalog_ict_filter_only(tmp_path: Path, monkeypatch) -> None:
+    """?ict=ict shows only ICT-flagged regulations."""
+    client = _client(tmp_path, monkeypatch)
+    _seed_ict(client.app.state.session_factory)
+
+    resp = client.get("/catalog?ict=ict")
+    assert resp.status_code == 200
+    assert "ICT 01" in resp.text
+    assert "GEN 01" not in resp.text
+
+
+def test_catalog_ict_filter_non_ict(tmp_path: Path, monkeypatch) -> None:
+    """?ict=non-ict shows only non-ICT regulations."""
+    client = _client(tmp_path, monkeypatch)
+    _seed_ict(client.app.state.session_factory)
+
+    resp = client.get("/catalog?ict=non-ict")
+    assert resp.status_code == 200
+    assert "ICT 01" not in resp.text
+    assert "GEN 01" in resp.text
+
+
+def test_catalog_ict_default_shows_both(tmp_path: Path, monkeypatch) -> None:
+    """No ict param -> both ICT and non-ICT in-force regs shown."""
+    client = _client(tmp_path, monkeypatch)
+    _seed_ict(client.app.state.session_factory)
+
+    resp = client.get("/catalog")  # defaults: lifecycle=IN_FORCE, ict=any
+    assert resp.status_code == 200
+    assert "ICT 01" in resp.text
+    assert "GEN 01" in resp.text
