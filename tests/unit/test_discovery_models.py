@@ -35,7 +35,8 @@ def test_discovery_run_round_trip():
             reference_number="CSSF 22/806",
             outcome="NEW",
             detail_url="https://example.test/circular-cssf-22-806/",
-            entity_types=["AIFM"],
+            entity_type="AIFM",
+            content_type="circulars-cssf",
             note="first time scraped",
         )
         s.add(item)

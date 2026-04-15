@@ -221,7 +221,7 @@ class CssfDiscoveryService:
             if override is not None:
                 self._write_item(
                     run_id, None, listing.reference_number, "UNCHANGED",
-                    listing.detail_url, [auth_type.value],
+                    listing.detail_url, auth_type.value, "",
                     note="excluded by RegulationOverride",
                 )
                 return "UNCHANGED"
@@ -238,7 +238,7 @@ class CssfDiscoveryService:
             logger.warning("detail fetch failed for %s: %s", listing.reference_number, e)
             self._write_item(
                 run_id, None, listing.reference_number, "FAILED",
-                listing.detail_url, [auth_type.value],
+                listing.detail_url, auth_type.value, "",
                 note=f"detail fetch failed: {e}",
             )
             return "FAILED"
@@ -257,7 +257,7 @@ class CssfDiscoveryService:
                 if override2 is not None:
                     self._write_item(
                         run_id, None, detail.reference_number, "UNCHANGED",
-                        listing.detail_url, [auth_type.value],
+                        listing.detail_url, auth_type.value, "",
                         note="excluded by RegulationOverride",
                     )
                     return "UNCHANGED"
@@ -273,7 +273,7 @@ class CssfDiscoveryService:
                 s.commit()
                 self._write_item(
                     run_id, reg.regulation_id, detail.reference_number, "NEW",
-                    listing.detail_url, [auth_type.value], note=None,
+                    listing.detail_url, auth_type.value, "", note=None,
                 )
                 return "NEW"
 
@@ -289,7 +289,7 @@ class CssfDiscoveryService:
                 s.commit()
                 self._write_item(
                     run_id, existing.regulation_id, detail.reference_number, "AMENDED",
-                    listing.detail_url, [auth_type.value],
+                    listing.detail_url, auth_type.value, "",
                     note=f"new amendments: {sorted(amended)}",
                 )
                 return "AMENDED"
@@ -299,14 +299,14 @@ class CssfDiscoveryService:
                 s.commit()
                 self._write_item(
                     run_id, existing.regulation_id, detail.reference_number, "UPDATED_METADATA",
-                    listing.detail_url, [auth_type.value], note=None,
+                    listing.detail_url, auth_type.value, "", note=None,
                 )
                 return "UPDATED_METADATA"
 
             s.commit()
             self._write_item(
                 run_id, existing.regulation_id, detail.reference_number, "UNCHANGED",
-                listing.detail_url, [auth_type.value], note=None,
+                listing.detail_url, auth_type.value, "", note=None,
             )
             return "UNCHANGED"
 
@@ -330,12 +330,12 @@ class CssfDiscoveryService:
                 s.commit()
                 self._write_item(
                     run_id, existing.regulation_id, listing.reference_number, "WITHDRAWN",
-                    listing.detail_url, [auth_type.value], note="detail 404",
+                    listing.detail_url, auth_type.value, "", note="detail 404",
                 )
                 return "WITHDRAWN"
         self._write_item(
             run_id, None, listing.reference_number, "FAILED",
-            listing.detail_url, [auth_type.value],
+            listing.detail_url, auth_type.value, "",
             note="detail 404 and no existing regulation row",
         )
         return "FAILED"
@@ -706,7 +706,8 @@ class CssfDiscoveryService:
     def _write_item(
         self, run_id: int, regulation_id: int | None,
         reference_number: str, outcome: str,
-        detail_url: str | None, entity_types: list[str], note: str | None,
+        detail_url: str | None, entity_type: str, content_type: str,
+        note: str | None,
     ) -> None:
         with self._sf() as s:
             s.add(DiscoveryRunItem(
@@ -715,7 +716,8 @@ class CssfDiscoveryService:
                 reference_number=reference_number,
                 outcome=outcome,
                 detail_url=detail_url,
-                entity_types=entity_types,
+                entity_type=entity_type,
+                content_type=content_type,
                 note=note,
             ))
             s.commit()

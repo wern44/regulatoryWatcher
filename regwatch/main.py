@@ -46,6 +46,8 @@ def create_app() -> FastAPI:
     Base.metadata.create_all(engine)
     sync_schema(engine, Base.metadata)
     create_virtual_tables(engine, embedding_dim=config.llm.embedding_dim)
+    from regwatch.db.migrations import migrate_discovery_run_item_columns
+    migrate_discovery_run_item_columns(engine)
     session_factory = sessionmaker(engine, expire_on_commit=False)
 
     from regwatch.db.extraction_field_seed import seed_core_fields

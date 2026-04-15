@@ -490,7 +490,8 @@ class DiscoveryRunItem(Base):
         String(30)
     )  # NEW | AMENDED | UPDATED_METADATA | UNCHANGED | WITHDRAWN | FAILED
     detail_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    entity_types: Mapped[list[str]] = mapped_column(JSON, default=list)
+    entity_type: Mapped[str] = mapped_column(String(40), default="")
+    content_type: Mapped[str] = mapped_column(String(60), default="")
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=lambda: datetime.now(UTC))
 

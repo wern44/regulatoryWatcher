@@ -84,6 +84,8 @@ def init_db() -> None:
     Base.metadata.create_all(engine)
     sync_schema(engine, Base.metadata)
     create_virtual_tables(engine, embedding_dim=cfg.llm.embedding_dim)
+    from regwatch.db.migrations import migrate_discovery_run_item_columns
+    migrate_discovery_run_item_columns(engine)
     from regwatch.db.extraction_field_seed import seed_core_fields
     with Session(engine) as session:
         seed_core_fields(session)

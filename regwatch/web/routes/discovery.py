@@ -97,7 +97,8 @@ def _load_run(s: Session, run_id: int) -> dict | None:
             "outcome": i.outcome,
             "regulation_id": i.regulation_id,
             "detail_url": i.detail_url,
-            "entity_types": i.entity_types or [],
+            "entity_type": i.entity_type,
+            "content_type": i.content_type,
             "note": i.note,
         }
         for i in items
