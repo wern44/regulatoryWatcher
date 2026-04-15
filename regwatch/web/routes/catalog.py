@@ -46,13 +46,21 @@ _VALID_LIFECYCLE = {
 @router.get("/catalog", response_class=HTMLResponse)
 def catalog(
     request: Request,
-    authorization: Literal["AIFM", "CHAPTER15_MANCO"] | None = None,
+    authorization: str | None = None,
     search: str | None = None,
     lifecycle: str | None = None,
     ict: str | None = None,
     show_amendments: bool = False,
 ) -> HTMLResponse:
     templates = request.app.state.templates
+
+    # Normalise authorization. The filter-bar form submits the empty string
+    # ("Any authorisation") which a strict Literal type would 422 on.
+    auth_value: Literal["AIFM", "CHAPTER15_MANCO"] | None
+    if authorization in ("AIFM", "CHAPTER15_MANCO"):
+        auth_value = authorization  # type: ignore[assignment]
+    else:
+        auth_value = None
 
     # Default to IN_FORCE; "all" means no lifecycle filter; unknown values
     # quietly fall back to the default.
@@ -78,7 +86,7 @@ def catalog(
         effective_ict = ""
 
     flt = RegulationFilter(
-        authorization_type=authorization,
+        authorization_type=auth_value,
         search=search,
         lifecycle_stages=lifecycle_stages,
         is_ict=is_ict_filter,

@@ -20,12 +20,12 @@
   </div>
 
   <form method="get" action="/catalog" class="flex gap-2 mb-4 text-sm">
-    <select name="authorization" class="border rounded px-2 py-1">
+    <select name="authorization" class="border rounded px-2 py-1" onchange="this.form.submit()">
       <option value="">Any authorisation</option>
       <option value="AIFM" {% if flt.authorization_type == 'AIFM' %}selected{% endif %}>AIFM</option>
       <option value="CHAPTER15_MANCO" {% if flt.authorization_type == 'CHAPTER15_MANCO' %}selected{% endif %}>Chapter 15 ManCo</option>
     </select>
-    <select name="lifecycle" class="border rounded px-2 py-1">
+    <select name="lifecycle" class="border rounded px-2 py-1" onchange="this.form.submit()">
       <option value="IN_FORCE"              {% if effective_lifecycle == 'IN_FORCE' %}selected{% endif %}>In force</option>
       <option value="REPEALED"              {% if effective_lifecycle == 'REPEALED' %}selected{% endif %}>Repealed</option>
       <option value="AMENDED"               {% if effective_lifecycle == 'AMENDED' %}selected{% endif %}>Amended</option>
@@ -35,7 +35,7 @@
       <option value="ADOPTED_NOT_IN_FORCE"  {% if effective_lifecycle == 'ADOPTED_NOT_IN_FORCE' %}selected{% endif %}>Adopted (not in force)</option>
       <option value="all"                   {% if effective_lifecycle == 'all' %}selected{% endif %}>All lifecycles</option>
     </select>
-    <select name="ict" class="border rounded px-2 py-1">
+    <select name="ict" class="border rounded px-2 py-1" onchange="this.form.submit()">
       <option value=""         {% if effective_ict == '' %}selected{% endif %}>Any ICT status</option>
       <option value="ict"       {% if effective_ict == 'ict' %}selected{% endif %}>ICT only</option>
       <option value="non-ict"   {% if effective_ict == 'non-ict' %}selected{% endif %}>Non-ICT only</option>
@@ -44,7 +44,8 @@
            class="border rounded px-2 py-1 flex-1">
     <label class="flex items-center gap-1 px-2">
       <input type="checkbox" name="show_amendments" value="true"
-             {% if show_amendments %}checked{% endif %}>
+             {% if show_amendments %}checked{% endif %}
+             onchange="this.form.submit()">
       <span class="text-xs">Show amendments</span>
     </label>
     <button class="px-3 py-1 bg-slate-800 text-white rounded" type="submit">Filter</button>
