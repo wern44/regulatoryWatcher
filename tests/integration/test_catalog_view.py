@@ -60,3 +60,66 @@ def test_catalog_filters_by_aifm(tmp_path: Path, monkeypatch) -> None:
     assert "CSSF 18/698" in r.text
     assert "CSSF 23/844" in r.text
     assert "CSSF 11/512" not in r.text
+
+
+def _seed_lifecycle(db_file: Path) -> None:
+    """Seed one IN_FORCE and one REPEALED regulation."""
+    engine = create_app_engine(db_file)
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(Regulation(
+            type=RegulationType.CSSF_CIRCULAR,
+            reference_number="LIVE 01",
+            title="Live One",
+            issuing_authority="CSSF",
+            lifecycle_stage=LifecycleStage.IN_FORCE,
+            is_ict=False,
+            needs_review=False,
+            url="",
+            source_of_truth="CSSF_WEB",
+        ))
+        session.add(Regulation(
+            type=RegulationType.CSSF_CIRCULAR,
+            reference_number="DEAD 01",
+            title="Dead One",
+            issuing_authority="CSSF",
+            lifecycle_stage=LifecycleStage.REPEALED,
+            is_ict=False,
+            needs_review=False,
+            url="",
+            source_of_truth="CSSF_WEB",
+        ))
+        session.commit()
+
+
+def test_catalog_defaults_to_in_force_only(tmp_path: Path, monkeypatch) -> None:
+    """Without ?lifecycle= param, only IN_FORCE regs render."""
+    client = _client(tmp_path, monkeypatch)
+    _seed_lifecycle(tmp_path / "app.db")
+
+    resp = client.get("/catalog")
+    assert resp.status_code == 200
+    assert "LIVE 01" in resp.text
+    assert "DEAD 01" not in resp.text
+
+
+def test_catalog_lifecycle_all_shows_everything(tmp_path: Path, monkeypatch) -> None:
+    """?lifecycle=all shows both IN_FORCE and REPEALED."""
+    client = _client(tmp_path, monkeypatch)
+    _seed_lifecycle(tmp_path / "app.db")
+
+    resp = client.get("/catalog?lifecycle=all")
+    assert resp.status_code == 200
+    assert "LIVE 01" in resp.text
+    assert "DEAD 01" in resp.text
+
+
+def test_catalog_lifecycle_repealed_filter(tmp_path: Path, monkeypatch) -> None:
+    """?lifecycle=REPEALED shows only REPEALED regs."""
+    client = _client(tmp_path, monkeypatch)
+    _seed_lifecycle(tmp_path / "app.db")
+
+    resp = client.get("/catalog?lifecycle=REPEALED")
+    assert resp.status_code == 200
+    assert "LIVE 01" not in resp.text
+    assert "DEAD 01" in resp.text

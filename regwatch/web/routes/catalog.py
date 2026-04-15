@@ -33,6 +33,11 @@ from regwatch.services.upload import (
 
 router = APIRouter()
 
+_VALID_LIFECYCLE = {
+    "IN_FORCE", "REPEALED", "AMENDED", "CONSULTATION", "PROPOSAL",
+    "DRAFT_BILL", "ADOPTED_NOT_IN_FORCE",
+}
+
 
 @router.get("/catalog", response_class=HTMLResponse)
 def catalog(
@@ -42,10 +47,23 @@ def catalog(
     lifecycle: str | None = None,
 ) -> HTMLResponse:
     templates = request.app.state.templates
+
+    # Default to IN_FORCE; "all" means no lifecycle filter; unknown values
+    # quietly fall back to the default.
+    if lifecycle == "all":
+        lifecycle_stages: list[str] | None = None
+        effective_lifecycle = "all"
+    elif lifecycle and lifecycle in _VALID_LIFECYCLE:
+        lifecycle_stages = [lifecycle]
+        effective_lifecycle = lifecycle
+    else:
+        lifecycle_stages = ["IN_FORCE"]
+        effective_lifecycle = "IN_FORCE"
+
     flt = RegulationFilter(
         authorization_type=authorization,
         search=search,
-        lifecycle_stages=[lifecycle] if lifecycle else None,
+        lifecycle_stages=lifecycle_stages,
     )
     with request.app.state.session_factory() as session:
         svc = RegulationService(session)
@@ -74,6 +92,8 @@ def catalog(
             else:
                 status_by_reg[r.regulation_id] = "ok"
 
+    # Pass effective_lifecycle to the template so the dropdown shows the
+    # current selection correctly (even when lifecycle was None in the URL).
     return templates.TemplateResponse(
         request,
         "catalog/list.html",
@@ -82,6 +102,7 @@ def catalog(
             "regulations": regs,
             "flt": flt,
             "status_by_reg": status_by_reg,
+            "effective_lifecycle": effective_lifecycle,
         },
     )
 
