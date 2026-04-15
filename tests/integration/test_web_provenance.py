@@ -119,3 +119,88 @@ def test_run_detail_renders_cell_breakdown_and_retired_count(tmp_path, monkeypat
     assert "3" in body
     # Both cells visible
     assert "Law" in body  # CHAPTER15_MANCO x Law cell
+
+
+def test_regulation_detail_shows_cssf_page_link_for_cssf_circular(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    sf = client.app.state.session_factory
+    with sf() as s:
+        reg = Regulation(
+            type=RegulationType.CSSF_CIRCULAR,
+            reference_number="CSSF 22/806",
+            title="Outsourcing",
+            issuing_authority="CSSF",
+            lifecycle_stage=LifecycleStage.IN_FORCE,
+            is_ict=True,
+            needs_review=False,
+            url="https://www.cssf.lu/wp-content/uploads/cssf22_806.pdf",
+            source_of_truth="CSSF_WEB",
+        )
+        s.add(reg)
+        s.commit()
+        reg_id = reg.regulation_id
+
+    resp = client.get(f"/regulations/{reg_id}")
+    body = resp.text
+    assert resp.status_code == 200
+    assert "View on CSSF" in body
+    # Derived slug matches _slug_from_reference("CSSF 22/806")
+    assert "https://www.cssf.lu/en/Document/circular-cssf-22-806/" in body
+    # Separate PDF link, not suppressed by CSSF page link
+    assert "Open PDF" in body
+    assert "cssf22_806.pdf" in body
+
+
+def test_regulation_detail_shows_cssf_page_link_for_synthetic_ref(tmp_path, monkeypatch):
+    """Non-CSSF publication type (Law) — ref is already a slug."""
+    client = _client(tmp_path, monkeypatch)
+    sf = client.app.state.session_factory
+    with sf() as s:
+        reg = Regulation(
+            type=RegulationType.LU_LAW,
+            reference_number="law-of-2013-04-12",
+            title="Law of 12 April 2013",
+            issuing_authority="CSSF",
+            lifecycle_stage=LifecycleStage.IN_FORCE,
+            is_ict=False,
+            needs_review=False,
+            url="",
+            source_of_truth="CSSF_WEB",
+        )
+        s.add(reg)
+        s.commit()
+        reg_id = reg.regulation_id
+
+    resp = client.get(f"/regulations/{reg_id}")
+    body = resp.text
+    assert resp.status_code == 200
+    assert "https://www.cssf.lu/en/Document/law-of-2013-04-12/" in body
+
+
+def test_regulation_detail_hides_cssf_link_for_seed_row(tmp_path, monkeypatch):
+    """SEED-sourced regs have no CSSF detail page."""
+    client = _client(tmp_path, monkeypatch)
+    sf = client.app.state.session_factory
+    with sf() as s:
+        reg = Regulation(
+            type=RegulationType.EU_REGULATION,
+            reference_number="(EU) 2022/2554",
+            title="DORA",
+            issuing_authority="EU",
+            lifecycle_stage=LifecycleStage.IN_FORCE,
+            is_ict=True,
+            needs_review=False,
+            url="https://eur-lex.europa.eu/x",
+            source_of_truth="SEED",
+        )
+        s.add(reg)
+        s.commit()
+        reg_id = reg.regulation_id
+
+    resp = client.get(f"/regulations/{reg_id}")
+    body = resp.text
+    assert resp.status_code == 200
+    assert "View on CSSF" not in body
+    # SEED row falls back to "Open source"
+    assert "Open source" in body
+    assert "eur-lex.europa.eu/x" in body

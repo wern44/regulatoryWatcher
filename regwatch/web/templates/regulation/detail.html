@@ -12,6 +12,29 @@
     <span class="px-2 py-0.5 rounded bg-slate-100 text-xs">{{ versions|length }} version(s)</span>
   </div>
 
+  {% if cssf_page_url or pdf_url or source_url %}
+  <div class="flex flex-wrap gap-3 mb-4 text-sm">
+    {% if cssf_page_url %}
+      <a href="{{ cssf_page_url }}" target="_blank" rel="noopener"
+         class="text-blue-700 hover:underline">
+        View on CSSF &rarr;
+      </a>
+    {% endif %}
+    {% if pdf_url %}
+      <a href="{{ pdf_url }}" target="_blank" rel="noopener"
+         class="text-blue-700 hover:underline">
+        Open PDF &rarr;
+      </a>
+    {% endif %}
+    {% if source_url %}
+      <a href="{{ source_url }}" target="_blank" rel="noopener"
+         class="text-blue-700 hover:underline">
+        Open source &rarr;
+      </a>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <div class="grid grid-cols-3 gap-4">
     <section class="col-span-2 bg-white p-4 rounded shadow-sm border">
       <h2 class="text-lg font-semibold mb-2">Latest changes</h2>
