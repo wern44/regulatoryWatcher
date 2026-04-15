@@ -12,5 +12,41 @@
        hx-swap="outerHTML">
     {% include "discovery/_run_status.html" %}
   </div>
+
+  {% if retired_count %}
+  <p class="text-slate-700 font-medium">Retired: {{ retired_count }}</p>
+  {% endif %}
+
+  {% if cell_breakdown %}
+  <section class="rounded border border-slate-200 bg-white p-4 shadow-sm">
+    <h2 class="text-lg font-semibold mb-2">Per-cell breakdown</h2>
+    <table class="min-w-full text-sm">
+      <thead>
+        <tr class="text-left text-xs text-slate-500 border-b">
+          <th class="py-1 pr-4">Entity</th>
+          <th class="py-1 pr-4">Publication type</th>
+          <th class="py-1 pr-2 text-center">NEW</th>
+          <th class="py-1 pr-2 text-center">AMENDED</th>
+          <th class="py-1 pr-2 text-center">UPDATED</th>
+          <th class="py-1 pr-2 text-center">UNCHANGED</th>
+          <th class="py-1 pr-2 text-center">FAILED</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for cell in cell_breakdown %}
+        <tr>
+          <td class="py-1 pr-4 text-xs text-slate-700">{{ cell.entity_type or '—' }}</td>
+          <td class="py-1 pr-4 text-xs text-slate-700">{{ cell.content_type or '—' }}</td>
+          <td class="py-1 pr-2 text-center">{{ cell.new }}</td>
+          <td class="py-1 pr-2 text-center">{{ cell.amended }}</td>
+          <td class="py-1 pr-2 text-center">{{ cell.updated }}</td>
+          <td class="py-1 pr-2 text-center">{{ cell.unchanged }}</td>
+          <td class="py-1 pr-2 text-center">{{ cell.failed }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
 </div>
 {% endblock %}

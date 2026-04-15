@@ -1,6 +1,8 @@
 """Routes for the CSSF discovery run progress + result + history pages."""
 from __future__ import annotations
 
+from collections import defaultdict
+
 from fastapi import APIRouter, Request
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
@@ -30,6 +32,8 @@ def run_page(request: Request, run_id: int):
     sf = request.app.state.session_factory
     with sf() as s:
         run_info = _load_run(s, run_id)
+    cell_breakdown = _compute_cell_breakdown(run_info["items"]) if run_info else []
+    retired_count = run_info.get("retired_count", 0) if run_info else 0
     return request.app.state.templates.TemplateResponse(
         request,
         "discovery/run.html",
@@ -38,6 +42,8 @@ def run_page(request: Request, run_id: int):
             "progress": request.app.state.cssf_discovery_progress,
             "run_id": run_id,
             "active": "catalog",
+            "cell_breakdown": cell_breakdown,
+            "retired_count": retired_count,
         },
     )
 
@@ -77,8 +83,34 @@ def _to_summary(run: DiscoveryRun) -> dict:
         "unchanged_count": run.unchanged_count,
         "withdrawn_count": run.withdrawn_count,
         "failed_count": run.failed_count,
+        "retired_count": run.retired_count or 0,
         "error_summary": run.error_summary,
     }
+
+
+def _compute_cell_breakdown(items: list[dict]) -> list[dict]:
+    """Group items by (entity_type, content_type) and count outcomes per cell."""
+    groups: dict[tuple[str, str], dict[str, int]] = defaultdict(
+        lambda: {"new": 0, "amended": 0, "updated": 0,
+                 "unchanged": 0, "failed": 0, "retired": 0}
+    )
+    outcome_map = {
+        "NEW": "new",
+        "AMENDED": "amended",
+        "UPDATED_METADATA": "updated",
+        "UNCHANGED": "unchanged",
+        "FAILED": "failed",
+        "RETIRED": "retired",
+    }
+    for it in items:
+        key = (it.get("entity_type") or "", it.get("content_type") or "")
+        col = outcome_map.get(it.get("outcome", ""))
+        if col is not None:
+            groups[key][col] += 1
+    return [
+        {"entity_type": et, "content_type": ct, **counts}
+        for (et, ct), counts in sorted(groups.items())
+    ]
 
 
 def _load_run(s: Session, run_id: int) -> dict | None:

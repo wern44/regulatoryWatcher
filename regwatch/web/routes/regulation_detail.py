@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse
 
 from regwatch.db.models import DocumentVersion, Regulation
 from regwatch.services.analysis import AnalysisService
+from regwatch.services.cssf_discovery import CssfDiscoveryService
 from regwatch.services.updates import UpdateService
 
 router = APIRouter()
@@ -50,6 +51,12 @@ def regulation_detail(request: Request, regulation_id: int) -> HTMLResponse:
             "latest_diff": latest_diff,
             "analyses_by_version": analyses_by_version,
         }
+
+    sources_svc = CssfDiscoveryService(
+        session_factory=request.app.state.session_factory,
+        config=request.app.state.config.cssf_discovery,
+    )
+    payload["discovery_sources"] = sources_svc.list_discovery_sources(regulation_id)
 
     return templates.TemplateResponse(
         request, "regulation/detail.html", payload

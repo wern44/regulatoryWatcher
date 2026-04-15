@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -40,6 +41,17 @@ from regwatch.discovery.cssf_scraper import (
 from regwatch.discovery.heuristics import is_ict_by_heuristic
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class DiscoverySourceDTO:
+    entity_type: str
+    content_type: str
+    first_seen_at: datetime
+    last_seen_at: datetime
+    first_seen_run_id: int
+    last_seen_run_id: int
+
 
 # CSSF detail pages list applicable entities using these human-readable labels.
 # Map them to our AuthorizationType enum. Substring-match: the label as it appears
@@ -136,6 +148,29 @@ class CssfDiscoveryService:
         # run() is called.
         self._dry_run: bool = False
         self._restrict_pub_slug: str | None = None
+
+    def list_discovery_sources(self, regulation_id: int) -> list[DiscoverySourceDTO]:
+        """Return all (entity, content_type) cells where this regulation was seen."""
+        with self._sf() as s:
+            rows = s.scalars(
+                select(RegulationDiscoverySource)
+                .where(RegulationDiscoverySource.regulation_id == regulation_id)
+                .order_by(
+                    RegulationDiscoverySource.entity_type,
+                    RegulationDiscoverySource.content_type,
+                )
+            ).all()
+            return [
+                DiscoverySourceDTO(
+                    entity_type=r.entity_type,
+                    content_type=r.content_type,
+                    first_seen_at=r.first_seen_at,
+                    last_seen_at=r.last_seen_at,
+                    first_seen_run_id=r.first_seen_run_id,
+                    last_seen_run_id=r.last_seen_run_id,
+                )
+                for r in rows
+            ]
 
     def run(
         self,
