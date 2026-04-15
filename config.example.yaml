@@ -74,8 +74,6 @@ cssf_discovery:
   request_delay_ms: 500
   max_retries: 1
   user_agent: "RegulatoryWatcher/1.0"
-  playwright_navigation_timeout_ms: 30000
-  playwright_filter_settle_ms: 2000
   entity_filter_ids:
     AIFM: 502
     CHAPTER15_MANCO: 2001

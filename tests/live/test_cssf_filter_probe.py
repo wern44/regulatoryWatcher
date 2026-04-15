@@ -3,21 +3,23 @@
 Run explicitly:
     pytest -m live tests/live/test_cssf_filter_probe.py -v
 
-Prerequisite (one-time): `playwright install chromium`. If the Chromium
-binary is missing, this test fails with a clear install hint.
+The CSSF listing page renders filter checkboxes with numeric WordPress
+term IDs (e.g. value="567" labelled "CSSF circular"). These IDs are
+baked into config.example.yaml. This probe catches drift: if CSSF
+renumbers a term after a site rebuild, the matrix crawl silently
+stops matching that cell. The probe fails loudly instead.
 
-Why live: the CSSF site's checkbox filters use numeric WordPress term
-IDs (e.g. 567 = "CSSF circular", 502 = "AIFMs"). These IDs are baked
-into config.example.yaml. This probe catches drift: if CSSF renumbers
-a term after a site rebuild, the matrix crawl silently stops matching
-that cell. The probe fails loudly instead.
+The CSSF regulatory-framework page is fully server-side rendered, so
+no headless browser is needed — plain httpx + BeautifulSoup suffices.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
 import pytest
 import yaml
+from bs4 import BeautifulSoup
 
 LISTING_URL = "https://www.cssf.lu/en/regulatory-framework/"
 CONFIG_EXAMPLE = Path(__file__).resolve().parents[2] / "config.example.yaml"
@@ -28,8 +30,8 @@ def _load_expected_mappings() -> tuple[dict[str, int], dict[str, int]]:
 
     entity_filter_ids in config is keyed by AuthorizationType enum value
     (e.g. "AIFM"); we need the human-readable label CSSF renders
-    (e.g. "AIFMs"). The probe test translates using a small hardcoded
-    enum-value -> CSSF-label map.
+    (e.g. "AIFMs"). A small hardcoded enum-value -> CSSF-label map
+    bridges the gap.
     """
     data = yaml.safe_load(CONFIG_EXAMPLE.read_text(encoding="utf-8"))
     cssf = data["cssf_discovery"]
@@ -50,26 +52,24 @@ def _load_expected_mappings() -> tuple[dict[str, int], dict[str, int]]:
     return entity_expected, content_expected
 
 
-def _scrape_checkbox_mapping(page, group_name: str) -> dict[str, int]:
+def _scrape_checkbox_mapping(soup: BeautifulSoup, group_name: str) -> dict[str, int]:
     """Return {label: numeric_id} for all checkboxes in a filter group.
 
-    Markup shape: <input type="checkbox" name="<group_name>" value="NNN">
-    with a sibling <span id="<group_name>-NNN">Label</span>.
+    Markup shape:
+        <input type="checkbox" name="<group_name>" value="NNN">
+        <span id="<group_name>-NNN">Label</span>
     """
     mapping: dict[str, int] = {}
-    inputs = page.query_selector_all(f'input[type="checkbox"][name="{group_name}"]')
-    for inp in inputs:
-        value = inp.get_attribute("value")
-        if not value:
-            continue
+    for inp in soup.select(f'input[type="checkbox"][name="{group_name}"]'):
+        value = inp.get("value") or ""
         try:
             numeric_id = int(value)
         except ValueError:
             continue
-        label_el = page.query_selector(f'span#{group_name}-{numeric_id}')
+        label_el = soup.select_one(f"span#{group_name}-{numeric_id}")
         if label_el is None:
             continue
-        label = (label_el.inner_text() or "").strip()
+        label = label_el.get_text(strip=True)
         if label:
             mapping[label] = numeric_id
     return mapping
@@ -77,55 +77,43 @@ def _scrape_checkbox_mapping(page, group_name: str) -> dict[str, int]:
 
 @pytest.mark.live
 def test_cssf_filter_ids_still_match_labels() -> None:
-    pytest.importorskip("playwright.sync_api")
-    from playwright.sync_api import Error as PlaywrightError
-    from playwright.sync_api import sync_playwright
-
     entity_expected, content_expected = _load_expected_mappings()
 
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(user_agent="RegulatoryWatcher/1.0")
-            page = context.new_page()
-            page.goto(LISTING_URL, wait_until="domcontentloaded", timeout=30000)
+    with httpx.Client(
+        headers={"User-Agent": "RegulatoryWatcher/1.0"},
+        follow_redirects=True,
+        timeout=30.0,
+    ) as client:
+        resp = client.get(LISTING_URL)
+        resp.raise_for_status()
 
-            entity_actual = _scrape_checkbox_mapping(page, "entity_type")
-            content_actual = _scrape_checkbox_mapping(page, "content_type")
-
-            browser.close()
-    except PlaywrightError as exc:
-        # Most common cause: Chromium binary not installed.
-        if "Executable doesn't exist" in str(exc):
-            pytest.fail(
-                "Playwright Chromium not installed. Run: "
-                "`playwright install chromium`\n"
-                f"Underlying error: {exc}"
-            )
-        raise
+    soup = BeautifulSoup(resp.text, "html.parser")
+    entity_actual = _scrape_checkbox_mapping(soup, "entity_type")
+    content_actual = _scrape_checkbox_mapping(soup, "content_type")
 
     # Check every expected label is present and maps to the expected id.
-    # Do NOT require equality — CSSF exposes many filters we don't track.
-    missing = [
+    # Do NOT require equality on the actual map — CSSF exposes many
+    # filters we don't track.
+    entity_missing = [
         (lbl, exp_id)
         for lbl, exp_id in entity_expected.items()
         if entity_actual.get(lbl) != exp_id
     ]
-    assert not missing, (
+    assert not entity_missing, (
         f"Entity-type filter IDs drifted or labels changed.\n"
         f"Expected (subset): {entity_expected}\n"
         f"Actual full map:   {entity_actual}\n"
-        f"Mismatches:        {missing}"
+        f"Mismatches:        {entity_missing}"
     )
 
-    missing = [
+    content_missing = [
         (lbl, exp_id)
         for lbl, exp_id in content_expected.items()
         if content_actual.get(lbl) != exp_id
     ]
-    assert not missing, (
+    assert not content_missing, (
         f"Publication-type filter IDs drifted or labels changed.\n"
         f"Expected (subset): {content_expected}\n"
         f"Actual full map:   {content_actual}\n"
-        f"Mismatches:        {missing}"
+        f"Mismatches:        {content_missing}"
     )

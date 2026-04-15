@@ -8,7 +8,7 @@
 
 The original spec assumed `https://www.cssf.lu/en/regulatory-framework/` was a FacetWP site filtering server-side via URL query params (`fwp_entity_type=<slug>` + `fwp_content_type=<slug>`). Verification against the live site proved this wrong: CSSF is plain WordPress with client-side JS filters that call `/wp-admin/admin-ajax.php` with a custom action; URL filter params are *ignored* server-side. The existing scraper's `fwp_entity_type=aifms` param has been a no-op since inception — we've been walking the unfiltered listing. Filters use numeric WordPress taxonomy IDs, not slugs.
 
-**Resolution:** drive the listing filter via a headless Chromium instance (Playwright). Detail pages stay httpx-based (server-rendered, no JS needed). The numeric filter IDs discovered during investigation are now baked into config.
+**Resolution:** drive the listing filter via plain httpx using numeric WordPress term IDs as URL params (`?entity_type=502&content_type=567`). The CSSF page is server-side rendered and honours these params directly — no headless browser needed. Initial investigation mis-diagnosed the behaviour because "AIFM × CSSF circular" has 20+ rows (a full first page), which by coincidence matched the unfiltered baseline. Verified with AIFM × Law (13 rows), × Grand-ducal regulation (4 rows), × Professional standard (0 rows).
 
 ## Problem
 
@@ -44,24 +44,11 @@ The CSSF listing renders filters as checkbox inputs using numeric WordPress taxo
 - Entities: `AIFMs=502`, `Management companies - Chapter 15=2001`
 - Publication types: `CSSF circular=567`, `CSSF regulation=575`, `Law=585`, `Grand-ducal regulation=553`, `Ministerial regulation=591`, `Annex to a CSSF circular=5843`, `Professional standard=1377`
 
-### Playwright listing driver
+### Listing driver — plain httpx
 
-A new module `regwatch/discovery/cssf_playwright.py` drives Chromium:
+The listing crawl uses `httpx.Client` with URL params `?entity_type=<entity_filter_id>&content_type=<pub_type_filter_id>`. Pagination uses the existing `/page/N/` path convention. Detail pages use the same httpx client. The existing `cssf_scraper.list_circulars` signature changes from `(entity_slug, content_type_slug)` to `(entity_filter_id: int, content_type_filter_id: int)` and its URL-param construction changes correspondingly. The parser (`_parse_listing_page`) is unchanged.
 
-1. Launch Chromium headless.
-2. Open `https://www.cssf.lu/en/regulatory-framework/`.
-3. Click the entity-type checkbox for this cell (selector: `input[name="entity_type"][value="<id>"]`).
-4. Click the content-type checkbox for this cell (selector: `input[name="content_type"][value="<id>"]`).
-5. Wait for the listing to refresh — wait for network idle or for a known sentinel class to settle.
-6. Extract rendered HTML via `page.content()`.
-7. Iterate pagination (click "Next" or advance `?page=N`) and concatenate rendered HTML per page until no more items.
-8. Close browser.
-
-The parser (`_parse_listing_page` in `cssf_scraper.py`) consumes the rendered HTML unchanged — it already expects `<li class="library-element">` rows. Only the transport layer changes.
-
-Detail-page fetching stays on `httpx` (no JS needed to render those pages).
-
-HTML fixtures for offline tests are **post-JS rendered snapshots** captured by Playwright (`page.content()` after filters applied), stored under `tests/fixtures/cssf/<cell>/` per the existing convention.
+HTML fixtures for offline tests are captured via `scripts/capture_cssf_fixtures.py` (plain httpx, no Playwright).
 
 ### Reference numbering for non-CSSF publication types
 
@@ -241,13 +228,11 @@ The unused `CssfDiscoveryConfig.content_types` field is removed — no backward-
 
 ## Dependencies
 
-- **New:** `playwright` in `pyproject.toml` `[project.dependencies]` (not dev-only — the app depends on it at runtime for the discovery command).
-- **One-time browser install** — after `pip install -e .`, run `playwright install chromium`. Document in README and in `regwatch init-db` output.
-- We use Chromium only (skip firefox/webkit) to minimise install footprint.
+No new runtime dependencies. The listing crawl uses the existing httpx client; BeautifulSoup handles parsing.
 
 ## Rollout sequence
 
-1. `pip install -e .` (pulls `playwright`), then `playwright install chromium`.
+1. `pip install -e .`
 2. Ship code + DB migration (auto on startup via `create_all` + `migrations.py`).
 3. Run `pytest -m live tests/live/test_cssf_filter_probe.py` to verify the numeric filter IDs in `config.example.yaml` still map to their expected labels. If any IDs drifted, update config.
 4. Run `regwatch discover-cssf --dry-run`. Inspect output: expected ~300–400 retirement candidates out of 551 current `CSSF_WEB` rows.
@@ -260,9 +245,8 @@ The unused `CssfDiscoveryConfig.content_types` field is removed — no backward-
 - **Unit tests** for `RegulationDiscoverySource` UPSERT semantics: first-sight inserts with `first_seen == last_seen`; repeat-sight updates `last_seen_*` without touching `first_seen_*`; unique constraint enforced.
 - **Unit tests** for the retire safety invariant: `retire_missing` is a no-op when `run.status != "SUCCESS"`; honours `KEEP_ACTIVE` overrides; never touches non-`CSSF_WEB` rows.
 - **Unit tests** for reactivation: a `REPEALED` row re-observed in a new run flips to `IN_FORCE`.
-- **Integration test** for the full matrix using a fake `PlaywrightListingDriver` (a small stub class with the same `fetch_cell(entity_id, content_id) -> list[str]` interface but returning fixture HTML) injected into `CssfDiscoveryService`; assert correct per-cell provenance + end-to-end retirement of a row present in run N but absent in run N+1.
-- **Live probe** (`@pytest.mark.live`, excluded from default `pytest`): launches Chromium, opens the listing, verifies each configured `(label, filter_id)` pair still matches the rendered checkbox markup. Fails noisily on DOM change or ID drift.
-- **Live end-to-end smoke** (also `@pytest.mark.live`): runs one full matrix cell (AIFM × CSSF circular) against the real CSSF site via Playwright, asserts at least N>0 rows returned. One cell is enough to catch JS breakage without hammering the site.
+- **Integration test** for the full matrix using `pytest-httpx` to mock the httpx listing requests per cell; inject fixture HTML responses into `CssfDiscoveryService`; assert correct per-cell provenance + end-to-end retirement of a row present in run N but absent in run N+1.
+- **Live probe** (`@pytest.mark.live`, excluded from default `pytest`): fetches the listing page via httpx, verifies each configured `(label, filter_id)` pair still matches the rendered checkbox markup. Fails noisily on DOM change or ID drift.
 
 ## Open questions
 

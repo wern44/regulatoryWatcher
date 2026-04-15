@@ -30,6 +30,10 @@ Tasks 1–3, 7, 9–14 are unchanged in intent. Their code references to `slug` 
 - Integration tests hit a real SQLite in `tmp_path`; only mock Ollama + outbound HTTP.
 - `@pytest.mark.live` is excluded from default `pytest` runs.
 
+### Revision 2026-04-15 (second pivot): Playwright reverted
+
+Verification during Task 6 fixture capture proved that CSSF *does* honour numeric filter IDs as plain URL query params (`?entity_type=502&content_type=575`). The Playwright assumption was wrong — my earlier "filter is ignored" test was fooled by CSSF circular × AIFM having 20+ rows (a full first page) happening to match the unfiltered baseline. Playwright dependency and browser driver removed; listing crawl is httpx-only. Task 8's driver becomes a thin httpx wrapper; no `PlaywrightListingDriver` class needed.
+
 ---
 
 ## Task 1 — Extend `RegulationType` enum

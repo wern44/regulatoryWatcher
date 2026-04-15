@@ -79,8 +79,6 @@ class CssfDiscoveryConfig(BaseModel):
     request_delay_ms: int = 500
     max_retries: int = 1
     user_agent: str = "RegulatoryWatcher/1.0"
-    playwright_navigation_timeout_ms: int = 30000
-    playwright_filter_settle_ms: int = 2000
     entity_filter_ids: dict[str, int] = Field(
         default_factory=lambda: {
             "AIFM": 502,
