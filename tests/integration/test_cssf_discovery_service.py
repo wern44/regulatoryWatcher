@@ -51,6 +51,7 @@ def _svc(sf, *, client=None):
         publication_types=[
             PublicationTypeConfig(label="CSSF circular", filter_id=567, type="CSSF_CIRCULAR"),
         ],
+        retire_min_scraped=0,  # disable floor in tests that use tiny synthetic data
     )
     return CssfDiscoveryService(session_factory=sf, config=cfg, http_client=client)
 

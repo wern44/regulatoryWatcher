@@ -34,6 +34,7 @@ def _stub_cfg() -> CssfDiscoveryConfig:
         publication_types=[
             PublicationTypeConfig(label="CSSF circular", filter_id=567, type="CSSF_CIRCULAR"),
         ],
+        retire_min_scraped=0,  # disable floor in unit/integration tests with tiny synthetic data
     )
 
 

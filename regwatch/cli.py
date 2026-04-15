@@ -430,6 +430,16 @@ def discover_cssf(
         restrict_pub_slug=publication_type,
     )
 
+    if dry_run:
+        preview = service.preview_retire_candidates(run_id)
+        typer.echo(f"Dry-run: {len(preview)} regulation(s) would be retired.")
+        if preview:
+            typer.echo("  Would-retire refs (first 20):")
+            for ref in preview[:20]:
+                typer.echo(f"    {ref}")
+            if len(preview) > 20:
+                typer.echo(f"    ... and {len(preview) - 20} more")
+
     with sf() as s:
         run = s.get(DiscoveryRun, run_id)
         if run is None:

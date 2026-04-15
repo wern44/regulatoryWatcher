@@ -74,6 +74,7 @@ cssf_discovery:
   request_delay_ms: 500
   max_retries: 1
   user_agent: "RegulatoryWatcher/1.0"
+  retire_min_scraped: 10
   entity_filter_ids:
     AIFM: 502
     CHAPTER15_MANCO: 2001

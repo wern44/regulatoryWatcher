@@ -802,6 +802,31 @@ class CssfDiscoveryService:
             s.commit()
         return retired_count
 
+    def preview_retire_candidates(self, run_id: int) -> list[str]:
+        """Return refs that WOULD be retired by retire_missing(run_id).
+
+        Does NOT modify the DB. Used by --dry-run to show the user what
+        a real run would retire. Applies the same filter as retire_missing
+        (exclude KEEP_ACTIVE, exclude non-CSSF_WEB, exclude already-REPEALED).
+        """
+        with self._sf() as s:
+            seen_subq = select(RegulationDiscoverySource.regulation_id).where(
+                RegulationDiscoverySource.last_seen_run_id == run_id
+            )
+            keep_active_refs = list(s.scalars(
+                select(RegulationOverride.reference_number).where(
+                    RegulationOverride.action == "KEEP_ACTIVE"
+                )
+            ).all())
+            query = select(Regulation.reference_number).where(
+                Regulation.source_of_truth == "CSSF_WEB",
+                Regulation.lifecycle_stage != LifecycleStage.REPEALED,
+                Regulation.regulation_id.not_in(seen_subq),
+            )
+            if keep_active_refs:
+                query = query.where(Regulation.reference_number.not_in(keep_active_refs))
+            return sorted(s.scalars(query).all())
+
     def _write_item(
         self, run_id: int, regulation_id: int | None,
         reference_number: str, outcome: str,
@@ -819,8 +844,7 @@ class CssfDiscoveryService:
                 content_type=content_type,
                 note=note,
             ))
-            if not self._dry_run:
-                s.commit()
+            s.commit()  # always commit — audit trail shows would-be outcomes in dry-run
 
     def _finalize_run(self, run_id: int, error: str | None) -> None:
         with self._sf() as s:
@@ -863,7 +887,25 @@ class CssfDiscoveryService:
             # A dry-run or single-column restriction also skips retire: we
             # can't prove global absence from an incomplete crawl.
             skip_retire = self._dry_run or self._restrict_pub_slug is not None
+
+            # Tripwire: a run that scraped nothing meaningful may indicate a DOM
+            # change breaking the parser silently. Refuse to retire on suspicion.
+            min_scraped = self._config.retire_min_scraped
+            if not skip_retire and min_scraped > 0 and run.total_scraped < min_scraped:
+                logger.warning(
+                    "Skipping retire: total_scraped=%d below floor %d. "
+                    "Possible silent DOM breakage in the scraper.",
+                    run.total_scraped, min_scraped,
+                )
+                skip_retire = True
+                if run.error_summary is None:
+                    run.error_summary = (
+                        f"Retire skipped: scraped {run.total_scraped} < floor {min_scraped}. "
+                        "Investigate scraper output before next full run."
+                    )
+
             if run.status == "SUCCESS" and not skip_retire:
+                s.commit()
                 run.retired_count = self.retire_missing(run_id)
             else:
                 run.retired_count = 0

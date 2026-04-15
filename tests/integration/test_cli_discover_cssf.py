@@ -226,6 +226,9 @@ def test_discover_cssf_dry_run_flag_passed(runner, monkeypatch, tmp_path):
             captured["dry_run"] = dry_run
             return stub_run_id
 
+        def preview_retire_candidates(self, run_id):
+            return []
+
     monkeypatch.setattr("regwatch.cli.CssfDiscoveryService", _StubService)
 
     result = runner.invoke(app, ["discover-cssf", "--dry-run"])
@@ -242,3 +245,43 @@ def test_discover_cssf_unknown_publication_type_rejected(runner, tmp_path, monke
     ])
     assert result.exit_code != 0
     assert "publication-type" in result.output.lower() or "not_a_real_type" in result.output.lower()
+
+
+def test_discover_cssf_dry_run_prints_retire_preview(runner, monkeypatch, tmp_path):
+    """--dry-run calls preview_retire_candidates and prints the refs."""
+    db, sf = _setup(tmp_path, monkeypatch)
+
+    from datetime import UTC, datetime
+
+    with sf() as s:
+        from regwatch.db.models import DiscoveryRun
+        run = DiscoveryRun(
+            status="SUCCESS",
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+            triggered_by="USER_CLI",
+            entity_types=["AIFM"],
+            mode="incremental",
+        )
+        s.add(run)
+        s.commit()
+        stub_run_id = run.run_id
+
+    class _Stub:
+        def __init__(self, **kw):
+            pass
+
+        def run(self, **kw):
+            return stub_run_id
+
+        def preview_retire_candidates(self, run_id):
+            assert run_id == stub_run_id
+            return ["CSSF 99/GONE1", "CSSF 99/GONE2"]
+
+    monkeypatch.setattr("regwatch.cli.CssfDiscoveryService", _Stub)
+
+    result = runner.invoke(app, ["discover-cssf", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "2 regulation(s) would be retired" in result.output
+    assert "CSSF 99/GONE1" in result.output
+    assert "CSSF 99/GONE2" in result.output

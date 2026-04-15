@@ -8,7 +8,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from regwatch.config import CssfDiscoveryConfig
-from regwatch.db.models import Base, DiscoveryRun, DiscoveryRunItem
+from regwatch.db.models import (
+    Base,
+    DiscoveryRun,
+    DiscoveryRunItem,
+    LifecycleStage,
+    Regulation,
+    RegulationType,
+)
 from regwatch.services.cssf_discovery import CssfDiscoveryService
 
 
@@ -161,3 +168,50 @@ def test_finalize_run_mixed_items_no_aggregate_error_is_partial(session_factory)
     with session_factory() as s:
         run = s.get(DiscoveryRun, run_id)
         assert run.status == "PARTIAL"
+
+
+def test_retire_skipped_when_total_scraped_below_floor(session_factory):
+    """A run that scraped fewer items than retire_min_scraped must not retire,
+    even on SUCCESS — guards against silent scraper breakage.
+    """
+    sf = session_factory
+
+    with sf() as s:
+        run = DiscoveryRun(
+            status="RUNNING", started_at=datetime.now(UTC),
+            triggered_by="TEST", entity_types=["AIFM"], mode="full",
+        )
+        s.add(run)
+        s.flush()
+        # 2 items total -> below floor 10
+        for ref in ("CSSF 99/A1", "CSSF 99/A2"):
+            s.add(DiscoveryRunItem(
+                run_id=run.run_id, regulation_id=None, reference_number=ref,
+                outcome="UNCHANGED", detail_url=None,
+                entity_type="AIFM", content_type="CSSF circular", note=None,
+            ))
+        # Existing row that WOULD be retired if the floor check wasn't there
+        reg_orphan = Regulation(
+            type=RegulationType.CSSF_CIRCULAR, reference_number="CSSF 99/GONE",
+            title="x", issuing_authority="CSSF",
+            lifecycle_stage=LifecycleStage.IN_FORCE,
+            is_ict=False, needs_review=False, url="", source_of_truth="CSSF_WEB",
+        )
+        s.add(reg_orphan)
+        s.commit()
+        run_id = run.run_id
+        orphan_id = reg_orphan.regulation_id
+
+    svc = CssfDiscoveryService(
+        session_factory=sf,
+        config=CssfDiscoveryConfig(retire_min_scraped=10, publication_types=[]),
+    )
+    svc._finalize_run(run_id, error=None)
+
+    with sf() as s:
+        run_after = s.get(DiscoveryRun, run_id)
+        assert run_after.status == "SUCCESS"  # still SUCCESS; the gate is separate
+        assert run_after.retired_count == 0
+        assert run_after.error_summary is not None  # explains why retire was skipped
+        orphan = s.get(Regulation, orphan_id)
+        assert orphan.lifecycle_stage == LifecycleStage.IN_FORCE

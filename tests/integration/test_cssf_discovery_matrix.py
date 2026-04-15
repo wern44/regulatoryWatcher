@@ -123,6 +123,7 @@ def svc(sf):
                 label="CSSF regulation", filter_id=600, type="CSSF_REGULATION",
             ),
         ],
+        retire_min_scraped=0,  # disable floor in tests that use tiny synthetic data
     )
     client = httpx.Client(transport=_make_transport(), base_url="https://www.cssf.lu")
     return CssfDiscoveryService(session_factory=sf, config=cfg, http_client=client)

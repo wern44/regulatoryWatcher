@@ -86,6 +86,10 @@ class CssfDiscoveryConfig(BaseModel):
         }
     )
     publication_types: list[PublicationTypeConfig] = Field(default_factory=list)
+    retire_min_scraped: int = 10
+    """Minimum total_scraped rows required before auto-retire is allowed to
+    run. A safety tripwire against silent DOM breakage that would otherwise
+    lead to mass retirement. Set to 0 to disable (not recommended)."""
 
     model_config = {"extra": "forbid"}
 
