@@ -13,17 +13,19 @@ import itertools
 import httpx
 import pytest
 
+from regwatch.config import CssfDiscoveryConfig
 from regwatch.discovery.cssf_scraper import (
     CircularListingRow,
     fetch_circular_detail,
     list_circulars,
 )
-from regwatch.services.cssf_discovery import CSSF_ENTITY_SLUGS
 
 pytestmark = pytest.mark.live
 
+_DEFAULT_SLUGS = sorted(set(CssfDiscoveryConfig().entity_slugs.values()))
 
-@pytest.mark.parametrize("slug", sorted(set(CSSF_ENTITY_SLUGS.values())))
+
+@pytest.mark.parametrize("slug", _DEFAULT_SLUGS)
 def test_listing_yields_at_least_one_row(slug: str) -> None:
     """Each configured entity slug should still return at least one listing row."""
     with httpx.Client(

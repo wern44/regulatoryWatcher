@@ -40,12 +40,6 @@ from regwatch.discovery.heuristics import is_ict_by_heuristic
 
 logger = logging.getLogger(__name__)
 
-CSSF_ENTITY_SLUGS: dict[AuthorizationType, str] = {
-    AuthorizationType.AIFM: "aifms",
-    AuthorizationType.CHAPTER15_MANCO: "management-companies-chapter-15",
-}
-
-
 # CSSF detail pages list applicable entities using these human-readable labels.
 # Map them to our AuthorizationType enum. Substring-match: the label as it appears
 # in ``.entities-list li`` on CSSF detail pages is checked for any of these prefixes.
@@ -175,7 +169,7 @@ class CssfDiscoveryService:
         aggregate_error: str | None = None
         try:
             for et in entity_types:
-                slug = CSSF_ENTITY_SLUGS.get(et)
+                slug = self._config.entity_slugs.get(et.value)
                 if slug is None:
                     logger.warning("no slug mapped for %s; skipping", et.value)
                     continue

@@ -99,3 +99,57 @@ def test_load_config_rejects_unknown_authorization_type(tmp_path: Path) -> None:
 
     with pytest.raises(ValidationError):
         load_config(config_file)
+
+
+def test_cssf_discovery_config_publication_types_loaded(tmp_path):
+    cfg_text = '''
+entity:
+  lei: "X"
+  legal_name: "Test"
+  authorizations: []
+sources: {}
+llm:
+  base_url: "http://x"
+  chat_model: "x"
+  embedding_model: "x"
+  embedding_dim: 768
+rag:
+  retrieval_k: 5
+  rerank_k: 3
+  enable_rerank: false
+  chunk_size_tokens: 100
+  chunk_overlap_tokens: 10
+paths:
+  db_file: "x.db"
+  pdf_archive: "x"
+  uploads_dir: "x"
+ui:
+  language: en
+  timezone: "Europe/Luxembourg"
+  host: "127.0.0.1"
+  port: 8000
+cssf_discovery:
+  entity_slugs:
+    AIFM: aifms
+    CHAPTER15_MANCO: management-companies-chapter-15
+  publication_types:
+    - { label: "CSSF circular", slug: circulars-cssf, type: CSSF_CIRCULAR }
+    - { label: "Law", slug: laws, type: LU_LAW }
+'''
+    p = tmp_path / "c.yaml"
+    p.write_text(cfg_text, encoding="utf-8")
+    from regwatch.config import load_config
+    cfg = load_config(p)
+    assert cfg.cssf_discovery.entity_slugs["AIFM"] == "aifms"
+    assert cfg.cssf_discovery.entity_slugs["CHAPTER15_MANCO"] == "management-companies-chapter-15"
+    assert len(cfg.cssf_discovery.publication_types) == 2
+    assert cfg.cssf_discovery.publication_types[0].slug == "circulars-cssf"
+    assert cfg.cssf_discovery.publication_types[0].type == "CSSF_CIRCULAR"
+    assert cfg.cssf_discovery.publication_types[1].slug == "laws"
+
+
+def test_cssf_discovery_config_no_content_types_field():
+    """The old content_types field is gone; no backward-compat shim."""
+    from regwatch.config import CssfDiscoveryConfig
+    cfg = CssfDiscoveryConfig()
+    assert not hasattr(cfg, "content_types")

@@ -69,10 +69,20 @@ ui:
   host: "127.0.0.1"
   port: 8001
 
+# NOTE: slugs after circulars-cssf are best-guess placeholders pending Task 5 (live probe).
 cssf_discovery:
   base_url: "https://www.cssf.lu/en/regulatory-framework/"
   request_delay_ms: 500
   max_retries: 1
   user_agent: "RegulatoryWatcher/1.0"
-  content_types:
-    - circulars-cssf
+  entity_slugs:
+    AIFM: aifms
+    CHAPTER15_MANCO: management-companies-chapter-15
+  publication_types:
+    - { label: "CSSF circular",            slug: circulars-cssf,            type: CSSF_CIRCULAR }
+    - { label: "CSSF regulation",          slug: cssf-regulations,          type: CSSF_REGULATION }
+    - { label: "Law",                      slug: laws,                      type: LU_LAW }
+    - { label: "Grand-ducal regulation",   slug: grand-ducal-regulations,   type: LU_GRAND_DUCAL_REGULATION }
+    - { label: "Ministerial regulation",   slug: ministerial-regulations,   type: LU_MINISTERIAL_REGULATION }
+    - { label: "Annex to a CSSF circular", slug: annexes-to-cssf-circulars, type: CSSF_CIRCULAR_ANNEX }
+    - { label: "Professional standard",    slug: professional-standards,    type: PROFESSIONAL_STANDARD }
