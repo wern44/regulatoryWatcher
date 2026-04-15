@@ -25,13 +25,6 @@ _BASE_URL = "https://www.cssf.lu"
 _LISTING_PATH = "/en/regulatory-framework/"
 _USER_AGENT = "RegulatoryWatcher/1.0"
 
-# Slugs confirmed to yield non-empty listings when filtering by facet.
-# The listing page honors `fwp_entity_type` and `fwp_content_type` query params;
-# `aifms` was verified to return AIFM-tagged circulars.
-_CSSF_ENTITY_SLUGS: dict[str, str] = {
-    "aifms": "aifms",
-}
-
 # Sanity cap for listing pagination. The real CSSF listing has well under 100
 # pages per facet; this only guards against the site ever returning HTTP 200
 # on a non-existent page with a non-empty body (which would otherwise loop
@@ -56,6 +49,7 @@ class CircularListingRow:
     description: str
     publication_date: date | None
     detail_url: str
+    publication_type_label: str = ""  # e.g. "CSSF circular", "Law"
 
 
 @dataclass
@@ -91,27 +85,32 @@ _REF_RE = re.compile(
 
 
 def list_circulars(
-    entity_slug: str,
     *,
+    entity_filter_id: int,
+    content_type_filter_id: int,
+    publication_type_label: str,
     client: httpx.Client | None = None,
-    content_type: str = "circulars-cssf",
     max_pages: int | None = None,
     request_delay_ms: int = 500,
 ) -> Iterator[CircularListingRow]:
-    """Paginate the filtered listing. Stops when a page has no ``li.library-element``.
+    """Paginate the filtered CSSF listing.
 
-    The CSSF listing interleaves CSSF circulars with EU regulations (which
-    ``_REF_RE`` deliberately rejects). A page with 20 non-CSSF items is still
-    a valid page and we must keep walking: pagination only terminates when
-    the raw ``<li.library-element>`` count on the page is 0 (i.e. the page
-    truly does not exist / has no items).
+    The CSSF regulatory-framework page honours server-side URL params:
+    ``?entity_type=<int>&content_type=<int>`` — numeric WordPress
+    taxonomy IDs. Pagination via the existing ``/page/N/`` path.
 
     Args:
-        entity_slug: FacetWP entity_type slug, e.g. ``"aifms"``.
-        client: optional shared ``httpx.Client`` (for tests / connection reuse).
-        content_type: FacetWP content_type slug; defaults to CSSF circulars.
-        max_pages: hard cap on pages fetched; ``None`` means no cap.
-        request_delay_ms: sleep between page fetches to be polite.
+        entity_filter_id: numeric WordPress term ID for the entity
+            type (e.g. 502 = AIFMs).
+        content_type_filter_id: numeric WordPress term ID for the
+            publication type (e.g. 567 = CSSF circular).
+        publication_type_label: human-readable label passed through
+            to parsed rows (e.g. "CSSF circular", "Law") — used by
+            the parser to decide whether to require a CSSF ref regex
+            match or synthesize a ref from the detail URL slug.
+        client: optional shared httpx.Client.
+        max_pages: hard cap on pages fetched; None means no cap.
+        request_delay_ms: sleep between page fetches.
     """
     owns_client = client is None
     if client is None:
@@ -127,21 +126,24 @@ def list_circulars(
                 return
             if page > _MAX_PAGES_HARD_CEILING:
                 logger.warning(
-                    "Hit hard pagination ceiling (%d) at slug=%s",
+                    "Hit hard pagination ceiling (%d) at entity=%d content=%d",
                     _MAX_PAGES_HARD_CEILING,
-                    entity_slug,
+                    entity_filter_id,
+                    content_type_filter_id,
                 )
                 return
             url = _build_listing_url(page)
             resp = client.get(
                 url,
                 params={
-                    "fwp_entity_type": entity_slug,
-                    "fwp_content_type": content_type,
+                    "entity_type": str(entity_filter_id),
+                    "content_type": str(content_type_filter_id),
                 },
             )
             resp.raise_for_status()
-            matched, raw_count = _parse_listing_page(resp.text)
+            matched, raw_count = _parse_listing_page(
+                resp.text, publication_type_label=publication_type_label
+            )
             if raw_count == 0:
                 # No ``li.library-element`` items at all -> past the last page.
                 return
@@ -160,14 +162,26 @@ def _build_listing_url(page: int) -> str:
     return urljoin(_BASE_URL, f"{_LISTING_PATH}page/{page}/")
 
 
-def _parse_listing_page(html: str) -> tuple[list[CircularListingRow], int]:
+# Publication-type labels that carry CSSF/IML/BCL reference numbers
+# parseable by _REF_RE. All other labels fall back to URL-slug synthesis.
+_LABELS_WITH_REF: set[str] = {
+    "CSSF circular",
+    "CSSF regulation",
+    "Annex to a CSSF circular",
+}
+
+
+def _parse_listing_page(
+    html: str, *, publication_type_label: str = ""
+) -> tuple[list[CircularListingRow], int]:
     """Return ``(matched_rows, raw_row_count)`` for a listing page.
 
     ``raw_row_count`` is the number of ``<li.library-element>`` items present
     in the page regardless of whether they match ``_REF_RE``. A ``raw_count``
     of 0 means "no page / past the end" and is the only signal that should
     terminate pagination. ``matched_rows`` is the subset that produced a
-    parseable ``CircularListingRow`` (i.e. had a CSSF/IML reference number).
+    parseable ``CircularListingRow`` (i.e. had a CSSF/IML reference number or
+    a synthesizable URL slug for non-CSSF types).
 
     The listing DOM looks like::
 
@@ -190,7 +204,7 @@ def _parse_listing_page(html: str) -> tuple[list[CircularListingRow], int]:
     raw_items = soup.select("li.library-element")
     matched: list[CircularListingRow] = []
     for item in raw_items:
-        row = _row_from_library_element(item)
+        row = _row_from_library_element(item, publication_type_label=publication_type_label)
         if row is not None:
             matched.append(row)
     return matched, len(raw_items)
@@ -202,30 +216,39 @@ def _parse_listing_html(html: str) -> Iterator[CircularListingRow]:
     yield from matched
 
 
-def _row_from_library_element(item: Tag) -> CircularListingRow | None:
+def _row_from_library_element(
+    item: Tag, *, publication_type_label: str = ""
+) -> CircularListingRow | None:
     title_link = item.select_one(".library-element__title a")
     if title_link is None:
         return None
     raw_title = title_link.get_text(" ", strip=True)
-    href_value = title_link.get("href") or ""
-    href = href_value if isinstance(href_value, str) else ""
+    href_raw = title_link.get("href") or ""
+    href = href_raw if isinstance(href_raw, str) else ""
     if not href:
         return None
     detail_url = urljoin(_BASE_URL, href)
 
-    ref_match = _REF_RE.search(raw_title)
-    if ref_match is None:
-        # Skip rows that aren't clearly a circular/regulation with a ref number
-        # (e.g. CSSF Regulation No 26-01 is kept via the wider regex; but
-        # anything else without a parsable ID is dropped).
-        return None
-    reference_number = _normalize_ref(ref_match.group(0))
+    if publication_type_label in _LABELS_WITH_REF or not publication_type_label:
+        # CSSF-style ref expected; fall back to the legacy behaviour
+        # (accept only _REF_RE matches) when the caller doesn't pass a
+        # label (keeps older callers/tests working).
+        ref_match = _REF_RE.search(raw_title)
+        if ref_match is None:
+            return None
+        reference_number = _normalize_ref(ref_match.group(0))
+    else:
+        reference_number = _synthesize_ref_from_slug(detail_url, publication_type_label)
+        if not reference_number:
+            return None
 
     subtitle = item.select_one(".library-element__subtitle")
     description = subtitle.get_text(" ", strip=True) if subtitle else ""
 
     pub_el = item.select_one(".date--published")
-    publication_date = _parse_published_short(pub_el.get_text(" ", strip=True)) if pub_el else None
+    publication_date = (
+        _parse_published_short(pub_el.get_text(" ", strip=True)) if pub_el else None
+    )
 
     return CircularListingRow(
         reference_number=reference_number,
@@ -233,7 +256,41 @@ def _row_from_library_element(item: Tag) -> CircularListingRow | None:
         description=description,
         publication_date=publication_date,
         detail_url=detail_url,
+        publication_type_label=publication_type_label,
     )
+
+
+def _synthesize_ref_from_slug(detail_url: str, publication_type_label: str) -> str:
+    """Build a stable synthetic identifier from the detail-page URL slug.
+
+    CSSF detail URLs look like /en/Document/<slug>/. We derive the ref
+    from <slug>. Prefix with a label-derived short form to namespace
+    across publication types and avoid slug collisions.
+    """
+    m = re.search(r"/Document/([^/]+)/?$", detail_url)
+    if not m:
+        return ""
+    slug_part = m.group(1).lower()
+    short = _label_prefix(publication_type_label)
+    if not short:
+        return slug_part
+    if slug_part.startswith(f"{short}-"):
+        return slug_part
+    return f"{short}-{slug_part}"
+
+
+def _label_prefix(label: str) -> str:
+    """Short, stable ref-number prefix for non-CSSF publication types."""
+    mapping = {
+        "Law": "law",
+        "Grand-ducal regulation": "grand-ducal",
+        "Ministerial regulation": "ministerial",
+        "Professional standard": "prof-std",
+        "CSSF regulation": "cssf-reg",
+        "Annex to a CSSF circular": "cssf-annex",
+        "CSSF circular": "cssf-circ",
+    }
+    return mapping.get(label, "")
 
 
 # ---------------------------------------------------------------------------

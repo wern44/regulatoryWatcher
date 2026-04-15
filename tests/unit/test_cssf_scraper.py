@@ -14,6 +14,7 @@ from regwatch.discovery.cssf_scraper import (
     CircularNotFoundError,
     _parse_detail_html,
     _parse_listing_html,
+    _parse_listing_page,
     fetch_circular_detail,
     list_circulars,
 )
@@ -99,11 +100,19 @@ def test_list_circulars_uses_mock_transport_and_stops_on_empty_page() -> None:
     transport = httpx.MockTransport(handler)
     client = httpx.Client(transport=transport, base_url="https://www.cssf.lu")
 
-    rows = list(list_circulars("aifms", client=client, request_delay_ms=0))
+    rows = list(
+        list_circulars(
+            entity_filter_id=502,
+            content_type_filter_id=567,
+            publication_type_label="CSSF circular",
+            client=client,
+            request_delay_ms=0,
+        )
+    )
     assert rows, "should yield at least one row"
     first_url = str(calls[0].url)
-    assert "fwp_entity_type=aifms" in first_url
-    assert "fwp_content_type=circulars-cssf" in first_url
+    assert "entity_type=502" in first_url
+    assert "content_type=567" in first_url
     # Should have tried page 2 and stopped when it came back empty.
     assert any("/page/2/" in str(c.url) for c in calls)
 
@@ -159,7 +168,15 @@ def test_list_circulars_skips_pages_with_no_cssf_matches() -> None:
     transport = httpx.MockTransport(handler)
     client = httpx.Client(transport=transport, base_url="https://www.cssf.lu")
 
-    rows = list(list_circulars("aifms", client=client, request_delay_ms=0))
+    rows = list(
+        list_circulars(
+            entity_filter_id=502,
+            content_type_filter_id=567,
+            publication_type_label="CSSF circular",
+            client=client,
+            request_delay_ms=0,
+        )
+    )
     refs = [r.reference_number for r in rows]
     assert "CSSF 25/893" in refs, (
         f"expected page 1 CSSF row to yield; got {refs}"
@@ -183,7 +200,14 @@ def test_list_circulars_respects_max_pages() -> None:
     client = httpx.Client(transport=transport, base_url="https://www.cssf.lu")
 
     rows = list(
-        list_circulars("aifms", client=client, request_delay_ms=0, max_pages=1)
+        list_circulars(
+            entity_filter_id=502,
+            content_type_filter_id=567,
+            publication_type_label="CSSF circular",
+            client=client,
+            request_delay_ms=0,
+            max_pages=1,
+        )
     )
     assert rows
     # Only one page should have been requested.
@@ -320,3 +344,78 @@ def test_fetch_circular_detail_parses_body() -> None:
     )
     assert d.reference_number == "CSSF 22/806"
     assert d.published_at == date(2022, 4, 22)
+
+
+# ---------------------------------------------------------------------------
+# New tests for Task 7 — numeric URL params + synthetic refs
+# ---------------------------------------------------------------------------
+
+
+def test_law_listing_synthesizes_reference_from_slug() -> None:
+    html = (FIXTURES / "listing_aifms_law.html").read_text(encoding="utf-8")
+    rows, raw_count = _parse_listing_page(html, publication_type_label="Law")
+    assert raw_count > 0
+    assert rows, "expected at least one Law row parsed"
+    for r in rows:
+        assert r.publication_type_label == "Law"
+        assert r.reference_number, "must have synthesized ref"
+        # Should be URL-slug-derived; starts with 'law-' prefix
+        assert r.reference_number.startswith("law-"), (
+            f"expected law- prefix, got {r.reference_number!r}"
+        )
+
+
+def test_grand_ducal_listing_synthesizes_reference_from_slug() -> None:
+    html = (FIXTURES / "listing_aifms_grand-ducal-regulation.html").read_text(
+        encoding="utf-8"
+    )
+    rows, raw_count = _parse_listing_page(
+        html, publication_type_label="Grand-ducal regulation"
+    )
+    assert raw_count > 0
+    assert rows
+    for r in rows:
+        assert r.publication_type_label == "Grand-ducal regulation"
+        assert r.reference_number
+        assert r.reference_number.startswith("grand-ducal-"), (
+            f"expected grand-ducal- prefix, got {r.reference_number!r}"
+        )
+
+
+def test_cssf_circular_listing_still_uses_ref_regex() -> None:
+    html = (FIXTURES / "listing_aifms_page1.html").read_text(encoding="utf-8")
+    rows, _ = _parse_listing_page(html, publication_type_label="CSSF circular")
+    assert rows
+    for r in rows:
+        assert r.publication_type_label == "CSSF circular"
+        # Canonical CSSF/IML ref shape enforced
+        assert re.match(
+            r"^(CSSF(-[A-Z]+)?|IML|BCL)\s\d{2,4}/\d{1,4}$",
+            r.reference_number,
+        ), f"not a canonical ref: {r.reference_number!r}"
+
+
+def test_list_circulars_uses_numeric_url_params(httpx_mock) -> None:
+    """list_circulars must send entity_type and content_type as numeric IDs."""
+    # httpx_mock will match any GET; we verify request URL.
+    httpx_mock.add_response(
+        url="https://www.cssf.lu/en/regulatory-framework/?entity_type=502&content_type=567",
+        text="<html><body></body></html>",
+    )
+    # First page returns empty -> pagination stops immediately.
+    with httpx.Client() as client:
+        rows = list(
+            list_circulars(
+                entity_filter_id=502,
+                content_type_filter_id=567,
+                publication_type_label="CSSF circular",
+                client=client,
+                request_delay_ms=0,
+            )
+        )
+    assert rows == []
+    req = httpx_mock.get_requests()[0]
+    # Assert URL has numeric params (not slug-based fwp_*)
+    assert "entity_type=502" in str(req.url)
+    assert "content_type=567" in str(req.url)
+    assert "fwp_" not in str(req.url), f"legacy fwp_* param leaked: {req.url}"

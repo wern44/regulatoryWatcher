@@ -191,8 +191,11 @@ class CssfDiscoveryService:
     ) -> None:
         total = 0
         self._on_progress(total_scraped=0, entity_type=auth_type.value)
+        entity_filter_id = int(slug)
         for row in list_circulars(
-            slug,
+            entity_filter_id=entity_filter_id,
+            content_type_filter_id=567,  # CSSF circular; Task 8 will iterate the matrix
+            publication_type_label="CSSF circular",
             client=self._client,
             request_delay_ms=self._config.request_delay_ms,
         ):

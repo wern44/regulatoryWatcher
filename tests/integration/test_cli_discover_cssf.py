@@ -27,7 +27,9 @@ def _mock_scraper():
     """Monkeypatch returns a single CSSF 22/806 row with a 25/883 amendment."""
     from regwatch.discovery.cssf_scraper import CircularDetail, CircularListingRow
 
-    def _fake_list(entity_slug, *, client=None, **kwargs):
+    def _fake_list(
+        *, entity_filter_id, content_type_filter_id, publication_type_label, **kwargs
+    ):
         yield CircularListingRow(
             reference_number="CSSF 22/806",
             raw_title="Circular CSSF 22/806 on outsourcing",
@@ -114,7 +116,9 @@ def test_cli_discover_cssf_exits_1_on_failure(tmp_path, monkeypatch):
     _, sf = _setup(tmp_path, monkeypatch)
 
     # Scraper raises on list -> entire slug fails; run status becomes FAILED
-    def _raising_list(entity_slug, *, client=None, **kwargs):
+    def _raising_list(
+        *, entity_filter_id, content_type_filter_id, publication_type_label, **kwargs
+    ):
         raise RuntimeError("mocked scraper failure")
         yield  # unreachable; makes this a generator
 
