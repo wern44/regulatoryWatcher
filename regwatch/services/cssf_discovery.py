@@ -402,11 +402,22 @@ class CssfDiscoveryService:
         # Session is now closed. Audit / provenance writes happen AFTER the
         # outer session's transaction ends, so the connection's lock is released
         # before _write_item or _upsert_discovery_source try to acquire one.
+
+        # In dry-run, a NEW regulation wasn't committed — its autoincrement id
+        # is burned but no row exists, so a DiscoveryRunItem FK to that id would
+        # fail. Pass None for the FK in that case, and skip the provenance
+        # UPSERT entirely (no regulation to UPSERT against).
+        audit_reg_id = reg_id
+        persist_provenance = True
+        if self._dry_run and outcome == "NEW":
+            audit_reg_id = None
+            persist_provenance = False
+
         self._write_item(
-            run_id, reg_id, canonical_ref, outcome,
+            run_id, audit_reg_id, canonical_ref, outcome,
             listing.detail_url, auth_type.value, pub.label, note=note,
         )
-        if reg_id is not None:
+        if persist_provenance and reg_id is not None:
             self._upsert_discovery_source(
                 run_id=run_id, regulation_id=reg_id,
                 entity_type=auth_type.value, content_type=pub.label,

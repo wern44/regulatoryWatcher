@@ -3,17 +3,21 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import httpx
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from regwatch.config import CssfDiscoveryConfig
+from regwatch.config import CssfDiscoveryConfig, PublicationTypeConfig
+from regwatch.db.engine import create_app_engine
 from regwatch.db.models import (
+    AuthorizationType,
     Base,
     DiscoveryRun,
     DiscoveryRunItem,
     LifecycleStage,
     Regulation,
+    RegulationDiscoverySource,
     RegulationType,
 )
 from regwatch.services.cssf_discovery import CssfDiscoveryService
@@ -215,3 +219,120 @@ def test_retire_skipped_when_total_scraped_below_floor(session_factory):
         assert run_after.error_summary is not None  # explains why retire was skipped
         orphan = s.get(Regulation, orphan_id)
         assert orphan.lifecycle_stage == LifecycleStage.IN_FORCE
+
+
+# ---------------------------------------------------------------------------
+# Regression: dry-run NEW path must write regulation_id=None for audit row
+# ---------------------------------------------------------------------------
+
+
+def _listing_html_dry(ref: str, slug: str) -> str:
+    # Note: ref must match _REF_RE (numeric suffix) for "CSSF circular" pub type.
+    return f"""<!doctype html><html><body>
+<ul class="library-list">
+  <li class="library-element">
+    <div class="library-element__heading">
+      <p class="library-element__dates">
+        <span class="date--published">Published on 01.01.2026</span>
+      </p>
+    </div>
+    <div class="library-element__main">
+      <h3 class="library-element__title">
+        <a href="/en/Document/{slug}/">{ref}</a>
+      </h3>
+    </div>
+  </li>
+</ul>
+</body></html>"""
+
+
+def _detail_html_dry(ref: str) -> str:
+    return f"""<!doctype html><html><head><title>{ref}</title></head><body>
+<h1 class="single-news__title">Circular {ref}</h1>
+<div class="content-header-info">Published on 1 January 2026</div>
+<div class="single-news__subtitle"><p>Dry-run regression test circular.</p></div>
+<ul class="entities-list">
+  <li>Alternative investment fund manager</li>
+</ul>
+<li class="related-document no-heading">
+  <a href="https://www.cssf.lu/dry.pdf">PDF EN</a>
+</li>
+</body></html>"""
+
+
+def _empty_listing_html_dry() -> str:
+    return "<html><body><ul></ul></body></html>"
+
+
+def test_dry_run_new_path_writes_null_regulation_id(tmp_path):
+    """In dry-run mode, a NEW regulation must produce a DiscoveryRunItem with
+    regulation_id=None (not the burned autoincrement id that was never committed).
+    A non-None id would trigger FOREIGN KEY constraint failed in SQLite because
+    the rolled-back Regulation row doesn't exist.
+    """
+    ref = "CSSF 26/999"
+    slug = "circular-cssf-26-999"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if "/en/regulatory-framework/page/" in path:
+            return httpx.Response(200, text=_empty_listing_html_dry())
+        if path in ("/en/regulatory-framework/", "/en/regulatory-framework"):
+            return httpx.Response(200, text=_listing_html_dry(ref, slug))
+        if "/en/Document/" in path and slug in path:
+            return httpx.Response(200, text=_detail_html_dry(ref))
+        return httpx.Response(404)
+
+    engine = create_app_engine(tmp_path / "dry_run_test.db")
+    Base.metadata.create_all(engine)
+    sf = sessionmaker(engine, expire_on_commit=False)
+
+    cfg = CssfDiscoveryConfig(
+        request_delay_ms=0,
+        entity_filter_ids={"AIFM": 502},
+        publication_types=[
+            PublicationTypeConfig(label="CSSF circular", filter_id=567, type="CSSF_CIRCULAR"),
+        ],
+        retire_min_scraped=0,
+    )
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="https://www.cssf.lu"
+    )
+    svc = CssfDiscoveryService(session_factory=sf, config=cfg, http_client=client)
+
+    # Run in dry-run mode — must not raise FOREIGN KEY constraint failed.
+    run_id = svc.run(
+        entity_types=[AuthorizationType.AIFM],
+        mode="full",
+        triggered_by="TEST",
+        dry_run=True,
+    )
+
+    with sf() as s:
+        # The run must succeed (no FK exception propagated as FAILED).
+        run = s.get(DiscoveryRun, run_id)
+        assert run.status == "SUCCESS", f"expected SUCCESS, got {run.status!r}: {run.error_summary}"
+
+        # Exactly one DiscoveryRunItem with outcome NEW.
+        items = s.query(DiscoveryRunItem).filter(
+            DiscoveryRunItem.run_id == run_id,
+            DiscoveryRunItem.outcome == "NEW",
+        ).all()
+        assert len(items) == 1, f"expected 1 NEW item, got {len(items)}"
+
+        # The audit row must carry regulation_id=None — the regulation was
+        # never committed, so pointing at its burned id would be an invalid FK.
+        assert items[0].regulation_id is None, (
+            f"dry-run NEW item must have regulation_id=None, "
+            f"got {items[0].regulation_id}"
+        )
+
+        # No Regulation row must have been committed.
+        regs = s.query(Regulation).all()
+        assert len(regs) == 0, f"dry-run must not commit regulations, got {len(regs)}"
+
+        # No provenance row must have been written (nothing to UPSERT against).
+        sources = s.query(RegulationDiscoverySource).all()
+        assert len(sources) == 0, (
+            f"dry-run NEW path must not write RegulationDiscoverySource, got {len(sources)}"
+        )
