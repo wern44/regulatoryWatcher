@@ -62,7 +62,8 @@
               <tr class="text-left text-xs text-slate-500">
                 <th class="py-1 pr-3">Reference</th>
                 <th class="py-1 pr-3">Outcome</th>
-                <th class="py-1 pr-3">Entity types</th>
+                <th class="py-1 pr-3">Entity</th>
+                <th class="py-1 pr-3">Content type</th>
                 <th class="py-1 pr-3">Note</th>
               </tr>
             </thead>
@@ -89,7 +90,8 @@
                       {{ i.outcome }}
                     </span>
                   </td>
-                  <td class="py-1 pr-3 text-xs text-slate-600">{{ i.entity_types|join(', ') }}</td>
+                  <td class="py-1 pr-3 text-xs text-slate-600">{{ i.entity_type }}</td>
+                  <td class="py-1 pr-3 text-xs text-slate-600">{{ i.content_type }}</td>
                   <td class="py-1 pr-3 text-xs text-slate-600">{{ i.note or '' }}</td>
                 </tr>
               {% endfor %}

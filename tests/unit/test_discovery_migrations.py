@@ -91,3 +91,47 @@ def test_migrate_handles_missing_table(tmp_path):
     db = tmp_path / "empty.db"
     engine = create_engine(f"sqlite:///{db}")
     migrate_discovery_run_item_columns(engine)
+
+
+def test_migrate_resumes_partial_prior_run(tmp_path):
+    """If both entity_types and entity_type columns exist (crash midway),
+    the migration drops the stale column and returns cleanly."""
+    db = tmp_path / "partial.db"
+    engine = create_engine(f"sqlite:///{db}")
+    with engine.begin() as c:
+        c.execute(text("""
+            CREATE TABLE discovery_run_item (
+                item_id INTEGER PRIMARY KEY,
+                run_id INTEGER,
+                regulation_id INTEGER,
+                reference_number TEXT,
+                outcome TEXT,
+                detail_url TEXT,
+                entity_types TEXT,
+                entity_type VARCHAR(40),
+                content_type VARCHAR(60),
+                note TEXT,
+                created_at TEXT
+            )
+        """))
+        c.execute(text(
+            "INSERT INTO discovery_run_item "
+            "(item_id, run_id, regulation_id, reference_number, outcome, detail_url, "
+            " entity_types, entity_type, content_type, note, created_at) "
+            "VALUES (1, 1, NULL, 'CSSF 22/806', 'NEW', 'https://x', '[\"AIFM\"]', "
+            " 'AIFM', 'circulars-cssf', NULL, '2026-04-14')"
+        ))
+
+    migrate_discovery_run_item_columns(engine)
+
+    with engine.connect() as c:
+        cols = [r[1] for r in c.execute(text("PRAGMA table_info(discovery_run_item)"))]
+        assert "entity_types" not in cols
+        assert "entity_type" in cols
+        assert "content_type" in cols
+        # Previously-populated scalar values preserved
+        row = c.execute(text(
+            "SELECT entity_type, content_type FROM discovery_run_item WHERE item_id=1"
+        )).one()
+        assert row.entity_type == "AIFM"
+        assert row.content_type == "circulars-cssf"

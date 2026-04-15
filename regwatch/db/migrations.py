@@ -27,6 +27,12 @@ def migrate_discovery_run_item_columns(engine: Engine) -> None:
             return  # Table doesn't exist yet; create_all handles fresh DBs.
         if "entity_types" not in cols:
             return  # Already migrated.
+        if "entity_type" in cols:
+            # Partial prior migration: columns were added but DROP never ran.
+            # Resume from the drop and exit.
+            conn.execute(text("ALTER TABLE discovery_run_item DROP COLUMN entity_types"))
+            logger.info("Resumed partial migration by dropping stale entity_types column")
+            return
 
         logger.info(
             "Migrating discovery_run_item: entity_types -> entity_type + content_type"
