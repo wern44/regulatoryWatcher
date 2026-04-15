@@ -53,6 +53,14 @@ class DiscoverySourceDTO:
     last_seen_run_id: int
 
 
+@dataclass
+class RetirePreview:
+    candidates: list[str]          # refs that would match the retire query
+    would_retire: bool             # False if tripwire would fire
+    tripwire_reason: str | None    # human-readable if would_retire is False
+    total_scraped: int             # for transparency
+
+
 # CSSF detail pages list applicable entities using these human-readable labels.
 # Map them to our AuthorizationType enum. Substring-match: the label as it appears
 # in ``.entities-list li`` on CSSF detail pages is checked for any of these prefixes.
@@ -802,14 +810,16 @@ class CssfDiscoveryService:
             s.commit()
         return retired_count
 
-    def preview_retire_candidates(self, run_id: int) -> list[str]:
-        """Return refs that WOULD be retired by retire_missing(run_id).
+    def preview_retire_candidates(self, run_id: int) -> RetirePreview:
+        """Return refs that WOULD be retired + whether the tripwire would fire.
 
         Does NOT modify the DB. Used by --dry-run to show the user what
         a real run would retire. Applies the same filter as retire_missing
         (exclude KEEP_ACTIVE, exclude non-CSSF_WEB, exclude already-REPEALED).
         """
         with self._sf() as s:
+            run = s.get(DiscoveryRun, run_id)
+            total_scraped = run.total_scraped if run else 0
             seen_subq = select(RegulationDiscoverySource.regulation_id).where(
                 RegulationDiscoverySource.last_seen_run_id == run_id
             )
@@ -825,7 +835,20 @@ class CssfDiscoveryService:
             )
             if keep_active_refs:
                 query = query.where(Regulation.reference_number.not_in(keep_active_refs))
-            return sorted(s.scalars(query).all())
+            candidates = sorted(s.scalars(query).all())
+
+        floor = self._config.retire_min_scraped
+        would_retire = floor <= 0 or total_scraped >= floor
+        tripwire_reason = None if would_retire else (
+            f"total_scraped={total_scraped} < retire_min_scraped={floor}; "
+            "retire would be skipped — likely silent parser breakage."
+        )
+        return RetirePreview(
+            candidates=candidates,
+            would_retire=would_retire,
+            tripwire_reason=tripwire_reason,
+            total_scraped=total_scraped,
+        )
 
     def _write_item(
         self, run_id: int, regulation_id: int | None,

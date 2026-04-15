@@ -411,7 +411,14 @@ def discover_cssf(
         typer.echo("No authorization types configured.")
         raise typer.Exit(code=1)
 
-    mode = "full" if full else "incremental"
+    if dry_run and not full:
+        typer.echo(
+            "Dry-run: forcing --full (incremental mode would short-circuit on "
+            "known refs and produce a misleading preview)."
+        )
+        mode = "full"
+    else:
+        mode = "full" if full else "incremental"
 
     service = CssfDiscoveryService(
         session_factory=sf,
@@ -432,13 +439,25 @@ def discover_cssf(
 
     if dry_run:
         preview = service.preview_retire_candidates(run_id)
-        typer.echo(f"Dry-run: {len(preview)} regulation(s) would be retired.")
-        if preview:
-            typer.echo("  Would-retire refs (first 20):")
-            for ref in preview[:20]:
-                typer.echo(f"    {ref}")
-            if len(preview) > 20:
-                typer.echo(f"    ... and {len(preview) - 20} more")
+        if preview.would_retire:
+            typer.echo(
+                f"Dry-run: {len(preview.candidates)} regulation(s) would be retired."
+            )
+            if preview.candidates:
+                typer.echo("  Would-retire refs (first 20):")
+                for ref in preview.candidates[:20]:
+                    typer.echo(f"    {ref}")
+                if len(preview.candidates) > 20:
+                    typer.echo(f"    ... and {len(preview.candidates) - 20} more")
+        else:
+            typer.echo(
+                f"Dry-run: tripwire would block retirement "
+                f"({preview.tripwire_reason})"
+            )
+            typer.echo(
+                f"  Raw candidates that match the filter (would NOT be retired): "
+                f"{len(preview.candidates)}"
+            )
 
     with sf() as s:
         run = s.get(DiscoveryRun, run_id)

@@ -227,7 +227,10 @@ def test_discover_cssf_dry_run_flag_passed(runner, monkeypatch, tmp_path):
             return stub_run_id
 
         def preview_retire_candidates(self, run_id):
-            return []
+            from regwatch.services.cssf_discovery import RetirePreview
+            return RetirePreview(
+                candidates=[], would_retire=True, tripwire_reason=None, total_scraped=0,
+            )
 
     monkeypatch.setattr("regwatch.cli.CssfDiscoveryService", _StubService)
 
@@ -275,8 +278,12 @@ def test_discover_cssf_dry_run_prints_retire_preview(runner, monkeypatch, tmp_pa
             return stub_run_id
 
         def preview_retire_candidates(self, run_id):
+            from regwatch.services.cssf_discovery import RetirePreview
             assert run_id == stub_run_id
-            return ["CSSF 99/GONE1", "CSSF 99/GONE2"]
+            return RetirePreview(
+                candidates=["CSSF 99/GONE1", "CSSF 99/GONE2"],
+                would_retire=True, tripwire_reason=None, total_scraped=100,
+            )
 
     monkeypatch.setattr("regwatch.cli.CssfDiscoveryService", _Stub)
 
@@ -285,3 +292,91 @@ def test_discover_cssf_dry_run_prints_retire_preview(runner, monkeypatch, tmp_pa
     assert "2 regulation(s) would be retired" in result.output
     assert "CSSF 99/GONE1" in result.output
     assert "CSSF 99/GONE2" in result.output
+
+
+def test_discover_cssf_dry_run_shows_tripwire_when_scraped_low(runner, monkeypatch, tmp_path):
+    """--dry-run shows tripwire block message when total_scraped is below floor."""
+    db, sf = _setup(tmp_path, monkeypatch)
+
+    from datetime import UTC, datetime
+
+    with sf() as s:
+        from regwatch.db.models import DiscoveryRun
+        run = DiscoveryRun(
+            status="SUCCESS",
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+            triggered_by="USER_CLI",
+            entity_types=["AIFM"],
+            mode="full",
+        )
+        s.add(run)
+        s.commit()
+        stub_run_id = run.run_id
+
+    class _Stub:
+        def __init__(self, **kw):
+            pass
+
+        def run(self, **kw):
+            return stub_run_id
+
+        def preview_retire_candidates(self, run_id):
+            from regwatch.services.cssf_discovery import RetirePreview
+            return RetirePreview(
+                candidates=["CSSF 99/PHANTOM"] * 3,
+                would_retire=False,
+                tripwire_reason="total_scraped=0 < retire_min_scraped=10; ...",
+                total_scraped=0,
+            )
+
+    monkeypatch.setattr("regwatch.cli.CssfDiscoveryService", _Stub)
+
+    result = runner.invoke(app, ["discover-cssf", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "tripwire would block" in result.output
+    # Raw candidates shown but not "would be retired"
+    assert "would be retired" not in result.output.replace("would NOT be retired", "")
+
+
+def test_dry_run_forces_full_mode(runner, monkeypatch, tmp_path):
+    """--dry-run without --full forces mode=full and emits a notice."""
+    db, sf = _setup(tmp_path, monkeypatch)
+    captured = {}
+
+    from datetime import UTC, datetime
+
+    with sf() as s:
+        from regwatch.db.models import DiscoveryRun
+        run = DiscoveryRun(
+            status="SUCCESS",
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+            triggered_by="USER_CLI",
+            entity_types=["AIFM"],
+            mode="full",
+        )
+        s.add(run)
+        s.commit()
+        stub_run_id = run.run_id
+
+    class _Stub:
+        def __init__(self, **kw):
+            pass
+
+        def run(self, *, mode, **kw):
+            captured["mode"] = mode
+            return stub_run_id
+
+        def preview_retire_candidates(self, run_id):
+            from regwatch.services.cssf_discovery import RetirePreview
+            return RetirePreview(
+                candidates=[], would_retire=True, tripwire_reason=None, total_scraped=50,
+            )
+
+    monkeypatch.setattr("regwatch.cli.CssfDiscoveryService", _Stub)
+
+    result = runner.invoke(app, ["discover-cssf", "--dry-run"])  # no --full
+    assert result.exit_code == 0, result.output
+    assert captured["mode"] == "full"
+    assert "forcing --full" in result.output
