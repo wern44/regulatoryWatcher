@@ -309,6 +309,14 @@ class CssfDiscoveryService:
                 return "NEW"
 
             self._ensure_applicability(s, existing, auth_type)
+
+            # Reactivation: a previously-retired row is back in the matrix.
+            if (
+                existing.source_of_truth == "CSSF_WEB"
+                and existing.lifecycle_stage == LifecycleStage.REPEALED
+            ):
+                existing.lifecycle_stage = LifecycleStage.IN_FORCE
+
             current = self._current_amendment_links(s, existing)
             incoming = set(detail.amended_by_refs)
             amended = incoming - current["AMENDED_BY"]
@@ -788,6 +796,56 @@ class CssfDiscoveryService:
 
         return counts
 
+    def retire_missing(self, run_id: int) -> int:
+        """Mark CSSF_WEB regulations not seen in this run as REPEALED.
+
+        Caller MUST gate this on run.status == "SUCCESS" — a PARTIAL or
+        FAILED run must not retire. The in-place callers (see
+        _finalize_run) do this gating.
+
+        Returns the number retired. Honours RegulationOverride
+        (action="KEEP_ACTIVE"). Never touches SEED / DISCOVERED / CSSF_STUB
+        rows. Writes one DiscoveryRunItem per retired regulation with
+        outcome="RETIRED".
+        """
+        retired_count = 0
+        with self._sf() as s:
+            seen_subq = select(RegulationDiscoverySource.regulation_id).where(
+                RegulationDiscoverySource.last_seen_run_id == run_id
+            )
+            keep_active_refs = list(
+                s.scalars(
+                    select(RegulationOverride.reference_number).where(
+                        RegulationOverride.action == "KEEP_ACTIVE"
+                    )
+                ).all()
+            )
+
+            query = select(Regulation).where(
+                Regulation.source_of_truth == "CSSF_WEB",
+                Regulation.lifecycle_stage != LifecycleStage.REPEALED,
+                Regulation.regulation_id.not_in(seen_subq),
+            )
+            if keep_active_refs:
+                query = query.where(Regulation.reference_number.not_in(keep_active_refs))
+
+            stale = list(s.scalars(query).all())
+            for reg in stale:
+                reg.lifecycle_stage = LifecycleStage.REPEALED
+                s.add(DiscoveryRunItem(
+                    run_id=run_id,
+                    regulation_id=reg.regulation_id,
+                    reference_number=reg.reference_number,
+                    outcome="RETIRED",
+                    detail_url=None,
+                    entity_type="",
+                    content_type="",
+                    note="absent from all filter-matrix cells",
+                ))
+                retired_count += 1
+            s.commit()
+        return retired_count
+
     def _write_item(
         self, run_id: int, regulation_id: int | None,
         reference_number: str, outcome: str,
@@ -838,4 +896,16 @@ class CssfDiscoveryService:
                 run.status = "PARTIAL"
             else:
                 run.status = "SUCCESS"
+
+            # Commit the status decision so retire_missing can read it in its
+            # own session (NullPool: each with-block is a separate connection).
+            s.commit()
+
+            # Retire CSSF_WEB regulations absent from this run — only on SUCCESS.
+            # A PARTIAL/FAILED run must never wipe the catalog.
+            if run.status == "SUCCESS":
+                run.retired_count = self.retire_missing(run_id)
+            else:
+                run.retired_count = 0
+
             s.commit()
