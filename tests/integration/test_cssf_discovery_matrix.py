@@ -1,9 +1,11 @@
-"""Integration test: CssfDiscoveryService iterates the full (entity x pub_type) matrix.
+"""Integration tests for the 2×7 (entity × publication_type) filter matrix.
 
-Two entities (AIFM=502, CHAPTER15_MANCO=2001) x two publication types
-(CSSF circular filter_id=567, CSSF regulation filter_id=600) = 4 cells.
-Each cell returns one unique regulation so we end up with 4 Regulation rows
-and 4 RegulationDiscoverySource rows.
+These tests exercise a 2×2 slice (2 entities × 2 publication types = 4 cells)
+rather than the full 2×7 = 14 configured in production. The smaller matrix
+sufficiently validates the iteration loop, per-cell provenance UPSERT,
+Regulation.type derivation from config, and HTTP transport correctness
+without multiplying fixture boilerplate. End-to-end coverage across all
+7 publication types is Task 14's job (the full-scenario e2e test).
 """
 from __future__ import annotations
 

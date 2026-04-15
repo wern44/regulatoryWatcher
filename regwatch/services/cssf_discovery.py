@@ -828,9 +828,11 @@ class CssfDiscoveryService:
             run.failed_count = counts.get("FAILED", 0)
             run.error_summary = error
             ok_count = run.new_count + run.amended_count + run.updated_count + run.unchanged_count
-            if error and run.failed_count > 0 and ok_count > 0:
+            if error and ok_count > 0:
                 run.status = "PARTIAL"
-            elif error or (run.failed_count > 0 and ok_count == 0):
+            elif error:
+                run.status = "FAILED"
+            elif run.failed_count > 0 and ok_count == 0:
                 run.status = "FAILED"
             elif run.failed_count > 0:
                 run.status = "PARTIAL"
