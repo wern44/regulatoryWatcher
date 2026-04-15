@@ -814,8 +814,14 @@ class CssfDiscoveryService:
         with self._sf() as s:
             run = s.get(DiscoveryRun, run_id)
             total_scraped = run.total_scraped if run else 0
-            seen_subq = select(RegulationDiscoverySource.regulation_id).where(
-                RegulationDiscoverySource.last_seen_run_id == run_id
+            # Use DiscoveryRunItem audit rows (committed in dry-run via _write_item)
+            # rather than RegulationDiscoverySource (which is not persisted in dry-run).
+            # In non-dry-run, the two are equivalent.
+            observed_outcomes = ("UNCHANGED", "UPDATED_METADATA", "AMENDED", "NEW")
+            seen_subq = select(DiscoveryRunItem.regulation_id).where(
+                DiscoveryRunItem.run_id == run_id,
+                DiscoveryRunItem.outcome.in_(observed_outcomes),
+                DiscoveryRunItem.regulation_id.is_not(None),
             )
             keep_active_refs = list(s.scalars(
                 select(RegulationOverride.reference_number).where(

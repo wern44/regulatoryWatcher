@@ -336,3 +336,66 @@ def test_dry_run_new_path_writes_null_regulation_id(tmp_path):
         assert len(sources) == 0, (
             f"dry-run NEW path must not write RegulationDiscoverySource, got {len(sources)}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Regression: preview_retire_candidates must use audit rows, not provenance
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sf(tmp_path):
+    """Session factory backed by a fresh on-disk SQLite DB."""
+    engine = create_app_engine(tmp_path / "preview_test.db")
+    Base.metadata.create_all(engine)
+    return sessionmaker(engine, expire_on_commit=False)
+
+
+def test_preview_retire_in_dry_run_excludes_observed_regs(sf):
+    """preview_retire_candidates must exclude regs seen via DiscoveryRunItem
+    audit, even when provenance wasn't persisted (dry-run)."""
+    with sf() as s:
+        run = DiscoveryRun(
+            status="SUCCESS", started_at=datetime.now(UTC),
+            triggered_by="TEST", entity_types=["AIFM"], mode="full",
+        )
+        s.add(run)
+        s.flush()
+        run_id = run.run_id
+        # Two existing CSSF_WEB regs
+        reg_seen = Regulation(
+            type=RegulationType.CSSF_CIRCULAR, reference_number="CSSF 99/SEEN",
+            title="x", issuing_authority="CSSF",
+            lifecycle_stage=LifecycleStage.IN_FORCE,
+            is_ict=False, needs_review=False, url="", source_of_truth="CSSF_WEB",
+        )
+        reg_unseen = Regulation(
+            type=RegulationType.CSSF_CIRCULAR, reference_number="CSSF 99/UNSEEN",
+            title="x", issuing_authority="CSSF",
+            lifecycle_stage=LifecycleStage.IN_FORCE,
+            is_ict=False, needs_review=False, url="", source_of_truth="CSSF_WEB",
+        )
+        s.add_all([reg_seen, reg_unseen])
+        s.flush()
+        # Audit: seen reg got an UNCHANGED item; unseen got nothing.
+        # NO RegulationDiscoverySource rows (simulating dry-run).
+        s.add(DiscoveryRunItem(
+            run_id=run_id, regulation_id=reg_seen.regulation_id,
+            reference_number="CSSF 99/SEEN", outcome="UNCHANGED",
+            detail_url=None, entity_type="AIFM",
+            content_type="CSSF circular", note=None,
+        ))
+        s.commit()
+
+    svc = CssfDiscoveryService(
+        session_factory=sf,
+        config=CssfDiscoveryConfig(
+            retire_min_scraped=0,
+            publication_types=[
+                PublicationTypeConfig(label="CSSF circular", filter_id=567, type="CSSF_CIRCULAR"),
+            ],
+        ),
+    )
+    preview = svc.preview_retire_candidates(run_id)
+    assert "CSSF 99/UNSEEN" in preview.candidates
+    assert "CSSF 99/SEEN" not in preview.candidates
