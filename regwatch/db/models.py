@@ -197,7 +197,15 @@ class RegulationOverride(Base):
         ForeignKey("regulation.regulation_id"), nullable=True
     )
     reference_number: Mapped[str] = mapped_column(String(100))
-    action: Mapped[str] = mapped_column(String(20))  # INCLUDE / EXCLUDE / SET_ICT / UNSET_ICT
+    # Known values:
+    #   "EXCLUDE"      — suppress this ref entirely during discovery;
+    #                    no Regulation row is created/updated.
+    #   "SET_ICT"      — force is_ict=True on the regulation (overrides heuristic).
+    #   "UNSET_ICT"    — force is_ict=False (overrides heuristic).
+    #   "KEEP_ACTIVE"  — exempt from auto-retirement in Task 10's
+    #                    filter-matrix retirement sweep, even when absent
+    #                    from every matrix cell.
+    action: Mapped[str] = mapped_column(String(20))
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TZDateTime)
 
