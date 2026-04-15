@@ -17,7 +17,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from regwatch.config import CssfDiscoveryConfig
+from regwatch.config import CssfDiscoveryConfig, PublicationTypeConfig
 from regwatch.db.models import (
     AuthorizationType,
     DiscoveryRun,
@@ -25,6 +25,7 @@ from regwatch.db.models import (
     LifecycleStage,
     Regulation,
     RegulationApplicability,
+    RegulationDiscoverySource,
     RegulationLifecycleLink,
     RegulationOverride,
     RegulationType,
@@ -173,41 +174,65 @@ class CssfDiscoveryService:
                 if entity_filter_id is None:
                     logger.warning("no filter_id mapped for %s; skipping", et.value)
                     continue
-                try:
-                    self._run_for_slug(run_id, et, str(entity_filter_id), mode)
-                except Exception as e:  # noqa: BLE001
-                    logger.exception("entity_filter_id %s failed", entity_filter_id)
-                    msg = f"{entity_filter_id}: {e}"
-                    aggregate_error = (
-                        f"{aggregate_error}\n{msg}" if aggregate_error else msg
-                    )
+                for pub in self._config.publication_types:
+                    try:
+                        self._run_for_cell(run_id, et, entity_filter_id, pub, mode)
+                    except Exception as e:  # noqa: BLE001
+                        logger.exception(
+                            "cell failed: entity=%s (%d) x content=%s (%d)",
+                            et.value, entity_filter_id, pub.label, pub.filter_id,
+                        )
+                        msg = f"{et.value} x {pub.label}: {e}"
+                        aggregate_error = (
+                            f"{aggregate_error}\n{msg}" if aggregate_error else msg
+                        )
         finally:
             self._finalize_run(run_id, aggregate_error)
 
         return run_id
 
-    def _run_for_slug(
-        self, run_id: int, auth_type: AuthorizationType, slug: str, mode: str
+    def _run_for_cell(
+        self,
+        run_id: int,
+        auth_type: AuthorizationType,
+        entity_filter_id: int,
+        pub: PublicationTypeConfig,
+        mode: str,
     ) -> None:
         total = 0
-        self._on_progress(total_scraped=0, entity_type=auth_type.value)
-        entity_filter_id = int(slug)
+        self._on_progress(
+            total_scraped=0,
+            entity_type=auth_type.value,
+            content_type=pub.label,
+        )
         for row in list_circulars(
             entity_filter_id=entity_filter_id,
-            content_type_filter_id=567,  # CSSF circular; Task 8 will iterate the matrix
-            publication_type_label="CSSF circular",
+            content_type_filter_id=pub.filter_id,
+            publication_type_label=pub.label,
             client=self._client,
             request_delay_ms=self._config.request_delay_ms,
         ):
             total += 1
-            self._on_progress(total_scraped=total, reference=row.reference_number)
+            self._on_progress(
+                total_scraped=total,
+                reference=row.reference_number,
+                entity_type=auth_type.value,
+                content_type=pub.label,
+            )
             if mode == "incremental" and self._reference_exists(row.reference_number):
                 break
-            outcome = self._reconcile_row(run_id, auth_type, row)
-            logger.info("row %s -> %s", row.reference_number, outcome)
+            outcome = self._reconcile_row(run_id, auth_type, pub, row)
+            logger.info(
+                "cell %s x %s  row %s -> %s",
+                auth_type.value, pub.label, row.reference_number, outcome,
+            )
 
     def _reconcile_row(
-        self, run_id: int, auth_type: AuthorizationType, listing: CircularListingRow
+        self,
+        run_id: int,
+        auth_type: AuthorizationType,
+        pub: PublicationTypeConfig,
+        listing: CircularListingRow,
     ) -> str:
         with self._sf() as s:
             override = s.scalar(
@@ -219,7 +244,7 @@ class CssfDiscoveryService:
             if override is not None:
                 self._write_item(
                     run_id, None, listing.reference_number, "UNCHANGED",
-                    listing.detail_url, auth_type.value, "",
+                    listing.detail_url, auth_type.value, pub.label,
                     note="excluded by RegulationOverride",
                 )
                 return "UNCHANGED"
@@ -231,47 +256,55 @@ class CssfDiscoveryService:
                 request_delay_ms=self._config.request_delay_ms,
             )
         except CircularNotFoundError:
-            return self._handle_withdrawal(run_id, auth_type, listing)
+            return self._handle_withdrawal(run_id, auth_type, pub, listing)
         except Exception as e:  # noqa: BLE001
             logger.warning("detail fetch failed for %s: %s", listing.reference_number, e)
             self._write_item(
                 run_id, None, listing.reference_number, "FAILED",
-                listing.detail_url, auth_type.value, "",
+                listing.detail_url, auth_type.value, pub.label,
                 note=f"detail fetch failed: {e}",
             )
             return "FAILED"
 
-        # Re-check the override using the detail's canonical reference, which
+        # The detail page may not have a CSSF/IML ref (e.g. laws, regulations).
+        # Use the listing row's (synthesized) ref as the canonical key in that case.
+        canonical_ref = detail.reference_number or listing.reference_number
+
+        # Re-check the override using the canonical reference, which
         # may differ from the listing row's ref (e.g. when the listing title
         # and detail page disagree, or when redirects consolidate refs).
-        if detail.reference_number and detail.reference_number != listing.reference_number:
+        if canonical_ref and canonical_ref != listing.reference_number:
             with self._sf() as s:
                 override2 = s.scalar(
                     select(RegulationOverride).where(
-                        RegulationOverride.reference_number == detail.reference_number,
+                        RegulationOverride.reference_number == canonical_ref,
                         RegulationOverride.action == "EXCLUDE",
                     )
                 )
                 if override2 is not None:
                     self._write_item(
-                        run_id, None, detail.reference_number, "UNCHANGED",
-                        listing.detail_url, auth_type.value, "",
+                        run_id, None, canonical_ref, "UNCHANGED",
+                        listing.detail_url, auth_type.value, pub.label,
                         note="excluded by RegulationOverride",
                     )
                     return "UNCHANGED"
 
         with self._sf() as s:
             existing = s.scalar(
-                select(Regulation).where(Regulation.reference_number == detail.reference_number)
+                select(Regulation).where(Regulation.reference_number == canonical_ref)
             )
             if existing is None:
-                reg = self._create_regulation(s, detail, listing, auth_type)
+                reg = self._create_regulation(s, detail, listing, auth_type, pub)
                 self._ensure_amendment_stubs(s, detail)
                 self._sync_lifecycle_links(s, reg, detail)
                 s.commit()
                 self._write_item(
-                    run_id, reg.regulation_id, detail.reference_number, "NEW",
-                    listing.detail_url, auth_type.value, "", note=None,
+                    run_id, reg.regulation_id, canonical_ref, "NEW",
+                    listing.detail_url, auth_type.value, pub.label, note=None,
+                )
+                self._upsert_discovery_source(
+                    run_id=run_id, regulation_id=reg.regulation_id,
+                    entity_type=auth_type.value, content_type=pub.label,
                 )
                 return "NEW"
 
@@ -286,9 +319,13 @@ class CssfDiscoveryService:
                 self._refresh_metadata(existing, detail, listing)
                 s.commit()
                 self._write_item(
-                    run_id, existing.regulation_id, detail.reference_number, "AMENDED",
-                    listing.detail_url, auth_type.value, "",
+                    run_id, existing.regulation_id, canonical_ref, "AMENDED",
+                    listing.detail_url, auth_type.value, pub.label,
                     note=f"new amendments: {sorted(amended)}",
+                )
+                self._upsert_discovery_source(
+                    run_id=run_id, regulation_id=existing.regulation_id,
+                    entity_type=auth_type.value, content_type=pub.label,
                 )
                 return "AMENDED"
 
@@ -296,19 +333,60 @@ class CssfDiscoveryService:
             if changed:
                 s.commit()
                 self._write_item(
-                    run_id, existing.regulation_id, detail.reference_number, "UPDATED_METADATA",
-                    listing.detail_url, auth_type.value, "", note=None,
+                    run_id, existing.regulation_id, canonical_ref, "UPDATED_METADATA",
+                    listing.detail_url, auth_type.value, pub.label, note=None,
+                )
+                self._upsert_discovery_source(
+                    run_id=run_id, regulation_id=existing.regulation_id,
+                    entity_type=auth_type.value, content_type=pub.label,
                 )
                 return "UPDATED_METADATA"
 
             s.commit()
             self._write_item(
-                run_id, existing.regulation_id, detail.reference_number, "UNCHANGED",
-                listing.detail_url, auth_type.value, "", note=None,
+                run_id, existing.regulation_id, canonical_ref, "UNCHANGED",
+                listing.detail_url, auth_type.value, pub.label, note=None,
+            )
+            self._upsert_discovery_source(
+                run_id=run_id, regulation_id=existing.regulation_id,
+                entity_type=auth_type.value, content_type=pub.label,
             )
             return "UNCHANGED"
 
     # ----- helpers -----
+
+    def _upsert_discovery_source(
+        self,
+        *,
+        run_id: int,
+        regulation_id: int,
+        entity_type: str,
+        content_type: str,
+    ) -> None:
+        """UPSERT the (regulation, entity_type, content_type) provenance row."""
+        now = datetime.now(UTC)
+        with self._sf() as s:
+            existing = s.scalar(
+                select(RegulationDiscoverySource).where(
+                    RegulationDiscoverySource.regulation_id == regulation_id,
+                    RegulationDiscoverySource.entity_type == entity_type,
+                    RegulationDiscoverySource.content_type == content_type,
+                )
+            )
+            if existing is None:
+                s.add(RegulationDiscoverySource(
+                    regulation_id=regulation_id,
+                    entity_type=entity_type,
+                    content_type=content_type,
+                    first_seen_run_id=run_id,
+                    first_seen_at=now,
+                    last_seen_run_id=run_id,
+                    last_seen_at=now,
+                ))
+            else:
+                existing.last_seen_run_id = run_id
+                existing.last_seen_at = now
+            s.commit()
 
     def _reference_exists(self, ref: str) -> bool:
         with self._sf() as s:
@@ -317,7 +395,11 @@ class CssfDiscoveryService:
             ) is not None
 
     def _handle_withdrawal(
-        self, run_id: int, auth_type: AuthorizationType, listing: CircularListingRow
+        self,
+        run_id: int,
+        auth_type: AuthorizationType,
+        pub: PublicationTypeConfig,
+        listing: CircularListingRow,
     ) -> str:
         with self._sf() as s:
             existing = s.scalar(
@@ -328,22 +410,27 @@ class CssfDiscoveryService:
                 s.commit()
                 self._write_item(
                     run_id, existing.regulation_id, listing.reference_number, "WITHDRAWN",
-                    listing.detail_url, auth_type.value, "", note="detail 404",
+                    listing.detail_url, auth_type.value, pub.label, note="detail 404",
                 )
                 return "WITHDRAWN"
         self._write_item(
             run_id, None, listing.reference_number, "FAILED",
-            listing.detail_url, auth_type.value, "",
+            listing.detail_url, auth_type.value, pub.label,
             note="detail 404 and no existing regulation row",
         )
         return "FAILED"
 
     def _create_regulation(
-        self, s: Session, detail: CircularDetail,
-        listing: CircularListingRow, auth_type: AuthorizationType,
+        self,
+        s: Session,
+        detail: CircularDetail,
+        listing: CircularListingRow,
+        auth_type: AuthorizationType,
+        pub: PublicationTypeConfig,
     ) -> Regulation:
         composed_title = _compose_title(detail, listing)
-        override = self._ict_override(s, detail.reference_number)
+        canonical_ref = detail.reference_number or listing.reference_number
+        override = self._ict_override(s, canonical_ref)
         if override == "SET_ICT":
             is_ict = True
         elif override == "UNSET_ICT":
@@ -354,8 +441,8 @@ class CssfDiscoveryService:
             )
 
         reg = Regulation(
-            type=RegulationType.CSSF_CIRCULAR,
-            reference_number=detail.reference_number,
+            type=RegulationType(pub.type),
+            reference_number=canonical_ref,
             title=composed_title,
             issuing_authority="CSSF",
             publication_date=detail.published_at or listing.publication_date,

@@ -6,7 +6,7 @@ from pathlib import Path
 import httpx
 from sqlalchemy.orm import sessionmaker
 
-from regwatch.config import CssfDiscoveryConfig
+from regwatch.config import CssfDiscoveryConfig, PublicationTypeConfig
 from regwatch.db.engine import create_app_engine
 from regwatch.db.models import (
     AuthorizationType,
@@ -46,7 +46,12 @@ def _mock_transport(listing_body=LISTING_HTML, detail_body=DETAIL_22_806):
 
 
 def _svc(sf, *, client=None):
-    cfg = CssfDiscoveryConfig(request_delay_ms=0)
+    cfg = CssfDiscoveryConfig(
+        request_delay_ms=0,
+        publication_types=[
+            PublicationTypeConfig(label="CSSF circular", filter_id=567, type="CSSF_CIRCULAR"),
+        ],
+    )
     return CssfDiscoveryService(session_factory=sf, config=cfg, http_client=client)
 
 
