@@ -466,6 +466,7 @@ class DiscoveryRun(Base):
     unchanged_count: Mapped[int] = mapped_column(Integer, default=0)
     withdrawn_count: Mapped[int] = mapped_column(Integer, default=0)
     failed_count: Mapped[int] = mapped_column(Integer, default=0)
+    retired_count: Mapped[int] = mapped_column(Integer, default=0)
 
     error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -494,3 +495,29 @@ class DiscoveryRunItem(Base):
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=lambda: datetime.now(UTC))
 
     run: Mapped[DiscoveryRun] = relationship(back_populates="items")
+
+
+class RegulationDiscoverySource(Base):
+    __tablename__ = "regulation_discovery_source"
+
+    source_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    regulation_id: Mapped[int] = mapped_column(
+        ForeignKey("regulation.regulation_id", ondelete="CASCADE"), index=True
+    )
+    entity_type: Mapped[str] = mapped_column(String(40))
+    content_type: Mapped[str] = mapped_column(String(60))
+    first_seen_run_id: Mapped[int] = mapped_column(
+        ForeignKey("discovery_run.run_id", ondelete="CASCADE")
+    )
+    first_seen_at: Mapped[datetime] = mapped_column(TZDateTime)
+    last_seen_run_id: Mapped[int] = mapped_column(
+        ForeignKey("discovery_run.run_id", ondelete="CASCADE")
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(TZDateTime)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "regulation_id", "entity_type", "content_type",
+            name="uq_discovery_source_reg_entity_content",
+        ),
+    )
