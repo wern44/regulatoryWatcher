@@ -1,14 +1,20 @@
 # CSSF Filter-Matrix Crawl — Design
 
 **Date:** 2026-04-15
-**Status:** Approved — ready to plan
+**Status:** Revised 2026-04-15 — Playwright-driven after FacetWP assumption invalidated mid-implementation.
 **Supersedes (partially):** `2026-04-14-cssf-discovery-design.md` — keeps its scraper/service skeleton but replaces the single-slug crawl with a filter matrix and adds auto-retire.
+
+## Revision note (2026-04-15)
+
+The original spec assumed `https://www.cssf.lu/en/regulatory-framework/` was a FacetWP site filtering server-side via URL query params (`fwp_entity_type=<slug>` + `fwp_content_type=<slug>`). Verification against the live site proved this wrong: CSSF is plain WordPress with client-side JS filters that call `/wp-admin/admin-ajax.php` with a custom action; URL filter params are *ignored* server-side. The existing scraper's `fwp_entity_type=aifms` param has been a no-op since inception — we've been walking the unfiltered listing. Filters use numeric WordPress taxonomy IDs, not slugs.
+
+**Resolution:** drive the listing filter via a headless Chromium instance (Playwright). Detail pages stay httpx-based (server-rendered, no JS needed). The numeric filter IDs discovered during investigation are now baked into config.
 
 ## Problem
 
-The current `CssfDiscoveryService` crawls CSSF with a single filter (`fwp_entity_type=<slug>` + a hardcoded `fwp_content_type=circulars-cssf`) and additionally recurses through the amendment graph via `enrich_stubs`, promoting referenced circulars to first-class rows. This produces two defects:
+The current `CssfDiscoveryService` intends to crawl CSSF per entity-type by passing `fwp_entity_type=<slug>` to the listing URL, and additionally recurses through the amendment graph via `enrich_stubs`, promoting referenced circulars to first-class rows. Two defects:
 
-1. **Stale items pollute the catalog.** When the user filters the live CSSF site by AIFM, they see far fewer circulars than we have imported. Many of our rows are superseded / amended-out / never-applicable items that were pulled in by stub recursion, not by the authoritative CSSF filter.
+1. **Stale items pollute the catalog.** When the user filters the live CSSF site by AIFM, they see far fewer circulars than we have imported. The cause is twofold: (a) the URL filter param has never actually filtered (CSSF ignores it), so every run has been pulling the full unfiltered listing; (b) `enrich_stubs` amplifies this by promoting every amendment reference the detail pages mention.
 2. **No filter provenance is recorded.** We cannot answer "which CSSF listing filter surfaced this regulation?" from the catalog — crawl results lose their origin, and `DiscoveryRunItem.entity_types` is a JSON list with no content-type column.
 
 ## Goal
@@ -29,11 +35,33 @@ Replace the single-slug crawl with a **2 × 7 filter matrix** (two `Authorizatio
 | AIFM | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | CHAPTER15_MANCO | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-Each run executes 14 independent scraper passes, one per cell. Each pass records its (entity_type, content_type) provenance on every regulation it surfaces.
+Each run executes 14 independent browser passes, one per cell. Each pass records its (entity_type, content_type_label) provenance on every regulation it surfaces.
 
-### FacetWP slug discovery
+### Filter discovery — numeric IDs, not slugs
 
-Only `circulars-cssf` is confirmed today. The other six FacetWP `fwp_content_type` slugs are unknown and must be discovered. A live probe test (`tests/live/test_cssf_slug_discovery.py`, marked `@pytest.mark.live`) fetches the listing page, reads the rendered `fwp_content_type` `<select>` options, asserts the seven labels the user specified are present, and writes the label→slug mapping to `regwatch/discovery/cssf_scraper.py` as a named constant. HTML fixtures per publication type go under `tests/fixtures/cssf/<slug>/` per the existing convention.
+The CSSF listing renders filters as checkbox inputs using numeric WordPress taxonomy IDs, e.g. `<input type="checkbox" name="content_type" value="567">` alongside `<span id="content_type-567">CSSF circular</span>`. Discovered mapping (baked into `config.example.yaml`; a live probe verifies the IDs still map to the expected labels on each run):
+
+- Entities: `AIFMs=502`, `Management companies - Chapter 15=2001`
+- Publication types: `CSSF circular=567`, `CSSF regulation=575`, `Law=585`, `Grand-ducal regulation=553`, `Ministerial regulation=591`, `Annex to a CSSF circular=5843`, `Professional standard=1377`
+
+### Playwright listing driver
+
+A new module `regwatch/discovery/cssf_playwright.py` drives Chromium:
+
+1. Launch Chromium headless.
+2. Open `https://www.cssf.lu/en/regulatory-framework/`.
+3. Click the entity-type checkbox for this cell (selector: `input[name="entity_type"][value="<id>"]`).
+4. Click the content-type checkbox for this cell (selector: `input[name="content_type"][value="<id>"]`).
+5. Wait for the listing to refresh — wait for network idle or for a known sentinel class to settle.
+6. Extract rendered HTML via `page.content()`.
+7. Iterate pagination (click "Next" or advance `?page=N`) and concatenate rendered HTML per page until no more items.
+8. Close browser.
+
+The parser (`_parse_listing_page` in `cssf_scraper.py`) consumes the rendered HTML unchanged — it already expects `<li class="library-element">` rows. Only the transport layer changes.
+
+Detail-page fetching stays on `httpx` (no JS needed to render those pages).
+
+HTML fixtures for offline tests are **post-JS rendered snapshots** captured by Playwright (`page.content()` after filters applied), stored under `tests/fixtures/cssf/<cell>/` per the existing convention.
 
 ### Reference numbering for non-CSSF publication types
 
@@ -45,15 +73,19 @@ Only `circulars-cssf` is confirmed today. The other six FacetWP `fwp_content_typ
 
 ### `RegulationType` mapping
 
-| Publication type (UI label) | FacetWP slug (TBD via live probe) | `RegulationType` |
+| Publication type (UI label) | WordPress term ID | `RegulationType` |
 |---|---|---|
-| CSSF circular | `circulars-cssf` | `CSSF_CIRCULAR` |
-| CSSF regulation | *(probe)* | `CSSF_REGULATION` |
-| Law | *(probe)* | `LU_LAW` |
-| Grand-ducal regulation | *(probe)* | `LU_GRAND_DUCAL_REGULATION` *(new enum value)* |
-| Ministerial regulation | *(probe)* | `LU_MINISTERIAL_REGULATION` *(new enum value)* |
-| Annex to a CSSF circular | *(probe)* | `CSSF_CIRCULAR_ANNEX` *(new enum value)* |
-| Professional standard | *(probe)* | `PROFESSIONAL_STANDARD` *(new enum value)* |
+| CSSF circular | `567` | `CSSF_CIRCULAR` |
+| CSSF regulation | `575` | `CSSF_REGULATION` |
+| Law | `585` | `LU_LAW` |
+| Grand-ducal regulation | `553` | `LU_GRAND_DUCAL_REGULATION` *(new enum value)* |
+| Ministerial regulation | `591` | `LU_MINISTERIAL_REGULATION` *(new enum value)* |
+| Annex to a CSSF circular | `5843` | `CSSF_CIRCULAR_ANNEX` *(new enum value)* |
+| Professional standard | `1377` | `PROFESSIONAL_STANDARD` *(new enum value)* |
+
+### Provenance storage — label, not ID
+
+`RegulationDiscoverySource.content_type` stores the **human-readable label** (`"CSSF circular"`, `"Law"`, …) rather than the numeric term ID. WordPress term IDs are internal and can renumber on DB rebuilds; labels are stable and what a user reading the UI would expect.
 
 ## Data model
 
@@ -67,7 +99,7 @@ class RegulationDiscoverySource(Base):
         ForeignKey("regulation.regulation_id", ondelete="CASCADE"), index=True
     )
     entity_type: Mapped[str] = mapped_column(String(40))       # AuthorizationType enum value
-    content_type: Mapped[str] = mapped_column(String(60))      # FacetWP slug
+    content_type: Mapped[str] = mapped_column(String(60))      # Publication-type label, e.g. "CSSF circular"
     first_seen_run_id: Mapped[int] = mapped_column(ForeignKey("discovery_run.run_id"))
     first_seen_at: Mapped[datetime] = mapped_column(TZDateTime)
     last_seen_run_id: Mapped[int] = mapped_column(ForeignKey("discovery_run.run_id"))
@@ -83,7 +115,7 @@ Each filter-matrix pass UPSERTs one row per regulation it saw in that cell: inse
 ### Changed: `DiscoveryRunItem`
 
 - `entity_types: list[str] (JSON)` → `entity_type: str (String(40))` — each item now belongs to exactly one matrix cell.
-- **New:** `content_type: str (String(60))` — the FacetWP slug for the cell.
+- **New:** `content_type: str (String(60))` — the publication-type label for the cell.
 - **New:** `outcome` values include `"RETIRED"`.
 
 ### Changed: `DiscoveryRun`
@@ -105,7 +137,7 @@ Add a new `action` value: `"KEEP_ACTIVE"`. A regulation with this override is ne
 
 1. Detects the old `discovery_run_item.entity_types` JSON column if present.
 2. Creates the new scalar `entity_type` and `content_type` columns.
-3. Copies `entity_types[0]` → `entity_type` for each row; sets `content_type = 'circulars-cssf'` (the only value used pre-migration).
+3. Copies `entity_types[0]` → `entity_type` for each row; sets `content_type = 'CSSF circular'` (matches the label-based convention; pre-migration rows all came from `circulars-cssf`).
 4. Drops `entity_types`.
 
 Since the project uses `Base.metadata.create_all` (not Alembic per `CLAUDE.md`), `RegulationDiscoverySource` and the new columns/enum values on existing tables come up automatically on first engine connect. The explicit migration is only needed for the rename + historical data copy.
@@ -172,20 +204,22 @@ cssf_discovery:
   base_url: https://www.cssf.lu/en/regulatory-framework/
   request_delay_ms: 500
   user_agent: RegulatoryWatcher/1.0
-  entity_slugs:
-    AIFM: aifms
-    CHAPTER15_MANCO: management-companies-chapter-15
+  playwright_navigation_timeout_ms: 30000
+  playwright_filter_settle_ms: 2000     # wait after checkbox click for AJAX to settle
+  entity_filter_ids:
+    AIFM: 502
+    CHAPTER15_MANCO: 2001
   publication_types:
-    - { label: "CSSF circular",            slug: circulars-cssf,              type: CSSF_CIRCULAR }
-    - { label: "CSSF regulation",          slug: cssf-regulations,            type: CSSF_REGULATION }
-    - { label: "Law",                      slug: laws,                        type: LU_LAW }
-    - { label: "Grand-ducal regulation",   slug: grand-ducal-regulations,     type: LU_GRAND_DUCAL_REGULATION }
-    - { label: "Ministerial regulation",   slug: ministerial-regulations,     type: LU_MINISTERIAL_REGULATION }
-    - { label: "Annex to a CSSF circular", slug: annexes-to-cssf-circulars,   type: CSSF_CIRCULAR_ANNEX }
-    - { label: "Professional standard",    slug: professional-standards,      type: PROFESSIONAL_STANDARD }
+    - { label: "CSSF circular",            filter_id: 567,  type: CSSF_CIRCULAR }
+    - { label: "CSSF regulation",          filter_id: 575,  type: CSSF_REGULATION }
+    - { label: "Law",                      filter_id: 585,  type: LU_LAW }
+    - { label: "Grand-ducal regulation",   filter_id: 553,  type: LU_GRAND_DUCAL_REGULATION }
+    - { label: "Ministerial regulation",   filter_id: 591,  type: LU_MINISTERIAL_REGULATION }
+    - { label: "Annex to a CSSF circular", filter_id: 5843, type: CSSF_CIRCULAR_ANNEX }
+    - { label: "Professional standard",    filter_id: 1377, type: PROFESSIONAL_STANDARD }
 ```
 
-Slug values above are placeholders — the live probe fills in the real values and the spec's first implementation task is to confirm them.
+The live probe verifies each filter_id still maps to its expected label; filter_id drift causes the probe to fail loudly.
 
 The unused `CssfDiscoveryConfig.content_types` field is removed — no backward-compat shim per project conventions.
 
@@ -205,22 +239,30 @@ The unused `CssfDiscoveryConfig.content_types` field is removed — no backward-
 - **Regulation detail page** gains a "Discovery provenance" panel: a table of `(entity_type, content_type, first_seen, last_seen)` rows from `regulation_discovery_source`.
 - **Discovery run detail page** shows a 14-row breakdown (one per matrix cell) with per-cell NEW / AMENDED / UNCHANGED / FAILED counts, plus the run-level `retired_count`.
 
+## Dependencies
+
+- **New:** `playwright` in `pyproject.toml` `[project.dependencies]` (not dev-only — the app depends on it at runtime for the discovery command).
+- **One-time browser install** — after `pip install -e .`, run `playwright install chromium`. Document in README and in `regwatch init-db` output.
+- We use Chromium only (skip firefox/webkit) to minimise install footprint.
+
 ## Rollout sequence
 
-1. Ship code + migration (auto on startup via `create_all` + `migrations.py`).
-2. Run `pytest -m live tests/live/test_cssf_slug_discovery.py` to populate the seven FacetWP slugs. Commit the result.
-3. Run `regwatch discover-cssf --dry-run`. Inspect output: expected ~300–400 retirement candidates out of 551 current `CSSF_WEB` rows.
-4. Review the retirement list; for any false positives, add `RegulationOverride` rows with `action="KEEP_ACTIVE"`.
-5. Run `regwatch discover-cssf` for real. `retired_count` on the run row records the outcome.
+1. `pip install -e .` (pulls `playwright`), then `playwright install chromium`.
+2. Ship code + DB migration (auto on startup via `create_all` + `migrations.py`).
+3. Run `pytest -m live tests/live/test_cssf_filter_probe.py` to verify the numeric filter IDs in `config.example.yaml` still map to their expected labels. If any IDs drifted, update config.
+4. Run `regwatch discover-cssf --dry-run`. Inspect output: expected ~300–400 retirement candidates out of 551 current `CSSF_WEB` rows.
+5. Review the retirement list; for any false positives, add `RegulationOverride` rows with `action="KEEP_ACTIVE"`.
+6. Run `regwatch discover-cssf` for real. `retired_count` on the run row records the outcome.
 
 ## Testing strategy
 
-- **Unit tests** against HTML fixtures per publication type (seven fixtures under `tests/fixtures/cssf/<slug>/`): parse a listing page + at least one detail page per type. Existing fixture-based tests continue to cover `circulars-cssf`.
+- **Unit tests** against post-JS HTML fixtures per publication type (seven fixtures under `tests/fixtures/cssf/<label_slugified>/`): parse a listing page + at least one detail page per type. Existing fixture-based tests continue to cover `circulars-cssf`. No Playwright dependency in unit tests — the HTML is already rendered.
 - **Unit tests** for `RegulationDiscoverySource` UPSERT semantics: first-sight inserts with `first_seen == last_seen`; repeat-sight updates `last_seen_*` without touching `first_seen_*`; unique constraint enforced.
 - **Unit tests** for the retire safety invariant: `retire_missing` is a no-op when `run.status != "SUCCESS"`; honours `KEEP_ACTIVE` overrides; never touches non-`CSSF_WEB` rows.
 - **Unit tests** for reactivation: a `REPEALED` row re-observed in a new run flips to `IN_FORCE`.
-- **Integration test** for the full matrix against a `pytest-httpx`-backed fake CSSF, with 14 different listing URL responses; assert correct per-cell provenance + end-to-end retirement of a row present in run N but absent in run N+1.
-- **Live probe** (`@pytest.mark.live`, excluded from default `pytest`): confirms slug values are still valid; fails noisily on DOM change.
+- **Integration test** for the full matrix using a fake `PlaywrightListingDriver` (a small stub class with the same `fetch_cell(entity_id, content_id) -> list[str]` interface but returning fixture HTML) injected into `CssfDiscoveryService`; assert correct per-cell provenance + end-to-end retirement of a row present in run N but absent in run N+1.
+- **Live probe** (`@pytest.mark.live`, excluded from default `pytest`): launches Chromium, opens the listing, verifies each configured `(label, filter_id)` pair still matches the rendered checkbox markup. Fails noisily on DOM change or ID drift.
+- **Live end-to-end smoke** (also `@pytest.mark.live`): runs one full matrix cell (AIFM × CSSF circular) against the real CSSF site via Playwright, asserts at least N>0 rows returned. One cell is enough to catch JS breakage without hammering the site.
 
 ## Open questions
 

@@ -4,11 +4,25 @@
 
 **Goal:** Replace the single-slug CSSF crawl with a 2×7 (entity × publication-type) filter matrix, record per-regulation discovery provenance, auto-retire rows absent from every cell, and drop recursive stub promotion.
 
-**Architecture:** Extend `cssf_scraper` to accept a content_type per call and handle non-CSSF publication types; rebuild `CssfDiscoveryService` to iterate the matrix and UPSERT provenance into a new `regulation_discovery_source` table; add a SUCCESS-gated retirement sweep; remove `enrich_stubs`. All parsing stays fixture-driven with one `@pytest.mark.live` probe to confirm FacetWP slugs.
+**Architecture:** Drive the CSSF listing filters via Playwright (headless Chromium) using numeric WordPress term IDs discovered on the live site. `CssfDiscoveryService` iterates the 2×7 matrix, calls a `PlaywrightListingDriver` per cell, runs the rendered HTML through the existing BeautifulSoup parser, and UPSERTs provenance into a new `regulation_discovery_source` table. Detail pages stay on httpx. Add a SUCCESS-gated retirement sweep; remove `enrich_stubs`. Parsing tests stay fixture-driven (post-JS HTML snapshots); one `@pytest.mark.live` probe verifies filter IDs still match labels.
 
-**Tech Stack:** Python 3.12, SQLAlchemy 2.x, httpx, BeautifulSoup4, pytest + pytest-httpx, Typer CLI, FastAPI + Jinja/HTMX web.
+**Tech Stack:** Python 3.12, SQLAlchemy 2.x, httpx, BeautifulSoup4, **Playwright (Chromium)**, pytest + pytest-httpx, Typer CLI, FastAPI + Jinja/HTMX web.
 
 **Spec:** `docs/superpowers/specs/2026-04-15-cssf-filter-matrix-crawl-design.md`
+
+## Revision 2026-04-15 (mid-plan)
+
+The original plan assumed CSSF was a FacetWP site with server-side URL filter params (`?fwp_content_type=<slug>`). Verification against the live site during Task 5 proved this wrong: CSSF is plain WordPress with client-side JS filters calling `/wp-admin/admin-ajax.php`; URL filter params are silently ignored. Filters use numeric WordPress term IDs, not slugs.
+
+**Resolution:** drive filters via Playwright headless Chromium. Numeric IDs discovered and baked into config. Revised tasks:
+
+- **Task 4** — field rename follow-up (see Task 4b below) because the already-shipped config used `entity_slugs` / `slug`.
+- **Task 4b (new)** — add `playwright` dependency + browser install.
+- **Task 5** — rewrite live probe: verify label↔filter_id mapping (no slug discovery).
+- **Task 6** — capture post-JS rendered HTML via Playwright (was `curl`).
+- **Task 8** — `CssfDiscoveryService` uses an injected `PlaywrightListingDriver` instead of calling `list_circulars(...)` via httpx.
+
+Tasks 1–3, 7, 9–14 are unchanged in intent. Their code references to `slug` / `entity_slug` parameters become `label` / `entity_filter_id` where they pass through the driver boundary.
 
 **Convention reminders (from `CLAUDE.md`):**
 - No backward-compat shims — change every caller, no deprecated wrappers.
