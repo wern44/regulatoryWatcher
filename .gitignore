@@ -20,3 +20,9 @@ config.yaml
 .vscode/
 .idea/
 *.swp
+
+# Claude Code local config
+.claude/
+
+# Ad-hoc crawl artefacts
+retire_candidates.tsv
