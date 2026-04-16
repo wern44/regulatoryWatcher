@@ -57,9 +57,20 @@ class HybridRetriever:
         self, query: str, filters: RetrievalFilters
     ) -> list[RetrievedChunk]:
         query_vec = self._ollama.embed(query)
-        # Pull a larger candidate pool from each retriever, then fuse and filter
-        # client-side during hydration.
-        pool = max(self._top_k * (6 if filters.version_ids else 3), 30)
+
+        # When a narrow scope filter is active (regulation_ids or version_ids),
+        # we need a much larger candidate pool from the global dense/sparse
+        # search so that enough in-scope chunks survive post-filtering.
+        # The corpus is small enough (<10K chunks) that this is fast.
+        has_scope = bool(filters.regulation_ids or filters.version_ids)
+        if has_scope:
+            # Fetch enough to cover the scoped subset.  Count scoped chunks
+            # and pull at least that many from each retriever.
+            scoped_count = self._count_scoped_chunks(filters)
+            pool = max(scoped_count * 2, self._top_k * 6, 100)
+        else:
+            pool = max(self._top_k * 3, 30)
+
         dense_hits = self._dense_search(query_vec, k=pool)
         sparse_hits = self._sparse_search(query, k=pool)
         fused_ids = _reciprocal_rank_fusion(dense_hits, sparse_hits, k=60)
@@ -68,6 +79,15 @@ class HybridRetriever:
         # Small-to-big: expand with sibling and definition chunks
         expanded = self._expand_context(core_results)
         return expanded
+
+    def _count_scoped_chunks(self, filters: RetrievalFilters) -> int:
+        """Count how many chunks exist in the scoped subset."""
+        q = self._session.query(DocumentChunk.chunk_id)
+        if filters.regulation_ids:
+            q = q.filter(DocumentChunk.regulation_id.in_(filters.regulation_ids))
+        if filters.version_ids:
+            q = q.filter(DocumentChunk.version_id.in_(filters.version_ids))
+        return q.count()
 
     def _dense_search(self, vec: list[float], *, k: int) -> list[int]:
         packed = struct.pack(f"{len(vec)}f", *vec)
