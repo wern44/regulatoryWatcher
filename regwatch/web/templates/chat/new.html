@@ -11,26 +11,47 @@
              class="border rounded px-3 py-2 w-full">
     </div>
 
+    {# --- Filter checkboxes --- #}
     <div>
-      <label class="block text-sm font-semibold text-slate-700 mb-1">Include</label>
-      <select id="scope-mode" class="border rounded px-2 py-1 text-sm" onchange="applyScopeMode()">
-        <option value="default">In-force &amp; relevant entities</option>
-        <option value="all_lifecycle">All lifecycles &amp; relevant entities</option>
-        <option value="all_entities">In-force &amp; all entities</option>
-        <option value="everything">All lifecycles &amp; all entities</option>
-      </select>
+      <label class="block text-sm font-semibold text-slate-700 mb-2">Include</label>
+      <div class="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+        <label class="flex items-center gap-1.5">
+          <input type="checkbox" id="chk-in-force" checked onchange="applyFilters()">
+          <span>In-force only</span>
+        </label>
+        <label class="flex items-center gap-1.5">
+          <input type="checkbox" id="chk-all-lifecycle" onchange="applyFilters()">
+          <span>All lifecycles</span>
+        </label>
+        <span class="text-slate-300">|</span>
+        <label class="flex items-center gap-1.5">
+          <input type="checkbox" id="chk-all-entities" checked onchange="applyFilters()">
+          <span>All in-scope entities</span>
+        </label>
+        {% for at in auth_types %}
+        <label class="flex items-center gap-1.5">
+          <input type="checkbox" class="chk-entity" value="{{ at }}" checked onchange="applyFilters()">
+          <span>{{ at }}</span>
+        </label>
+        {% endfor %}
+        <label class="flex items-center gap-1.5">
+          <input type="checkbox" id="chk-out-of-scope" onchange="applyFilters()">
+          <span>Include out-of-scope entities</span>
+        </label>
+      </div>
     </div>
 
+    {# --- Regulation multi-select --- #}
     <div>
       <label class="block text-sm font-semibold text-slate-700 mb-1">
         Scope
-        <span class="font-normal text-slate-400">— select the regulations this session covers</span>
+        <span class="font-normal text-slate-400">— regulations this session covers</span>
       </label>
       <select name="regulation_ids" id="reg-select" multiple
               class="w-full border rounded px-2 py-1 text-sm" size="10">
-        {# All options are rendered but hidden by default; JS shows the relevant subset #}
         {% for r in reg_options %}
           <option value="{{ r.regulation_id }}"
+                  data-entities="{{ r.entity_types | join(',') }}"
                   data-in-scope="{{ r.in_scope|lower }}"
                   data-in-force="{{ r.in_force|lower }}"
                   data-lifecycle="{{ r.lifecycle_stage }}">
@@ -55,21 +76,52 @@
 
   <script>
     const sel = document.getElementById('reg-select');
-    const modeSelect = document.getElementById('scope-mode');
+    const chkInForce = document.getElementById('chk-in-force');
+    const chkAllLifecycle = document.getElementById('chk-all-lifecycle');
+    const chkAllEntities = document.getElementById('chk-all-entities');
+    const chkOutOfScope = document.getElementById('chk-out-of-scope');
+    const entityBoxes = document.querySelectorAll('.chk-entity');
 
-    function isVisible(opt, mode) {
-      const inScope = opt.dataset.inScope === 'true';
-      const inForce = opt.dataset.inForce === 'true';
-      if (mode === 'default')          return inScope && inForce;
-      if (mode === 'all_lifecycle')    return inScope;
-      if (mode === 'all_entities')     return inForce;
-      return true; // everything
-    }
+    // "In-force only" and "All lifecycles" are mutually exclusive
+    chkInForce.addEventListener('change', () => {
+      if (chkInForce.checked) chkAllLifecycle.checked = false;
+      applyFilters();
+    });
+    chkAllLifecycle.addEventListener('change', () => {
+      if (chkAllLifecycle.checked) chkInForce.checked = false;
+      applyFilters();
+    });
 
-    function applyScopeMode() {
-      const mode = modeSelect.value;
+    // "All in-scope entities" toggles individual entity checkboxes
+    chkAllEntities.addEventListener('change', () => {
+      entityBoxes.forEach(cb => cb.checked = chkAllEntities.checked);
+      applyFilters();
+    });
+    entityBoxes.forEach(cb => cb.addEventListener('change', () => {
+      const allChecked = [...entityBoxes].every(b => b.checked);
+      chkAllEntities.checked = allChecked;
+      applyFilters();
+    }));
+
+    function applyFilters() {
+      const showAllLifecycle = chkAllLifecycle.checked;
+      const showOutOfScope = chkOutOfScope.checked;
+      const selectedEntities = new Set(
+        [...entityBoxes].filter(cb => cb.checked).map(cb => cb.value)
+      );
+
       for (const opt of sel.options) {
-        const show = isVisible(opt, mode);
+        const inForce = opt.dataset.inForce === 'true';
+        const entities = opt.dataset.entities ? opt.dataset.entities.split(',') : [];
+        const hasEntity = entities.some(e => selectedEntities.has(e));
+        const isInScope = opt.dataset.inScope === 'true';
+
+        // Lifecycle filter
+        const lifecycleOk = showAllLifecycle || inForce;
+        // Entity filter
+        const entityOk = showOutOfScope || hasEntity || (selectedEntities.size === 0 && isInScope);
+
+        const show = lifecycleOk && entityOk;
         opt.hidden = !show;
         opt.selected = show;
       }
@@ -95,8 +147,6 @@
     }
 
     sel.addEventListener('change', updateCounts);
-
-    // Apply default filter on page load
-    applyScopeMode();
+    applyFilters();
   </script>
 {% endblock %}

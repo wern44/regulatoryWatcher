@@ -82,14 +82,11 @@ def chat_new(request: Request) -> HTMLResponse:
     auth_types = [a.type for a in cfg.entity.authorizations]
 
     with request.app.state.session_factory() as session:
-        applicable_ids: set[int] = set()
-        if auth_types:
-            applicable_ids = {
-                row.regulation_id
-                for row in session.query(RegulationApplicability)
-                .filter(RegulationApplicability.authorization_type.in_(auth_types))
-                .all()
-            }
+        # Build per-regulation applicability map: {reg_id: set of auth_types}
+        all_applicabilities = session.query(RegulationApplicability).all()
+        reg_entity_map: dict[int, set[str]] = {}
+        for a in all_applicabilities:
+            reg_entity_map.setdefault(a.regulation_id, set()).add(a.authorization_type)
 
         all_regs = (
             session.query(Regulation)
@@ -98,20 +95,25 @@ def chat_new(request: Request) -> HTMLResponse:
         )
         reg_options = []
         for r in all_regs:
-            in_scope = r.regulation_id in applicable_ids
+            entities = reg_entity_map.get(r.regulation_id, set())
             reg_options.append({
                 "regulation_id": r.regulation_id,
                 "reference_number": r.reference_number,
                 "title": r.title,
                 "lifecycle_stage": r.lifecycle_stage.value,
-                "in_scope": in_scope,
+                "entity_types": sorted(entities),
+                "in_scope": bool(entities & set(auth_types)),
                 "in_force": r.lifecycle_stage == LifecycleStage.IN_FORCE,
             })
 
     return templates.TemplateResponse(
         request,
         "chat/new.html",
-        {"active": "chat", "reg_options": reg_options},
+        {
+            "active": "chat",
+            "reg_options": reg_options,
+            "auth_types": auth_types,
+        },
     )
 
 
