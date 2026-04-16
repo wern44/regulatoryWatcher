@@ -24,9 +24,32 @@
     {% endfor %}
   </div>
 
-  <form method="post" action="/chat/{{ session.session_id }}/ask" class="flex gap-2">
-    <input name="question" required placeholder="Ask a question..."
+  <form id="ask-form" method="post" action="/chat/{{ session.session_id }}/ask" class="flex gap-2">
+    <input id="ask-input" name="question" required placeholder="Ask a question..."
            class="border rounded px-2 py-1 flex-1">
-    <button class="px-3 py-1 bg-slate-800 text-white rounded" type="submit">Ask</button>
+    <button id="ask-btn" class="px-3 py-1 bg-slate-800 text-white rounded" type="submit">Ask</button>
   </form>
+
+  <div id="ask-pending" class="hidden mt-3 flex items-center gap-2 text-sm text-slate-600">
+    <span class="inline-block w-4 h-4 border-2 border-slate-500 border-t-transparent rounded-full animate-spin"></span>
+    Processing your question&hellip;
+  </div>
+
+  <script>
+    const form = document.getElementById('ask-form');
+    const btn = document.getElementById('ask-btn');
+    const input = document.getElementById('ask-input');
+    const pending = document.getElementById('ask-pending');
+    let submitted = false;
+
+    form.addEventListener('submit', function(e) {
+      if (submitted) { e.preventDefault(); return; }
+      submitted = true;
+      btn.disabled = true;
+      btn.textContent = 'Sending\u2026';
+      btn.classList.add('opacity-50', 'cursor-not-allowed');
+      input.readOnly = true;
+      pending.classList.remove('hidden');
+    });
+  </script>
 {% endblock %}
