@@ -7,6 +7,7 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from regwatch.db.models import (
+    ChatMessage,
     ChatSession,
     LifecycleStage,
     Regulation,
@@ -132,6 +133,22 @@ def chat_create(
             session, ollama=request.app.state.llm_client
         )
         new_session = svc.create_session(title=title, filters=filters)
+
+        # Keep only the 10 most recent sessions.
+        all_ids = [
+            r[0] for r in session.query(ChatSession.session_id)
+            .order_by(ChatSession.created_at.desc())
+            .all()
+        ]
+        if len(all_ids) > 10:
+            old_ids = all_ids[10:]
+            session.query(ChatMessage).filter(
+                ChatMessage.session_id.in_(old_ids)
+            ).delete(synchronize_session=False)
+            session.query(ChatSession).filter(
+                ChatSession.session_id.in_(old_ids)
+            ).delete(synchronize_session=False)
+
         session.commit()
         sid = new_session.session_id
     return RedirectResponse(url=f"/chat/{sid}", status_code=303)
