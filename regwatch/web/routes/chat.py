@@ -63,18 +63,25 @@ def chat_ask_adhoc(
 @router.get("", response_class=HTMLResponse)
 def chat_list(request: Request) -> HTMLResponse:
     templates = request.app.state.templates
-    cfg = request.app.state.config
-    auth_types = [a.type for a in cfg.entity.authorizations]
-
     with request.app.state.session_factory() as session:
         sessions = (
             session.query(ChatSession)
             .order_by(ChatSession.created_at.desc())
             .all()
         )
+    return templates.TemplateResponse(
+        request, "chat/list.html", {"active": "chat", "sessions": sessions}
+    )
 
-        # Build the regulation list for the scope picker.
-        # Default set: IN_FORCE regulations applicable to the configured entities.
+
+@router.get("/new", response_class=HTMLResponse)
+def chat_new(request: Request) -> HTMLResponse:
+    """Render the new-session page with scope picker."""
+    templates = request.app.state.templates
+    cfg = request.app.state.config
+    auth_types = [a.type for a in cfg.entity.authorizations]
+
+    with request.app.state.session_factory() as session:
         applicable_ids: set[int] = set()
         if auth_types:
             applicable_ids = {
@@ -103,12 +110,8 @@ def chat_list(request: Request) -> HTMLResponse:
 
     return templates.TemplateResponse(
         request,
-        "chat/list.html",
-        {
-            "active": "chat",
-            "sessions": sessions,
-            "reg_options": reg_options,
-        },
+        "chat/new.html",
+        {"active": "chat", "reg_options": reg_options},
     )
 
 
@@ -117,7 +120,6 @@ def chat_create(
     request: Request,
     title: str = Form(...),
     regulation_ids: Annotated[list[int] | None, Form()] = None,
-    scope_mode: str = Form("default"),
 ) -> RedirectResponse:
     filters = RetrievalFilters()
     if regulation_ids:
