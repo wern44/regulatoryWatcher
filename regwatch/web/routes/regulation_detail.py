@@ -122,6 +122,8 @@ def regulation_detail(request: Request, regulation_id: int) -> HTMLResponse:
                     "is_repealed": parent_reg.lifecycle_stage == LifecycleStage.REPEALED,
                 }
 
+        has_current_version = current is not None
+
         payload = {
             "active": "catalog",
             "regulation": {
@@ -132,6 +134,7 @@ def regulation_detail(request: Request, regulation_id: int) -> HTMLResponse:
                 "lifecycle_stage": reg.lifecycle_stage.value,
                 "is_ict": reg.is_ict,
             },
+            "has_current_version": has_current_version,
             "cssf_page_url": cssf_page_url,
             "pdf_url": pdf_url,
             "source_url": source_url,

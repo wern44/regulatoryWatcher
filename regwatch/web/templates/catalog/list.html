@@ -55,6 +55,12 @@
     </a>
   </form>
 
+  {% if flash_message %}
+  <div class="rounded border border-amber-300 bg-amber-50 text-amber-900 px-4 py-2 mb-4 text-sm">
+    {{ flash_message }}
+  </div>
+  {% endif %}
+
   <form method="post" action="/catalog/analyse" id="catalog-form">
     <div id="action-bar"
          class="fixed bottom-0 inset-x-0 bg-slate-800 text-white px-6 py-3 hidden flex items-center"

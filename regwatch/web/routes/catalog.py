@@ -154,6 +154,15 @@ def catalog(
             else:
                 status_by_reg[r.regulation_id] = "ok"
 
+    # Read and clear the one-shot flash cookie (set by analyse error redirects).
+    flash_error = request.cookies.get("catalog_flash")
+    flash_messages = {
+        "no-selection": "No regulations selected for analysis.",
+        "no-current-versions": "The selected regulations have no document versions yet. "
+                               "Run the pipeline or upload a document first.",
+    }
+    flash_message = flash_messages.get(flash_error or "", "")
+
     # Pass effective_lifecycle, effective_ict, show_amendments to the template
     # so the dropdowns show the current selection correctly.
     response = templates.TemplateResponse(
@@ -168,8 +177,11 @@ def catalog(
             "effective_ict": effective_ict,
             "show_amendments": show_amendments,
             "amendment_counts": amendment_counts,
+            "flash_message": flash_message,
         },
     )
+    if flash_error:
+        response.delete_cookie("catalog_flash")
     # Persist the current filter query string so a bare /catalog visit
     # (e.g. coming back via a detail-page back-link) restores it.
     if raw_qs:
@@ -266,28 +278,41 @@ def catalog_analyse(
     version_ids = version_ids or []
 
     if not regulation_ids and not version_ids:
-        return RedirectResponse("/catalog?error=no-selection", status_code=303)
+        resp = RedirectResponse("/catalog", status_code=303)
+        resp.set_cookie(
+            "catalog_flash", "no-selection",
+            max_age=10, httponly=True, samesite="lax",
+        )
+        return resp
 
-    # If version_ids supplied, use them directly. Otherwise resolve
-    # regulation_ids -> current versions.
-    if version_ids:
-        resolved_version_ids: list[int] = list(version_ids)
-    else:
+    # Resolve regulation_ids -> current versions, noting which need fetching.
+    resolved_version_ids: list[int] = list(version_ids) if version_ids else []
+    needs_fetch_ids: list[int] = []
+
+    if regulation_ids and not version_ids:
         with sf() as s:
             regs = (
                 s.query(Regulation)
                 .filter(Regulation.regulation_id.in_(regulation_ids))
                 .all()
             )
-            resolved_version_ids = []
             for r in regs:
                 v = next((v for v in r.versions if v.is_current), None)
                 if v is not None:
                     resolved_version_ids.append(v.version_id)
-        if not resolved_version_ids:
-            return RedirectResponse(
-                "/catalog?error=no-current-versions", status_code=303
-            )
+                else:
+                    needs_fetch_ids.append(r.regulation_id)
+
+    if not resolved_version_ids and not needs_fetch_ids:
+        resp = RedirectResponse("/catalog", status_code=303)
+        resp.set_cookie(
+            "catalog_flash", "no-selection",
+            max_age=10, httponly=True, samesite="lax",
+        )
+        return resp
+
+    # Estimate total work items: existing versions + regulations to fetch.
+    total_items = len(resolved_version_ids) + len(needs_fetch_ids)
 
     # Create the AnalysisRun row synchronously so we can redirect to its page.
     llm_model = getattr(llm, "chat_model", "") or ""
@@ -303,30 +328,88 @@ def catalog_analyse(
         s.commit()
         run_id = run.run_id
 
-    def _progress(done: int, total: int, label: str) -> None:
-        progress.tick(done, total, label)
-
-    runner = AnalysisRunner(
-        session_factory=sf,
-        llm=llm,
-        max_document_tokens=cfg.analysis.max_document_tokens,
-        on_progress=_progress,
-    )
-
     def _worker() -> None:
-        progress.start(run_id, len(resolved_version_ids))
+        from regwatch.services.document_fetch import FetchError, fetch_and_create_version
+
+        progress.start(run_id, total_items)
+        fetch_errors: list[str] = []
+        all_version_ids = list(resolved_version_ids)
+
+        # Phase 1: fetch missing documents
+        for i, reg_id in enumerate(needs_fetch_ids, start=1):
+            with sf() as s:
+                reg = s.get(Regulation, reg_id)
+                label = reg.reference_number if reg else f"regulation {reg_id}"
+            progress.tick(i, total_items, f"Fetching: {label}")
+
+            try:
+                with sf() as s:
+                    result = fetch_and_create_version(s, reg_id)
+                    s.commit()
+                all_version_ids.append(result.version_id)
+            except FetchError as e:
+                fetch_errors.append(f"{label}: {e}")
+            except Exception as e:  # noqa: BLE001
+                fetch_errors.append(f"{label}: unexpected error — {e}")
+
+        # Update the run's queued_version_ids now that we know the full set.
+        with sf() as s:
+            r = s.get(AnalysisRun, run_id)
+            if r is not None:
+                r.queued_version_ids = all_version_ids
+                s.commit()
+
+        if not all_version_ids:
+            # Nothing to analyse — all fetches failed.
+            with sf() as s:
+                r = s.get(AnalysisRun, run_id)
+                if r is not None:
+                    r.status = AnalysisRunStatus.FAILED
+                    r.finished_at = datetime.now(UTC)
+                    r.error_summary = "\n".join(fetch_errors)
+                    s.commit()
+            progress.finish("FAILED", error="All document fetches failed")
+            return
+
+        # Phase 2: analyse
+        new_total = len(needs_fetch_ids) + len(all_version_ids)
+        progress.tick(
+            len(needs_fetch_ids), new_total, "Starting analysis\u2026",
+        )
         try:
+            runner = AnalysisRunner(
+                session_factory=sf,
+                llm=llm,
+                max_document_tokens=cfg.analysis.max_document_tokens,
+                on_progress=lambda done, total, label: progress.tick(
+                    len(needs_fetch_ids) + done, new_total, label,
+                ),
+            )
             runner.queue_and_run(
-                resolved_version_ids,
+                all_version_ids,
                 triggered_by="USER_UI",
                 llm_model=llm_model,
                 existing_run_id=run_id,
             )
+            # Append fetch errors to the run summary if any.
+            if fetch_errors:
+                with sf() as s:
+                    r = s.get(AnalysisRun, run_id)
+                    if r is not None:
+                        existing = r.error_summary or ""
+                        fetch_block = "Fetch errors:\n" + "\n".join(fetch_errors)
+                        r.error_summary = (
+                            f"{existing}\n{fetch_block}" if existing
+                            else fetch_block
+                        )
+                        if r.status == AnalysisRunStatus.SUCCESS:
+                            r.status = AnalysisRunStatus.PARTIAL
+                        s.commit()
             with sf() as s:
                 r = s.get(AnalysisRun, run_id)
-                progress.finish(r.status.value if r else "failed")
+                progress.finish(r.status.value if r else "FAILED")
         except Exception as e:  # noqa: BLE001
-            progress.finish("failed", error=str(e))
+            progress.finish("FAILED", error=str(e))
             with sf() as s:
                 r = s.get(AnalysisRun, run_id)
                 if r is not None:

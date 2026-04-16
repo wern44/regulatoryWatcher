@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from regwatch.db.models import AnalysisRun, DocumentAnalysis
+from regwatch.db.models import AnalysisRun, DocumentAnalysis, Regulation
 
 
 @dataclass
@@ -36,6 +36,7 @@ class DocumentAnalysisDTO:
     coercion_errors: dict[str, str] | None
     created_at: datetime
     raw_llm_output: str | None
+    reference_number: str | None = None
 
 
 @dataclass
@@ -89,8 +90,12 @@ class AnalysisService:
             analyses=[self._to_analysis_dto(a) for a in run.analyses],
         )
 
-    @staticmethod
-    def _to_analysis_dto(row: DocumentAnalysis) -> DocumentAnalysisDTO:
+    def _to_analysis_dto(self, row: DocumentAnalysis) -> DocumentAnalysisDTO:
+        ref_number: str | None = None
+        if row.regulation_id is not None:
+            reg = self._s.get(Regulation, row.regulation_id)
+            if reg is not None:
+                ref_number = reg.reference_number
         return DocumentAnalysisDTO(
             analysis_id=row.analysis_id,
             run_id=row.run_id,
@@ -115,4 +120,5 @@ class AnalysisService:
             coercion_errors=row.coercion_errors,
             created_at=row.created_at,
             raw_llm_output=row.raw_llm_output,
+            reference_number=ref_number,
         )

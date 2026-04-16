@@ -24,11 +24,25 @@
   </div>
   {% endif %}
 
-  <div class="flex flex-wrap gap-2 mb-4">
+  <div class="flex flex-wrap items-center gap-2 mb-4">
     <span class="px-2 py-0.5 rounded bg-slate-100 text-xs">{{ regulation.lifecycle_stage }}</span>
     <span class="px-2 py-0.5 rounded bg-slate-100 text-xs">{{ regulation.issuing_authority }}</span>
     {% if regulation.is_ict %}<span class="px-2 py-0.5 rounded bg-purple-100 text-purple-800 text-xs font-semibold">ICT</span>{% endif %}
     <span class="px-2 py-0.5 rounded bg-slate-100 text-xs">{{ versions|length }} version(s)</span>
+
+    {% if has_current_version %}
+    <form method="post" action="/catalog/analyse" class="inline ml-2">
+      <input type="hidden" name="regulation_ids" value="{{ regulation.regulation_id }}">
+      <button type="submit"
+              class="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded">
+        Analyse
+      </button>
+    </form>
+    {% else %}
+    <span class="ml-2 text-xs text-slate-400" title="Upload or fetch a document first">
+      No version to analyse
+    </span>
+    {% endif %}
   </div>
 
   {% if cssf_page_url or pdf_url or source_url %}

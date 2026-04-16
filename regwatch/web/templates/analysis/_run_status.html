@@ -1,28 +1,77 @@
-<div id="run-status" class="space-y-3">
+<div id="run-status" class="space-y-3"
+     {% if run and run.status not in ('SUCCESS', 'PARTIAL', 'FAILED') %}
+       hx-get="/analysis/runs/{{ run_id }}/status"
+       hx-trigger="every 2s"
+       hx-swap="outerHTML"
+     {% endif %}>
   {% if not run %}
     <p class="text-gray-500">Run not found.</p>
   {% else %}
     <div class="rounded border border-slate-200 bg-white p-4">
-      <p class="text-sm">
-        <span class="font-semibold">Status:</span>
-        <span class="inline-block rounded px-2 py-0.5 text-xs
+      {# --- Status badge --- #}
+      <div class="flex items-center gap-3 mb-3">
+        <span class="inline-block rounded px-2 py-0.5 text-xs font-semibold
                      {% if run.status == 'SUCCESS' %}bg-green-100 text-green-800
                      {% elif run.status == 'FAILED' %}bg-red-100 text-red-800
                      {% elif run.status == 'PARTIAL' %}bg-amber-100 text-amber-800
-                     {% else %}bg-slate-100 text-slate-800{% endif %}">
+                     {% else %}bg-blue-100 text-blue-800{% endif %}">
           {{ run.status }}
         </span>
-        &nbsp;&mdash;&nbsp;
-        {{ progress.done }}/{{ progress.total }}
+        <span class="text-sm text-slate-600">
+          {{ progress.done }} of {{ progress.total }} document(s) processed
+        </span>
+      </div>
+
+      {# --- Progress bar --- #}
+      {% set pct = ((progress.done / progress.total * 100) | int) if progress.total > 0 else 0 %}
+      <div class="w-full bg-slate-200 rounded-full h-3 mb-3">
+        <div class="h-3 rounded-full transition-all duration-300
+                    {% if run.status == 'SUCCESS' %}bg-green-500
+                    {% elif run.status == 'FAILED' %}bg-red-500
+                    {% elif run.status == 'PARTIAL' %}bg-amber-500
+                    {% else %}bg-blue-500{% endif %}"
+             style="width: {{ pct }}%"></div>
+      </div>
+
+      {# --- Currently processing label --- #}
+      {% if run.status not in ('SUCCESS', 'PARTIAL', 'FAILED') %}
         {% if progress.current_label %}
-          <span class="text-slate-500">({{ progress.current_label }})</span>
+          <p class="text-sm text-slate-700">
+            <span class="inline-block w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mr-2 align-text-bottom"></span>
+            {% if progress.current_label.startswith('Fetching:') %}
+              <span class="font-medium">{{ progress.current_label }}</span>
+            {% else %}
+              Analysing: <span class="font-medium">{{ progress.current_label }}</span>
+            {% endif %}
+          </p>
+        {% else %}
+          <p class="text-sm text-slate-500">Starting&hellip;</p>
         {% endif %}
-      </p>
-      <p class="text-xs text-slate-500 mt-1">
+      {% else %}
+        {# --- Finished summary --- #}
+        {% set success_count = run.analyses | selectattr('status', 'equalto', 'SUCCESS') | list | length %}
+        {% set failed_count = run.analyses | selectattr('status', 'equalto', 'FAILED') | list | length %}
+        <p class="text-sm">
+          {% if run.status == 'SUCCESS' %}
+            All {{ success_count }} document(s) analysed successfully.
+          {% elif run.status == 'PARTIAL' %}
+            {{ success_count }} succeeded, {{ failed_count }} failed.
+          {% else %}
+            {% if failed_count %}
+              Analysis failed for all {{ failed_count }} document(s).
+            {% else %}
+              All document fetches failed — nothing to analyse.
+            {% endif %}
+          {% endif %}
+        </p>
+      {% endif %}
+
+      <p class="text-xs text-slate-500 mt-2">
         LLM: {{ run.llm_model }} &middot; Triggered by: {{ run.triggered_by }}
       </p>
     </div>
 
+    {# --- Per-document results (shown when finished) --- #}
     {% if run.status in ('SUCCESS', 'PARTIAL', 'FAILED') %}
       <div class="rounded border border-slate-200 bg-white p-4">
         <h3 class="font-semibold mb-2">Results</h3>
@@ -38,7 +87,11 @@
                 {% if a.regulation_id %}
                   <a href="/regulations/{{ a.regulation_id }}#analysis"
                      class="text-blue-700 hover:underline">
-                    version {{ a.version_id }}
+                    {% if a.reference_number %}
+                      {{ a.reference_number }}
+                    {% else %}
+                      version {{ a.version_id }}
+                    {% endif %}
                   </a>
                 {% else %}
                   <span class="text-slate-500">version {{ a.version_id }} (orphan)</span>

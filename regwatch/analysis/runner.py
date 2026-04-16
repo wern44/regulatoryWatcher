@@ -71,11 +71,25 @@ class AnalysisRunner:
                     run.llm_model = llm_model
                 s.commit()
 
+        # Pre-load regulation labels so progress shows meaningful names.
+        version_labels: dict[int, str] = {}
+        with self._sf() as s:
+            for vid in version_ids:
+                v = s.get(DocumentVersion, vid)
+                if v is not None:
+                    reg = s.get(Regulation, v.regulation_id)
+                    if reg is not None:
+                        version_labels[vid] = (
+                            f"{reg.reference_number} — {reg.title}"
+                        )
+                if vid not in version_labels:
+                    version_labels[vid] = f"version {vid}"
+
         succeeded = 0
         failed = 0
         errors: list[str] = []
         for i, vid in enumerate(version_ids, start=1):
-            self._on_progress(i, len(version_ids), f"version {vid}")
+            self._on_progress(i, len(version_ids), version_labels[vid])
             try:
                 status = self._analyse_one(run_id, vid)
             except Exception as e:  # noqa: BLE001 — defensive: never kill the run
