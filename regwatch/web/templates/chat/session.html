@@ -1,8 +1,17 @@
 {% extends "base.html" %}
 {% block title %}RegWatch — {{ session.title }}{% endblock %}
 {% block content %}
-  <a href="/chat" class="text-sm text-slate-500 hover:underline">← Sessions</a>
-  <h1 class="text-2xl font-bold mt-2 mb-4">{{ session.title }}</h1>
+  <a href="/chat" class="text-sm text-slate-500 hover:underline">&larr; Sessions</a>
+  <h1 class="text-2xl font-bold mt-2 mb-1">{{ session.title }}</h1>
+
+  {% if scope_labels %}
+  <p class="text-xs text-slate-500 mb-4">
+    Scope: {{ scope_labels | join(", ") }}
+    ({{ scope_labels | length }} regulation{{ "s" if scope_labels | length != 1 }})
+  </p>
+  {% else %}
+  <p class="text-xs text-slate-500 mb-4">Scope: all documents</p>
+  {% endif %}
 
   <div class="bg-white p-4 rounded shadow-sm border mb-4 space-y-3">
     {% for msg in messages %}

@@ -6,7 +6,12 @@ from typing import Annotated
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
-from regwatch.db.models import ChatSession, Regulation
+from regwatch.db.models import (
+    ChatSession,
+    LifecycleStage,
+    Regulation,
+    RegulationApplicability,
+)
 from regwatch.rag.chat_service import ChatService
 from regwatch.rag.retrieval import RetrievalFilters
 
@@ -58,24 +63,71 @@ def chat_ask_adhoc(
 @router.get("", response_class=HTMLResponse)
 def chat_list(request: Request) -> HTMLResponse:
     templates = request.app.state.templates
+    cfg = request.app.state.config
+    auth_types = [a.type for a in cfg.entity.authorizations]
+
     with request.app.state.session_factory() as session:
         sessions = (
             session.query(ChatSession)
             .order_by(ChatSession.created_at.desc())
             .all()
         )
+
+        # Build the regulation list for the scope picker.
+        # Default set: IN_FORCE regulations applicable to the configured entities.
+        applicable_ids: set[int] = set()
+        if auth_types:
+            applicable_ids = {
+                row.regulation_id
+                for row in session.query(RegulationApplicability)
+                .filter(RegulationApplicability.authorization_type.in_(auth_types))
+                .all()
+            }
+
+        all_regs = (
+            session.query(Regulation)
+            .order_by(Regulation.reference_number)
+            .all()
+        )
+        reg_options = []
+        for r in all_regs:
+            in_scope = r.regulation_id in applicable_ids
+            reg_options.append({
+                "regulation_id": r.regulation_id,
+                "reference_number": r.reference_number,
+                "title": r.title,
+                "lifecycle_stage": r.lifecycle_stage.value,
+                "in_scope": in_scope,
+                "in_force": r.lifecycle_stage == LifecycleStage.IN_FORCE,
+            })
+
     return templates.TemplateResponse(
-        request, "chat/list.html", {"active": "chat", "sessions": sessions}
+        request,
+        "chat/list.html",
+        {
+            "active": "chat",
+            "sessions": sessions,
+            "reg_options": reg_options,
+        },
     )
 
 
 @router.post("")
-def chat_create(request: Request, title: str = Form(...)) -> RedirectResponse:
+def chat_create(
+    request: Request,
+    title: str = Form(...),
+    regulation_ids: Annotated[list[int] | None, Form()] = None,
+    scope_mode: str = Form("default"),
+) -> RedirectResponse:
+    filters = RetrievalFilters()
+    if regulation_ids:
+        filters.regulation_ids = list(regulation_ids)
+
     with request.app.state.session_factory() as session:
         svc = ChatService(
             session, ollama=request.app.state.llm_client
         )
-        new_session = svc.create_session(title=title, filters=RetrievalFilters())
+        new_session = svc.create_session(title=title, filters=filters)
         session.commit()
         sid = new_session.session_id
     return RedirectResponse(url=f"/chat/{sid}", status_code=303)
@@ -92,10 +144,28 @@ def chat_session(request: Request, session_id: int) -> HTMLResponse:
             session, ollama=request.app.state.llm_client
         )
         messages = svc.list_messages(session_id)
+
+        # Resolve regulation_ids in the session's filters to display names.
+        scope_labels: list[str] = []
+        reg_ids = (cs.filters or {}).get("regulation_ids", [])
+        if reg_ids:
+            regs = (
+                session.query(Regulation)
+                .filter(Regulation.regulation_id.in_(reg_ids))
+                .order_by(Regulation.reference_number)
+                .all()
+            )
+            scope_labels = [r.reference_number for r in regs]
+
     return templates.TemplateResponse(
         request,
         "chat/session.html",
-        {"active": "chat", "session": cs, "messages": messages},
+        {
+            "active": "chat",
+            "session": cs,
+            "messages": messages,
+            "scope_labels": scope_labels,
+        },
     )
 
 
