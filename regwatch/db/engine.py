@@ -34,11 +34,11 @@ def create_app_engine(db_file: Path | str) -> Engine:
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
-        # Wait up to 10s for another writer to release the lock instead of
+        # Wait up to 30s for another writer to release the lock instead of
         # failing immediately with "database is locked". This matters when the
-        # uvicorn worker, CLI commands and any ad-hoc scripts all share the
-        # same SQLite file.
-        cursor.execute("PRAGMA busy_timeout=10000")
+        # uvicorn worker, CLI commands, background analysis threads, and any
+        # ad-hoc scripts all share the same SQLite file.
+        cursor.execute("PRAGMA busy_timeout=30000")
         cursor.close()
 
     return engine

@@ -116,6 +116,7 @@ class AnalysisRunner:
         return run_id
 
     def _analyse_one(self, run_id: int, version_id: int) -> DocumentAnalysisStatus:
+        # Phase 1: read document text and metadata (short DB transaction).
         with self._sf() as s:
             version = s.get(DocumentVersion, version_id)
             if version is None:
@@ -135,20 +136,27 @@ class AnalysisRunner:
                 f"{reg.reference_number} — {reg.title} — {reg.issuing_authority}"
                 if reg else f"version {version_id}"
             )
+            regulation_id = version.regulation_id
+
+        # Phase 2: call the LLM (no DB session held — can take minutes).
+        with self._sf() as s:
             result = extract(
                 session=s, llm=self._llm,
                 regulation_metadata=meta, document_text=text, max_tokens=self._max_tokens,
             )
+
+        # Phase 3: write results (short DB transaction).
+        with self._sf() as s:
             if result.status == "FAILED":
                 self._save_failure(
-                    s, run_id, version_id, version.regulation_id,
+                    s, run_id, version_id, regulation_id,
                     result.error or "extraction failed", raw=result.raw_output,
                     was_truncated=result.was_truncated,
                 )
                 return DocumentAnalysisStatus.FAILED
 
             a = DocumentAnalysis(
-                run_id=run_id, version_id=version_id, regulation_id=version.regulation_id,
+                run_id=run_id, version_id=version_id, regulation_id=regulation_id,
                 status=DocumentAnalysisStatus.SUCCESS,
                 raw_llm_output=result.raw_output, was_truncated=result.was_truncated,
             )
