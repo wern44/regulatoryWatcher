@@ -160,7 +160,20 @@ class LLMClient:
         except (KeyError, IndexError) as exc:
             raise LLMError("Unexpected response structure from OpenAI chat endpoint") from exc
         if not content:
-            raise LLMError("Empty response from OpenAI chat endpoint")
+            usage = data.get("usage", {})
+            prompt_tokens = usage.get("prompt_tokens", "?")
+            total_tokens = usage.get("total_tokens", "?")
+            reasoning = (usage.get("completion_tokens_details") or {}).get("reasoning_tokens")
+            if reasoning:
+                raise LLMError(
+                    f"Empty response: model used {reasoning} reasoning tokens, "
+                    f"leaving no room for output "
+                    f"(prompt={prompt_tokens}, total={total_tokens}). "
+                    f"Increase the model context length in LM Studio."
+                )
+            raise LLMError(
+                f"Empty response from LLM (prompt={prompt_tokens}, total={total_tokens})"
+            )
         return content
 
     def _openai_chat_stream(self, *, system: str, user: str) -> Iterator[str]:
