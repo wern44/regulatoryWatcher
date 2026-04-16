@@ -328,6 +328,8 @@ class DocumentChunk(Base):
     is_ict: Mapped[bool] = mapped_column(Boolean, default=False)
     authorization_types: Mapped[list[str]] = mapped_column(JSON, default=list)
     heading_path: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    cross_refs: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    is_definition: Mapped[bool] = mapped_column(Boolean, default=False)
 
     version: Mapped[DocumentVersion] = relationship(back_populates="chunks")
 

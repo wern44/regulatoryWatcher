@@ -26,10 +26,19 @@ def index_version(
     Returns the number of chunks created.
     """
     body = version.pdf_extracted_text or version.html_text or ""
+    reg = version.regulation
+
+    # Build a regulation metadata string for embedding enrichment.
+    regulation_meta = (
+        f"{reg.reference_number} — {reg.title} — {reg.issuing_authority}"
+        if reg else ""
+    )
+
     chunks = chunk_text(
         body,
         chunk_size_tokens=chunk_size_tokens,
         overlap_tokens=overlap_tokens,
+        regulation_meta=regulation_meta,
     )
     if not chunks:
         return 0
@@ -38,8 +47,6 @@ def index_version(
         language = detect(body[:2000])
     except Exception:  # noqa: BLE001
         language = None
-
-    reg = version.regulation
 
     chunk_rows: list[DocumentChunk] = []
     for c in chunks:
@@ -54,6 +61,8 @@ def index_version(
             is_ict=reg.is_ict,
             authorization_types=authorization_types,
             heading_path=c.heading_path,
+            cross_refs=c.cross_refs or None,
+            is_definition=c.is_definition,
         )
         session.add(row)
         chunk_rows.append(row)

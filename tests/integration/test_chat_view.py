@@ -17,8 +17,8 @@ def test_chat_create_and_ask_flow(tmp_path: Path, monkeypatch) -> None:
     # Replace the app's llm client with a mock that also handles embed
     # (for retrieval). Embeddings aren't used since no indexed content exists.
     fake = MagicMock()
-    # Production config uses 768 dims (nomic-embed-text).
-    fake.embed.return_value = [0.0] * 768
+    # Must match the embedding_dim in the test config (config.example.yaml).
+    fake.embed.return_value = [0.0] * 1024
     fake.chat.return_value = "Sample assistant reply."
     client.app.state.llm_client = fake
 

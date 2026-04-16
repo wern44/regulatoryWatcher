@@ -44,7 +44,7 @@ llm:
   base_url: "http://192.168.32.231:1234"
   chat_model: ""
   embedding_model: ""
-  embedding_dim: 768
+  embedding_dim: 1024
 
 rag:
   chunk_size_tokens: 500

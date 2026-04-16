@@ -32,6 +32,8 @@ def _format_context_block(chunk: RetrievedChunk) -> str:
     header = f"[chunk {chunk.chunk_id} | regulation_id={chunk.regulation_id}"
     if chunk.heading_path:
         header += f" | {' > '.join(chunk.heading_path)}"
+    if chunk.is_expansion:
+        header += " | context"
     header += "]"
     return f"{header}\n{chunk.text}"
 

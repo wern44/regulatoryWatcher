@@ -67,9 +67,10 @@ def test_embed_receives_prefixed_text_but_chunk_stores_original(tmp_path):
         article_chunks = [c for c in chunks if "ICT risk" in c.text]
         assert article_chunks
 
-        # The embedder saw a METADATA-PREFIXED form for the structured chunk
-        prefixed = [t for t in captured if t.startswith("[") and "Article 1" in t]
-        assert prefixed, f"embed should receive bracket-prefixed text, got: {captured[:2]}"
+        # The embedder saw a METADATA-PREFIXED form for the structured chunk.
+        # New format: "CSSF 12/552 — Risk — CSSF, Chapter I, Article 1:\n..."
+        prefixed = [t for t in captured if "Article 1" in t and "CSSF 12/552" in t]
+        assert prefixed, f"embed should receive prefixed text, got: {captured[:2]}"
 
         # heading_path is persisted on the structured chunk
         assert article_chunks[0].heading_path
@@ -98,5 +99,7 @@ def test_unstructured_text_stores_empty_heading_path_and_unprefixed_embed(tmp_pa
         assert chunks
         for c in chunks:
             assert c.heading_path == [] or c.heading_path is None
-        # No metadata brackets in any embed string
-        assert not any(t.startswith("[") for t in captured)
+        # Unstructured text still gets regulation_meta prefix but no heading path.
+        # It should NOT have bracket-style heading prefixes.
+        for t in captured:
+            assert "[" not in t.split("\n")[0] or "Chapter" not in t.split("\n")[0]

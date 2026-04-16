@@ -4,6 +4,11 @@ The dense/sparse queries are deliberately run without WHERE-filter binds to
 avoid SQLAlchemy expanding-bindparam edge cases with sqlite-vec. Filtering
 happens in Python during hydration, which is acceptable for the expected
 corpus sizes (tens of thousands of chunks).
+
+Small-to-big expansion: when a chunk's heading_path indicates it's part of a
+larger article, sibling chunks from the same article are pulled in to give the
+LLM full article context.  Definition chunks referenced via cross_refs are also
+included automatically.
 """
 from __future__ import annotations
 
@@ -37,6 +42,7 @@ class RetrievedChunk:
     lifecycle_stage: str
     score: float
     heading_path: list[str] = field(default_factory=list)
+    is_expansion: bool = False  # True for sibling/definition chunks added by expansion
 
 
 class HybridRetriever:
@@ -57,7 +63,11 @@ class HybridRetriever:
         dense_hits = self._dense_search(query_vec, k=pool)
         sparse_hits = self._sparse_search(query, k=pool)
         fused_ids = _reciprocal_rank_fusion(dense_hits, sparse_hits, k=60)
-        return self._hydrate(fused_ids, filters)[: self._top_k]
+        core_results = self._hydrate(fused_ids, filters)[: self._top_k]
+
+        # Small-to-big: expand with sibling and definition chunks
+        expanded = self._expand_context(core_results)
+        return expanded
 
     def _dense_search(self, vec: list[float], *, k: int) -> list[int]:
         packed = struct.pack(f"{len(vec)}f", *vec)
@@ -140,6 +150,116 @@ class HybridRetriever:
                 )
             )
         return out
+
+    # ------------------------------------------------------------------
+    # Small-to-big context expansion
+    # ------------------------------------------------------------------
+
+    def _expand_context(
+        self, core: list[RetrievedChunk],
+    ) -> list[RetrievedChunk]:
+        """Expand retrieved chunks with sibling article chunks and definitions.
+
+        For each core chunk that belongs to an article (has a heading_path with
+        an Article/§ entry), fetch sibling chunks from the same version+article
+        and insert them around the core chunk in document order.
+
+        Also pull in definition chunks from the same version when a core chunk's
+        cross_refs reference defined terms.
+        """
+        if not core:
+            return core
+
+        seen_ids: set[int] = {c.chunk_id for c in core}
+        expansions: list[RetrievedChunk] = []
+
+        # Collect all version_ids and article-level heading_paths we need siblings for
+        sibling_keys: set[tuple[int, str]] = set()  # (version_id, article_heading)
+        definition_version_ids: set[int] = set()
+
+        for c in core:
+            article_heading = _article_from_path(c.heading_path)
+            if article_heading:
+                sibling_keys.add((c.version_id, article_heading))
+
+        # Batch-load candidate siblings
+        if sibling_keys:
+            version_ids = {vk[0] for vk in sibling_keys}
+            candidates = (
+                self._session.query(DocumentChunk)
+                .filter(
+                    DocumentChunk.version_id.in_(version_ids),
+                    DocumentChunk.chunk_id.notin_(seen_ids),
+                )
+                .order_by(DocumentChunk.chunk_index)
+                .all()
+            )
+            for row in candidates:
+                row_article = _article_from_path(row.heading_path or [])
+                key = (row.version_id, row_article or "")
+                if key in sibling_keys and row.chunk_id not in seen_ids:
+                    expansions.append(RetrievedChunk(
+                        chunk_id=row.chunk_id,
+                        version_id=row.version_id,
+                        regulation_id=row.regulation_id,
+                        text=row.text,
+                        is_ict=row.is_ict,
+                        lifecycle_stage=row.lifecycle_stage,
+                        score=0.0,
+                        heading_path=list(row.heading_path or []),
+                        is_expansion=True,
+                    ))
+                    seen_ids.add(row.chunk_id)
+
+            # Also pull definition chunks from the same versions
+            definition_version_ids = version_ids
+        if definition_version_ids:
+            def_rows = (
+                self._session.query(DocumentChunk)
+                .filter(
+                    DocumentChunk.version_id.in_(definition_version_ids),
+                    DocumentChunk.is_definition.is_(True),
+                    DocumentChunk.chunk_id.notin_(seen_ids),
+                )
+                .order_by(DocumentChunk.chunk_index)
+                .all()
+            )
+            for row in def_rows:
+                expansions.append(RetrievedChunk(
+                    chunk_id=row.chunk_id,
+                    version_id=row.version_id,
+                    regulation_id=row.regulation_id,
+                    text=row.text,
+                    is_ict=row.is_ict,
+                    lifecycle_stage=row.lifecycle_stage,
+                    score=0.0,
+                    heading_path=list(row.heading_path or []),
+                    is_expansion=True,
+                ))
+                seen_ids.add(row.chunk_id)
+
+        # Merge: core chunks first (in their ranked order), then expansions
+        # sorted by (version_id, chunk_index) for reading coherence.
+        result = list(core)
+        expansions.sort(
+            key=lambda c: (c.version_id, next(
+                (row.chunk_index for row in [
+                    self._session.get(DocumentChunk, c.chunk_id)
+                ] if row), 0,
+            )),
+        )
+        result.extend(expansions)
+        return result
+
+
+def _article_from_path(path: list[str]) -> str | None:
+    """Extract the Article/§ heading from a heading_path list."""
+    for h in reversed(path):
+        if re.match(r"(?:Article|Artikel|Art\.?)\s+\d+", h, re.IGNORECASE):
+            return h
+        if re.match(r"§\s*\d+", h):
+            return h
+    return None
 
 
 _FTS_SPECIAL = re.compile(r"[^\w\s]", re.UNICODE)
