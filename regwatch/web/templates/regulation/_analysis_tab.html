@@ -24,7 +24,7 @@
         {% set latest = analyses[0] %}
         <dl class="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-x-4 gap-y-2 mt-3 text-sm">
           <dt class="font-semibold">Main points</dt>
-          <dd><pre class="whitespace-pre-wrap font-sans">{{ latest.main_points or "—" }}</pre></dd>
+          <dd><pre class="whitespace-pre-wrap font-sans">{{ latest.main_points_display or "—" }}</pre></dd>
 
           <dt class="font-semibold">Scope</dt>
           <dd>{{ latest.scope_description or "—" }}</dd>

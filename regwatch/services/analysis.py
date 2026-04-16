@@ -1,6 +1,7 @@
 """Service DTOs for AnalysisRun / DocumentAnalysis listings and detail pages."""
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
@@ -37,6 +38,22 @@ class DocumentAnalysisDTO:
     created_at: datetime
     raw_llm_output: str | None
     reference_number: str | None = None
+
+    @property
+    def main_points_display(self) -> str | None:
+        """Format main_points for display, converting list representations to bullet points."""
+        if not self.main_points:
+            return None
+        text = self.main_points.strip()
+        # LLM sometimes returns a Python/JSON list as a string: ['point1', 'point2']
+        if text.startswith("[") and text.endswith("]"):
+            try:
+                items = ast.literal_eval(text)
+                if isinstance(items, list):
+                    return "\n".join(f"• {item}" for item in items if item)
+            except (ValueError, SyntaxError):
+                pass
+        return text
 
 
 @dataclass
