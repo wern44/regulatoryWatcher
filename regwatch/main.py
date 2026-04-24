@@ -32,7 +32,7 @@ _STATIC_DIR = Path(__file__).parent / "web" / "static"
 
 
 class FirstStartupMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+    async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
         path = request.url.path
         if path.startswith("/static") or path.startswith("/settings"):
             return await call_next(request)
@@ -72,6 +72,7 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from apscheduler.schedulers.background import BackgroundScheduler  # noqa: PLC0415
+
         from regwatch.pipeline.run_helpers import run_pipeline_background  # noqa: PLC0415
 
         bg_scheduler = BackgroundScheduler(timezone=config.ui.timezone)
@@ -83,7 +84,8 @@ def create_app() -> FastAPI:
             if snap["status"] == "running":
                 logger.info("Scheduled tick skipped — pipeline already running")
                 return
-            from datetime import UTC, datetime as dt  # noqa: PLC0415
+            from datetime import UTC  # noqa: PLC0415
+            from datetime import datetime as dt
             pipeline_progress.reset_for_run(total_sources=0)
             pipeline_progress.message = "Scheduled pipeline run starting..."
             pipeline_progress.started_at = dt.now(UTC)
@@ -106,7 +108,9 @@ def create_app() -> FastAPI:
             sched_freq = svc.get("scheduler_frequency", "2days")
             sched_time = svc.get("scheduler_time", "06:00")
 
-        scheduler_manager.apply_schedule(sched_freq, sched_time)
+        scheduler_manager.apply_schedule(
+            sched_freq or "2days", sched_time or "06:00"
+        )
         bg_scheduler.start()
         if sched_enabled != "true":
             scheduler_manager.pause()

@@ -10,13 +10,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from regwatch.db.models import DocumentVersion, ExtractionFieldType, PipelineRun
 from regwatch.llm.client import HealthStatus
+from regwatch.scheduler.jobs import FREQUENCY_OPTIONS
 from regwatch.services.extraction_fields import (
     ExtractionFieldService,
     FieldNameConflictError,
     FieldNotFoundError,
     FieldProtectedError,
 )
-from regwatch.scheduler.jobs import FREQUENCY_OPTIONS
 from regwatch.services.settings import SettingsService
 
 router = APIRouter(prefix="/settings", tags=["settings"])
