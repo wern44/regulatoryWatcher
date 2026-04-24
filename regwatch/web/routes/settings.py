@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -15,6 +16,7 @@ from regwatch.services.extraction_fields import (
     FieldNotFoundError,
     FieldProtectedError,
 )
+from regwatch.scheduler.jobs import FREQUENCY_OPTIONS
 from regwatch.services.settings import SettingsService
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -53,6 +55,23 @@ def settings_view(
             .all()
         )
 
+    with request.app.state.session_factory() as session:
+        svc = SettingsService(session)
+        sched_enabled = svc.get("scheduler_enabled", "true") == "true"
+        sched_freq = svc.get("scheduler_frequency", "2days")
+        sched_time = svc.get("scheduler_time", "06:00")
+        last_runs = (
+            session.query(PipelineRun)
+            .order_by(PipelineRun.started_at.desc())
+            .limit(2)
+            .all()
+        )
+
+    scheduler_manager = getattr(request.app.state, "scheduler_manager", None)
+    next_run = scheduler_manager.next_run_time() if scheduler_manager else None
+    tz = ZoneInfo(config.ui.timezone)
+    server_time = datetime.now(tz).strftime("%H:%M")
+
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -67,6 +86,14 @@ def settings_view(
             "runs": runs,
             "db_action": db_action,
             "db_error": db_error,
+            "sched_enabled": sched_enabled,
+            "sched_freq": sched_freq,
+            "sched_time": sched_time,
+            "next_run": next_run,
+            "server_time": server_time,
+            "server_timezone": config.ui.timezone,
+            "last_runs": last_runs,
+            "frequency_options": FREQUENCY_OPTIONS,
         },
     )
 
@@ -115,6 +142,31 @@ def save_models(
         session.commit()
     request.app.state.llm_client.chat_model = chat_model
     request.app.state.llm_client.embedding_model = embedding_model
+    return RedirectResponse(url="/settings", status_code=303)
+
+
+@router.post("/save-schedule")
+def save_schedule(
+    request: Request,
+    scheduler_frequency: str = Form(...),
+    scheduler_time: str = Form("06:00"),
+    scheduler_enabled: str | None = Form(None),
+) -> RedirectResponse:
+    enabled = scheduler_enabled is not None
+    with request.app.state.session_factory() as session:
+        svc = SettingsService(session)
+        svc.set("scheduler_enabled", "true" if enabled else "false")
+        svc.set("scheduler_frequency", scheduler_frequency)
+        svc.set("scheduler_time", scheduler_time)
+        session.commit()
+
+    manager = request.app.state.scheduler_manager
+    manager.apply_schedule(scheduler_frequency, scheduler_time)
+    if enabled:
+        manager.resume()
+    else:
+        manager.pause()
+
     return RedirectResponse(url="/settings", status_code=303)
 
 
