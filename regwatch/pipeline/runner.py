@@ -101,7 +101,7 @@ class PipelineRunner:
                     progress.fail_source(source.name)
 
         run.finished_at = datetime.now(UTC)
-        run.status = "COMPLETED"
+        run.status = "COMPLETED_WITH_ERRORS" if run.sources_failed else "COMPLETED"
         self._session.flush()
         return run.run_id
 

@@ -159,18 +159,25 @@
       <h3 class="text-sm font-medium text-slate-600 mb-2">Last checks</h3>
       <ul class="space-y-2 text-sm">
         {% for r in last_runs %}
-        <li class="flex justify-between items-start">
-          <div>
-            <span class="font-medium">#{{ r.run_id }}</span>
-            <span class="{% if r.status == 'COMPLETED' %}text-green-700{% elif r.status == 'FAILED' %}text-red-700{% else %}text-slate-500{% endif %}">
-              {{ r.status }}
-            </span>
-            <span class="text-slate-500 text-xs ml-1">{{ r.started_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        <li>
+          <div class="flex justify-between items-start">
+            <div>
+              <span class="font-medium">#{{ r.run_id }}</span>
+              <span class="{% if r.status == 'COMPLETED' %}text-green-700{% elif r.status == 'COMPLETED_WITH_ERRORS' %}text-amber-600{% elif r.status == 'RUNNING' %}text-blue-600{% else %}text-red-700{% endif %} font-medium">
+                {{ r.status }}
+              </span>
+              <span class="text-slate-500 text-xs ml-1">{{ r.started_at.strftime('%Y-%m-%d %H:%M') }}</span>
+            </div>
+            <div class="text-xs text-slate-500 text-right">
+              {{ r.events_created }} event{{ 's' if r.events_created != 1 else '' }},
+              {{ r.versions_created }} version{{ 's' if r.versions_created != 1 else '' }}
+            </div>
           </div>
-          <div class="text-xs text-slate-500 text-right">
-            {{ r.events_created }} new event{{ 's' if r.events_created != 1 else '' }},
-            {{ r.versions_created }} new version{{ 's' if r.versions_created != 1 else '' }}
+          {% if r.sources_failed %}
+          <div class="text-xs text-amber-700 mt-1">
+            Failed: {{ r.sources_failed | join(', ') }}
           </div>
+          {% endif %}
         </li>
         {% endfor %}
       </ul>
@@ -235,9 +242,27 @@
     {% if runs %}
     <ul class="divide-y text-sm">
       {% for r in runs %}
-      <li class="py-2 flex justify-between">
-        <span>#{{ r.run_id }} — {{ r.status }} — {{ r.events_created }} events</span>
-        <span class="text-xs text-slate-500">{{ r.started_at.strftime('%Y-%m-%d %H:%M') }}</span>
+      <li class="py-2">
+        <div class="flex justify-between">
+          <span>
+            <span class="font-medium">#{{ r.run_id }}</span>
+            <span class="{% if r.status == 'COMPLETED' %}text-green-700{% elif r.status == 'COMPLETED_WITH_ERRORS' %}text-amber-600{% elif r.status == 'RUNNING' %}text-blue-600{% else %}text-red-700{% endif %} font-medium">
+              {{ r.status }}
+            </span>
+            — {{ r.events_created }} event{{ 's' if r.events_created != 1 else '' }}, {{ r.versions_created }} version{{ 's' if r.versions_created != 1 else '' }}
+          </span>
+          <span class="text-xs text-slate-500">{{ r.started_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        </div>
+        {% if r.sources_failed %}
+        <div class="text-xs text-amber-700 mt-1">
+          Failed sources: {{ r.sources_failed | join(', ') }}
+        </div>
+        {% endif %}
+        {% if r.error %}
+        <div class="text-xs text-red-700 mt-1 truncate" title="{{ r.error }}">
+          Error: {{ r.error[:120] }}
+        </div>
+        {% endif %}
       </li>
       {% endfor %}
     </ul>

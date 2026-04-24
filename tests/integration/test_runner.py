@@ -90,7 +90,7 @@ def test_runner_failing_source_does_not_block_others(tmp_path: Path) -> None:
 
     pr = session.get(PipelineRun, run_id)
     assert pr is not None
-    assert pr.status == "COMPLETED"
+    assert pr.status == "COMPLETED_WITH_ERRORS"
     assert "fake_failing" in pr.sources_failed
     assert "fake_success" in pr.sources_attempted
     assert pr.events_created == 1
