@@ -1,54 +1,16 @@
 """Manual actions triggered from the web UI (run pipeline now, status polling)."""
 from __future__ import annotations
 
-import logging
 import threading
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-from regwatch.pipeline.pipeline_factory import build_runner
 from regwatch.pipeline.progress import PipelineProgress
-from regwatch.pipeline.sources import build_enabled_sources
+from regwatch.pipeline.run_helpers import run_pipeline_background
 
 router = APIRouter()
-
-logger = logging.getLogger(__name__)
-
-
-def _run_pipeline_in_background(
-    *,
-    session_factory,
-    config,
-    llm_client,
-    progress: PipelineProgress,
-) -> None:
-    """Body of the worker thread. Owns its own DB session."""
-    try:
-        sources = build_enabled_sources(config)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("Pipeline source instantiation failed")
-        progress.finish(run_id=None, error=f"{type(exc).__name__}: {exc}")
-        return
-
-    with session_factory() as session:
-        try:
-            runner = build_runner(
-                session,
-                sources=sources,
-                archive_root=config.paths.pdf_archive,
-                llm_client=llm_client,
-            )
-            run_id = runner.run_once(progress=progress)
-            session.commit()
-        except Exception as exc:  # noqa: BLE001
-            session.rollback()
-            logger.exception("Manual pipeline run failed")
-            progress.finish(run_id=None, error=f"{type(exc).__name__}: {exc}")
-            return
-
-    progress.finish(run_id=run_id)
 
 
 @router.post("/run-pipeline", response_class=HTMLResponse)
@@ -78,7 +40,7 @@ def run_pipeline(request: Request) -> HTMLResponse:
     progress.started_at = datetime.now(UTC)
 
     thread = threading.Thread(
-        target=_run_pipeline_in_background,
+        target=run_pipeline_background,
         kwargs={
             "session_factory": request.app.state.session_factory,
             "config": request.app.state.config,

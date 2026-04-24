@@ -181,12 +181,12 @@ def test_run_pipeline_error_marks_progress_as_failed(
     client = _cssf_only_client(tmp_path, monkeypatch)
 
     # Force build_enabled_sources to raise.
-    import regwatch.web.routes.actions as actions_module
+    import regwatch.pipeline.run_helpers as run_helpers_module
 
     def boom(_cfg):  # type: ignore[no-untyped-def]
         raise RuntimeError("kaboom")
 
-    monkeypatch.setattr(actions_module, "build_enabled_sources", boom)
+    monkeypatch.setattr(run_helpers_module, "build_enabled_sources", boom)
 
     client.post("/run-pipeline")
     final = _wait_until_idle_or_done(client)
