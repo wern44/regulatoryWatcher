@@ -3,14 +3,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from regwatch.db.models import DiscoveryRun, DocumentVersion, ExtractionFieldType, PipelineRun
+from regwatch.db.models import DocumentVersion, ExtractionFieldType, PipelineRun
 from regwatch.llm.client import HealthStatus
-from regwatch.scheduler.jobs import FREQUENCY_OPTIONS
 from regwatch.services.extraction_fields import (
     ExtractionFieldService,
     FieldNameConflictError,
@@ -55,40 +53,6 @@ def settings_view(
             .all()
         )
 
-    with request.app.state.session_factory() as session:
-        svc = SettingsService(session)
-        sched_enabled = svc.get("scheduler_enabled", "true") == "true"
-        sched_freq = svc.get("scheduler_frequency", "2days")
-        sched_time = svc.get("scheduler_time", "06:00")
-        recon_enabled = svc.get("reconciliation_enabled", "true") == "true"
-        recon_freq = svc.get("reconciliation_frequency", "weekly")
-        recon_time = svc.get("reconciliation_time", "05:00")
-        last_runs = (
-            session.query(PipelineRun)
-            .order_by(PipelineRun.started_at.desc())
-            .limit(2)
-            .all()
-        )
-        last_discovery_runs = (
-            session.query(DiscoveryRun)
-            .order_by(DiscoveryRun.started_at.desc())
-            .limit(2)
-            .all()
-        )
-
-    from regwatch.scheduler.jobs import SchedulerManager  # noqa: PLC0415
-    scheduler_manager = getattr(request.app.state, "scheduler_manager", None)
-    next_run = (
-        scheduler_manager.next_run_time(SchedulerManager.PIPELINE_JOB_ID)
-        if scheduler_manager else None
-    )
-    recon_next_run = (
-        scheduler_manager.next_run_time(SchedulerManager.RECONCILIATION_JOB_ID)
-        if scheduler_manager else None
-    )
-    tz = ZoneInfo(config.ui.timezone)
-    server_time = datetime.now(tz).strftime("%H:%M")
-
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -103,19 +67,6 @@ def settings_view(
             "runs": runs,
             "db_action": db_action,
             "db_error": db_error,
-            "sched_enabled": sched_enabled,
-            "sched_freq": sched_freq,
-            "sched_time": sched_time,
-            "next_run": next_run,
-            "server_time": server_time,
-            "server_timezone": config.ui.timezone,
-            "last_runs": last_runs,
-            "frequency_options": FREQUENCY_OPTIONS,
-            "recon_enabled": recon_enabled,
-            "recon_freq": recon_freq,
-            "recon_time": recon_time,
-            "recon_next_run": recon_next_run,
-            "last_discovery_runs": last_discovery_runs,
         },
     )
 
@@ -164,64 +115,6 @@ def save_models(
         session.commit()
     request.app.state.llm_client.chat_model = chat_model
     request.app.state.llm_client.embedding_model = embedding_model
-    return RedirectResponse(url="/settings", status_code=303)
-
-
-@router.post("/save-schedule")
-def save_schedule(
-    request: Request,
-    scheduler_frequency: str = Form(...),
-    scheduler_time: str = Form("06:00"),
-    scheduler_enabled: str | None = Form(None),
-) -> RedirectResponse:
-    enabled = scheduler_enabled is not None
-    with request.app.state.session_factory() as session:
-        svc = SettingsService(session)
-        svc.set("scheduler_enabled", "true" if enabled else "false")
-        svc.set("scheduler_frequency", scheduler_frequency)
-        svc.set("scheduler_time", scheduler_time)
-        session.commit()
-
-    from regwatch.scheduler.jobs import SchedulerManager  # noqa: PLC0415
-    manager = request.app.state.scheduler_manager
-    manager.apply_schedule(
-        SchedulerManager.PIPELINE_JOB_ID, scheduler_frequency, scheduler_time
-    )
-    if enabled:
-        manager.resume(SchedulerManager.PIPELINE_JOB_ID)
-    else:
-        manager.pause(SchedulerManager.PIPELINE_JOB_ID)
-
-    return RedirectResponse(url="/settings", status_code=303)
-
-
-@router.post("/save-reconciliation-schedule")
-def save_reconciliation_schedule(
-    request: Request,
-    reconciliation_frequency: str = Form(...),
-    reconciliation_time: str = Form("05:00"),
-    reconciliation_enabled: str | None = Form(None),
-) -> RedirectResponse:
-    enabled = reconciliation_enabled is not None
-    with request.app.state.session_factory() as session:
-        svc = SettingsService(session)
-        svc.set("reconciliation_enabled", "true" if enabled else "false")
-        svc.set("reconciliation_frequency", reconciliation_frequency)
-        svc.set("reconciliation_time", reconciliation_time)
-        session.commit()
-
-    from regwatch.scheduler.jobs import SchedulerManager  # noqa: PLC0415
-    manager = request.app.state.scheduler_manager
-    manager.apply_schedule(
-        SchedulerManager.RECONCILIATION_JOB_ID,
-        reconciliation_frequency,
-        reconciliation_time,
-    )
-    if enabled:
-        manager.resume(SchedulerManager.RECONCILIATION_JOB_ID)
-    else:
-        manager.pause(SchedulerManager.RECONCILIATION_JOB_ID)
-
     return RedirectResponse(url="/settings", status_code=303)
 
 
