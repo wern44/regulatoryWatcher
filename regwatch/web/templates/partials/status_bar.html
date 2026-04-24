@@ -1,0 +1,29 @@
+{% if pipeline_running or reconciliation_running %}
+<div id="global-status-bar"
+     hx-get="/status-bar"
+     hx-trigger="every 3s"
+     hx-swap="outerHTML"
+     class="flex items-center gap-3 px-4 py-2 text-sm
+            {% if pipeline_running %}bg-blue-50 border-b border-blue-200 text-blue-800
+            {% else %}bg-emerald-50 border-b border-emerald-200 text-emerald-800{% endif %}">
+  <svg class="w-4 h-4 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
+    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+  </svg>
+  {% if pipeline_running %}
+    <span class="font-medium">Pipeline running</span>
+    {% if pipeline_message %}<span class="text-blue-600">— {{ pipeline_message }}</span>{% endif %}
+  {% endif %}
+  {% if reconciliation_running %}
+    {% if pipeline_running %}<span class="mx-1">|</span>{% endif %}
+    <span class="font-medium">CSSF Reconciliation running</span>
+    {% if recon_reference %}<span class="text-emerald-600">— {{ recon_reference }}</span>{% endif %}
+  {% endif %}
+</div>
+{% else %}
+<div id="global-status-bar"
+     hx-get="/status-bar"
+     hx-trigger="every 5s"
+     hx-swap="outerHTML">
+</div>
+{% endif %}

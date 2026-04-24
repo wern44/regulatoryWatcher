@@ -93,3 +93,36 @@ def run_pipeline_status(request: Request) -> HTMLResponse:
         "partials/pipeline_progress.html",
         {"progress": progress.snapshot()},
     )
+
+
+@router.get("/status-bar", response_class=HTMLResponse)
+def status_bar(request: Request) -> HTMLResponse:
+    """Global status bar fragment polled by base.html via HTMX."""
+    templates = request.app.state.templates
+    pipeline_progress: PipelineProgress = request.app.state.pipeline_progress
+    pipeline_snap = pipeline_progress.snapshot()
+    pipeline_running = pipeline_snap["status"] == "running"
+
+    discovery_progress = getattr(
+        request.app.state, "cssf_discovery_progress", None
+    )
+    reconciliation_running = (
+        discovery_progress is not None
+        and getattr(discovery_progress, "status", "idle") == "running"
+    )
+    recon_reference = (
+        getattr(discovery_progress, "current_reference", None)
+        if reconciliation_running
+        else None
+    )
+
+    return templates.TemplateResponse(
+        request,
+        "partials/status_bar.html",
+        {
+            "pipeline_running": pipeline_running,
+            "pipeline_message": pipeline_snap.get("message", ""),
+            "reconciliation_running": reconciliation_running,
+            "recon_reference": recon_reference,
+        },
+    )
