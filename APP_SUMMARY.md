@@ -59,14 +59,13 @@ Each source's interval, enablement, and tuning parameters live under `sources:` 
 
 ### When do updates actually get pulled?
 
-**This is the most important thing to understand about the current version of the tool**:
+Updates are pulled in one of three ways:
 
-- **The APScheduler jobs are built on startup but not started.** The in-process scheduler is a placeholder for future work — clicking through the UI will not trigger periodic fetches by itself.
-- **In practice today, updates are pulled in one of two ways**:
-  1. **Manually**, by clicking the **Run pipeline now** button on the Dashboard (or by running `regwatch run-pipeline` from the CLI).
-  2. **On a schedule**, by pointing an external scheduler (cron or a systemd timer) at `regwatch run-pipeline`. This is the recommended approach on a server — see the Debian install section below.
+1. **Automatically on a schedule** — the built-in scheduler (APScheduler, running inside the uvicorn process) runs the full pipeline at a user-configured frequency. Default is **every 2 days at 06:00**. The schedule is configured from the **Settings** page under "Scheduled Updates": you can choose between Every 4 hours, Daily, Every 2 days, Weekly, or Monthly, set a preferred time of day, and pause/resume at any time. These settings are stored in the database (`Setting` table) and survive restarts.
+2. **Manually**, by clicking the **Run pipeline now** button on the Dashboard (or by running `regwatch run-pipeline` from the CLI).
+3. **Via an external scheduler** (cron, systemd timer) pointing at `regwatch run-pipeline` — this is an alternative to the built-in scheduler, useful if you want updates to run even when the web UI is not running.
 
-The per-source `interval_hours` values in the config are currently only used as hints; they do not yet wire into the live scheduler.
+An overlap guard prevents concurrent runs: if the scheduler fires while a manual run is in-flight (or vice versa), the tick is skipped.
 
 ---
 
@@ -220,9 +219,9 @@ Verify it's serving:
     curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/
     # Expect: 200
 
-### 5.7 Schedule the pipeline with a systemd timer
+### 5.7 (Optional) Schedule the pipeline with a systemd timer
 
-Because the in-process APScheduler isn't live-wired yet, the reliable way to get periodic fetches is a systemd timer that runs the CLI.
+The built-in scheduler handles periodic fetches automatically while the web UI is running. If you prefer updates to run even when the web UI is stopped, you can add a systemd timer as a fallback. The overlap guard ensures these won't conflict with the built-in scheduler.
 
 Create `/etc/systemd/system/regwatch-pipeline.service`:
 

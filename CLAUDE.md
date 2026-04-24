@@ -12,7 +12,7 @@ Authoritative design and plan live in `docs/superpowers/specs/2026-04-08-regulat
 
 All commands assume the venv at `.venv` is active (`. .venv/Scripts/activate` on Windows).
 
-    pytest                                            # full suite (~130 tests, ~6s)
+    pytest                                            # full suite (~467 tests, ~40s)
     pytest tests/unit                                 # unit tests only
     pytest tests/integration                          # integration tests only
     pytest tests/unit/test_rules_matcher.py -v        # single file
@@ -25,7 +25,7 @@ All commands assume the venv at `.venv` is active (`. .venv/Scripts/activate` on
     regwatch run-pipeline [--source NAME]             # one synchronous pipeline pass
     regwatch chat "..."                               # one-shot RAG Q&A
     regwatch dump-pipeline-runs --tail 20             # inspect recent runs
-    uvicorn regwatch.main:app --reload                # run the web UI on :8000
+    uvicorn regwatch.main:app --reload                # run the web UI on :8001
 
 ## Architecture — the things you cannot derive from any single file
 
@@ -33,7 +33,7 @@ All commands assume the venv at `.venv` is active (`. .venv/Scripts/activate` on
 
 The ingest path is a five-phase pipeline — **Fetch → Extract → Match → Persist → Notify** — wired together in `regwatch/pipeline/pipeline_factory.py::build_runner`. Source plugins in `regwatch/pipeline/fetch/` are the ONLY phase that knows about a specific feed/endpoint. Everything downstream is source-agnostic and operates on the `RawDocument → ExtractedDocument → MatchedDocument` dataclasses in `regwatch/domain/types.py`. When adding a new source, implement the `Source` protocol in `regwatch/pipeline/fetch/base.py` and decorate with `@register_source` — it will appear in `REGISTRY` by its `name` class attribute.
 
-`regwatch/pipeline/sources.py` (`import_all_sources`, `build_enabled_sources`) is the single place that knows how to instantiate each registered source from `AppConfig`. Both the CLI `run-pipeline` command and the web UI "Run pipeline now" button go through it. Adding a new source with non-default constructor args means extending `instantiate_source` here.
+`regwatch/pipeline/sources.py` (`import_all_sources`, `build_enabled_sources`) is the single place that knows how to instantiate each registered source from `AppConfig`. The CLI `run-pipeline` command, the web UI "Run pipeline now" button, and the background scheduler all go through it via the shared helper `regwatch/pipeline/run_helpers.py::run_pipeline_background`. Adding a new source with non-default constructor args means extending `instantiate_source` here.
 
 ### Matcher fallback chain
 
@@ -63,9 +63,13 @@ Virtual tables (`document_chunk_vec` for sqlite-vec, `document_chunk_fts` for FT
 
 FTS5 queries are sanitized via `_sanitize_fts_query` which strips punctuation and wraps bare terms into an OR-joined quoted expression — natural-language questions (e.g. "What is DORA?") contain `?` which FTS5 interprets as a special character.
 
+### Scheduled pipeline runs
+
+`regwatch/scheduler/jobs.py` provides `SchedulerManager`, which wraps APScheduler's `BackgroundScheduler` with a single job. The user configures frequency (`4h`, `daily`, `2days`, `weekly`, `monthly`), preferred time, and enabled/paused state from the Settings page; these are persisted as `scheduler_enabled`, `scheduler_frequency`, `scheduler_time` keys in the `Setting` table. `main.py`'s lifespan reads these on startup, calls `apply_schedule()`, and starts the scheduler. The scheduled callback uses the same `run_pipeline_background()` helper as the manual "Run pipeline now" button, with an overlap guard that skips the tick if a run is already in-flight (checked via `PipelineProgress.snapshot()`). The scheduler only runs while uvicorn is running.
+
 ### App state and the session factory
 
-`regwatch/main.py::create_app` builds the engine, runs `Base.metadata.create_all` + `create_virtual_tables`, and stashes `config`, `session_factory`, and `ollama_client` on `app.state`. All web routes get their DB session via `request.app.state.session_factory()` and their Ollama via `request.app.state.ollama_client`. For tests, override `client.app.state.ollama_client = MagicMock()` after creating the TestClient. Never import the session factory directly.
+`regwatch/main.py::create_app` builds the engine, runs `Base.metadata.create_all` + `create_virtual_tables`, and stashes `config`, `session_factory`, `llm_client`, `pipeline_progress`, and `scheduler_manager` on `app.state`. All web routes get their DB session via `request.app.state.session_factory()` and their LLM client via `request.app.state.llm_client`. The `scheduler_manager` is created inside the lifespan context manager and stored on `app.state`; a fallback `PipelineProgress()` is set outside the lifespan so routes work in tests where `TestClient` doesn't trigger the lifespan. For tests, override `client.app.state.llm_client = MagicMock()` after creating the TestClient. Never import the session factory directly.
 
 ### CSSF discovery invariants
 

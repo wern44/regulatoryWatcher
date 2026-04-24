@@ -74,6 +74,25 @@ Open your browser and go to `http://<your-server-ip>:8001`.
 
 On first visit, you'll be redirected to the setup page to select your LLM models.
 
+## 5. Automatic update checks
+
+The built-in scheduler runs inside the web process and checks all enabled regulatory sources on a configurable frequency. **No external cron or systemd timer is needed.**
+
+By default, it runs **every 2 days at 06:00**. To change this:
+
+1. Open `http://<your-server-ip>:8001/settings`
+2. Find the **Scheduled Updates** section
+3. Adjust the frequency (Every 4 hours / Daily / Every 2 days / Weekly / Monthly), preferred time, and enable/disable toggle
+4. Click **Save schedule**
+
+Settings are stored in the database and survive container restarts. The scheduler starts automatically with the web UI — as long as the container is running, updates will be fetched on schedule.
+
+If you prefer to trigger pipeline runs externally (e.g. via cron while the container is stopped), you can pause the built-in scheduler in Settings and use:
+
+```bash
+docker compose exec regwatch regwatch run-pipeline
+```
+
 ## Common operations
 
 ### View logs
