@@ -10,6 +10,21 @@ from typing import Any
 from regwatch.config import AppConfig, SourceConfig
 from regwatch.pipeline.fetch.base import REGISTRY
 
+# Logical groupings of sources for selective pipeline runs.
+SOURCE_GROUPS: dict[str, list[str]] = {
+    "cssf": ["cssf_rss", "cssf_consultation"],
+    "eu_legislation": ["eur_lex_adopted", "eur_lex_proposal"],
+    "luxembourg": ["legilux_sparql", "legilux_parliamentary"],
+    "eu_agencies": ["esma_rss", "eba_rss", "ec_fisma_rss"],
+}
+
+SOURCE_GROUP_LABELS: dict[str, str] = {
+    "cssf": "CSSF",
+    "eu_legislation": "EU Legislation",
+    "luxembourg": "Luxembourg",
+    "eu_agencies": "EU Agencies",
+}
+
 
 def import_all_sources() -> None:
     """Side-effect imports that register every built-in Source in REGISTRY."""
@@ -40,19 +55,25 @@ def instantiate_source(name: str, source_cfg: SourceConfig) -> Any:
 
 
 def build_enabled_sources(
-    config: AppConfig, *, only: str | None = None
+    config: AppConfig, *, only: str | list[str] | None = None
 ) -> list[Any]:
     """Instantiate every enabled source in the config.
 
-    If `only` is set, restrict to that single source name (used by
-    `run-pipeline --source NAME`).
+    If `only` is a string, restrict to that single source name.
+    If `only` is a list, restrict to those source names.
     """
     import_all_sources()
+    only_set: set[str] | None = None
+    if isinstance(only, str):
+        only_set = {only}
+    elif isinstance(only, list):
+        only_set = set(only)
+
     instances: list[Any] = []
     for name, source_cfg in config.sources.items():
         if not source_cfg.enabled:
             continue
-        if only is not None and name != only:
+        if only_set is not None and name not in only_set:
             continue
         instances.append(instantiate_source(name, source_cfg))
     return instances
