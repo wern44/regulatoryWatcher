@@ -1,82 +1,87 @@
+# tests/unit/test_scheduler_jobs.py
+from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
+from apscheduler.schedulers.background import BackgroundScheduler
 
-from regwatch.config import AppConfig, SourceConfig
-from regwatch.scheduler.jobs import (
-    SOURCE_TO_JOB,
-    assert_sources_have_jobs,
-    build_scheduler,
-)
+from regwatch.scheduler.jobs import FREQUENCY_OPTIONS, SchedulerManager
 
 
-def _minimal_config(enabled_sources: dict[str, SourceConfig]) -> AppConfig:
-    return AppConfig.model_validate(
-        {
-            "entity": {
-                "lei": "L",
-                "legal_name": "X",
-                "authorizations": [{"type": "AIFM", "cssf_entity_id": "1"}],
-            },
-            "sources": {k: v.model_dump() for k, v in enabled_sources.items()},
-            "llm": {
-                "base_url": "http://x",
-                "chat_model": "x",
-                "embedding_model": "x",
-                "embedding_dim": 1,
-            },
-            "rag": {
-                "chunk_size_tokens": 1,
-                "chunk_overlap_tokens": 0,
-                "retrieval_k": 1,
-                "rerank_k": 1,
-                "enable_rerank": False,
-            },
-            "paths": {"db_file": "x", "pdf_archive": "x", "uploads_dir": "x"},
-            "ui": {"language": "en", "timezone": "UTC", "host": "x", "port": 1},
-        }
+@pytest.fixture()
+def manager():
+    scheduler = BackgroundScheduler(timezone="UTC")
+    mgr = SchedulerManager(
+        scheduler=scheduler,
+        run_fn=MagicMock(),
     )
+    scheduler.start()
+    yield mgr
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
 
 
-def test_all_registered_sources_have_job_mapping() -> None:
-    expected = {
-        "cssf_rss",
-        "cssf_consultation",
-        "eur_lex_adopted",
-        "eur_lex_proposal",
-        "legilux_sparql",
-        "legilux_parliamentary",
-        "esma_rss",
-        "eba_rss",
-        "ec_fisma_rss",
-    }
-    assert expected.issubset(SOURCE_TO_JOB.keys())
+def test_apply_schedule_creates_job(manager: SchedulerManager):
+    manager.apply_schedule("daily", "08:00")
+    job = manager._scheduler.get_job(SchedulerManager.JOB_ID)
+    assert job is not None
 
 
-def test_assert_raises_on_unmapped_enabled_source() -> None:
-    cfg = _minimal_config(
-        {"unknown_source": SourceConfig(enabled=True, interval_hours=6)}
-    )
-    with pytest.raises(ValueError, match="unknown_source"):
-        assert_sources_have_jobs(cfg)
+def test_apply_schedule_replaces_existing_job(manager: SchedulerManager):
+    manager.apply_schedule("daily", "08:00")
+    manager.apply_schedule("weekly", "10:00")
+    jobs = manager._scheduler.get_jobs()
+    assert len(jobs) == 1
+    assert jobs[0].id == SchedulerManager.JOB_ID
 
 
-def test_disabled_source_is_not_required_to_have_job() -> None:
-    cfg = _minimal_config(
-        {"unknown_source": SourceConfig(enabled=False, interval_hours=6)}
-    )
-    assert_sources_have_jobs(cfg)  # must not raise
+def test_pause_and_resume(manager: SchedulerManager):
+    manager.apply_schedule("daily", "08:00")
+    manager.pause()
+    assert manager.next_run_time() is None  # paused job has no next_run_time
+    manager.resume()
+    assert manager.next_run_time() is not None
 
 
-def test_build_scheduler_returns_running_scheduler() -> None:
-    cfg = _minimal_config(
-        {
-            "cssf_rss": SourceConfig(
-                enabled=True, interval_hours=6, keywords=["aif"]
-            ),
-        }
-    )
-    fake_run = MagicMock()
-    scheduler = build_scheduler(cfg, run_pipeline_for=fake_run, start=False)
-    job_ids = {job.id for job in scheduler.get_jobs()}
-    assert "run_pipeline_cssf" in job_ids
+def test_next_run_time_returns_none_when_no_job(manager: SchedulerManager):
+    assert manager.next_run_time() is None
+
+
+def test_next_run_time_returns_datetime_when_scheduled(
+    manager: SchedulerManager,
+):
+    manager.apply_schedule("daily", "06:00")
+    nrt = manager.next_run_time()
+    assert isinstance(nrt, datetime)
+
+
+def test_4h_frequency_uses_interval_trigger(manager: SchedulerManager):
+    manager.apply_schedule("4h", "00:00")
+    job = manager._scheduler.get_job(SchedulerManager.JOB_ID)
+    assert job is not None
+    assert "interval" in str(type(job.trigger)).lower()
+
+
+def test_daily_frequency_uses_cron_trigger(manager: SchedulerManager):
+    manager.apply_schedule("daily", "14:30")
+    job = manager._scheduler.get_job(SchedulerManager.JOB_ID)
+    assert "cron" in str(type(job.trigger)).lower()
+
+
+def test_frequency_options_has_all_keys():
+    assert set(FREQUENCY_OPTIONS.keys()) == {"4h", "daily", "2days", "weekly", "monthly"}
+
+
+def test_is_running_false_when_no_job(manager: SchedulerManager):
+    assert manager.is_running() is False
+
+
+def test_is_running_true_after_apply(manager: SchedulerManager):
+    manager.apply_schedule("daily", "06:00")
+    assert manager.is_running() is True
+
+
+def test_is_running_false_after_pause(manager: SchedulerManager):
+    manager.apply_schedule("daily", "06:00")
+    manager.pause()
+    assert manager.is_running() is False

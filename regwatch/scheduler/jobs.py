@@ -1,73 +1,111 @@
-"""APScheduler configuration: source-to-job mapping and job builder."""
+"""APScheduler-based pipeline scheduler.
+
+A single ``SchedulerManager`` wraps a ``BackgroundScheduler`` and exposes
+apply / pause / resume controls.  It manages exactly one job whose trigger
+is derived from the user-chosen frequency string.
+"""
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
-from typing import Any
+from datetime import datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from regwatch.config import AppConfig
+logger = logging.getLogger(__name__)
 
-# Maps each source name to the logical job it runs in.
-SOURCE_TO_JOB: dict[str, str] = {
-    "cssf_rss": "run_pipeline_cssf",
-    "cssf_consultation": "run_pipeline_cssf",
-    "eur_lex_adopted": "run_pipeline_eu",
-    "eur_lex_proposal": "run_pipeline_eu",
-    "legilux_sparql": "run_pipeline_lu",
-    "legilux_parliamentary": "run_pipeline_lu",
-    "esma_rss": "run_pipeline_esma_eba_fisma",
-    "eba_rss": "run_pipeline_esma_eba_fisma",
-    "ec_fisma_rss": "run_pipeline_esma_eba_fisma",
+# Maps the DB value to a human-readable label shown in the UI.
+FREQUENCY_OPTIONS: dict[str, str] = {
+    "4h": "Every 4 hours",
+    "daily": "Daily",
+    "2days": "Every 2 days",
+    "weekly": "Weekly",
+    "monthly": "Monthly",
 }
 
 
-def assert_sources_have_jobs(config: AppConfig) -> None:
-    for name, source_cfg in config.sources.items():
-        if source_cfg.enabled and name not in SOURCE_TO_JOB:
-            raise ValueError(
-                f"Enabled source {name!r} has no job mapping in SOURCE_TO_JOB. "
-                "Register it before starting the scheduler."
-            )
+def _build_trigger(
+    frequency: str, time_str: str, timezone: str
+) -> IntervalTrigger | CronTrigger:
+    """Return the APScheduler trigger for *frequency* and *time_str* (HH:MM)."""
+    hour, minute = (int(p) for p in time_str.split(":"))
+    if frequency == "4h":
+        return IntervalTrigger(hours=4, timezone=timezone)
+    if frequency == "daily":
+        return CronTrigger(hour=hour, minute=minute, timezone=timezone)
+    if frequency == "2days":
+        return CronTrigger(
+            hour=hour, minute=minute, day="*/2", timezone=timezone
+        )
+    if frequency == "weekly":
+        return CronTrigger(
+            day_of_week="mon", hour=hour, minute=minute, timezone=timezone
+        )
+    if frequency == "monthly":
+        return CronTrigger(
+            day=1, hour=hour, minute=minute, timezone=timezone
+        )
+    raise ValueError(f"Unknown frequency: {frequency!r}")
 
 
-def build_scheduler(
-    config: AppConfig,
-    *,
-    run_pipeline_for: Callable[[list[str]], Any],
-    start: bool = True,
-) -> BackgroundScheduler:
-    """Create an APScheduler with one job per active pipeline group.
+class SchedulerManager:
+    """Manages a single scheduled pipeline job."""
 
-    `run_pipeline_for(source_names)` is the callback that the scheduler invokes.
-    """
-    assert_sources_have_jobs(config)
+    JOB_ID = "scheduled_pipeline_run"
 
-    scheduler = BackgroundScheduler(timezone=config.ui.timezone)
+    def __init__(
+        self,
+        *,
+        scheduler: BackgroundScheduler,
+        run_fn: Callable[[], None],
+    ) -> None:
+        self._scheduler = scheduler
+        self._run_fn = run_fn
+        self._timezone: str = str(scheduler.timezone)
 
-    grouped: dict[str, list[str]] = {}
-    grouped_interval: dict[str, int] = {}
-    for source_name, source_cfg in config.sources.items():
-        if not source_cfg.enabled:
-            continue
-        job_name = SOURCE_TO_JOB[source_name]
-        grouped.setdefault(job_name, []).append(source_name)
-        # Use the minimum interval of any source in the group.
-        prev = grouped_interval.get(job_name)
-        if prev is None or source_cfg.interval_hours < prev:
-            grouped_interval[job_name] = source_cfg.interval_hours
+    def apply_schedule(self, frequency: str, time_str: str) -> None:
+        """Remove any existing job and add a new one with the given trigger."""
+        existing = self._scheduler.get_job(self.JOB_ID)
+        if existing is not None:
+            self._scheduler.remove_job(self.JOB_ID)
 
-    for job_name, sources in grouped.items():
-        scheduler.add_job(
-            run_pipeline_for,
-            trigger=IntervalTrigger(hours=grouped_interval[job_name]),
-            id=job_name,
-            name=job_name,
-            args=(sources,),
+        trigger = _build_trigger(frequency, time_str, self._timezone)
+        self._scheduler.add_job(
+            self._run_fn,
+            trigger=trigger,
+            id=self.JOB_ID,
+            name="Scheduled pipeline run",
+            max_instances=1,
             replace_existing=True,
         )
+        logger.info(
+            "Scheduled pipeline: frequency=%s, time=%s", frequency, time_str
+        )
 
-    if start:
-        scheduler.start()
-    return scheduler
+    def pause(self) -> None:
+        """Pause the scheduled job (it stays registered but won't fire)."""
+        if self._scheduler.get_job(self.JOB_ID) is not None:
+            self._scheduler.pause_job(self.JOB_ID)
+            logger.info("Scheduler paused")
+
+    def resume(self) -> None:
+        """Resume a paused job."""
+        if self._scheduler.get_job(self.JOB_ID) is not None:
+            self._scheduler.resume_job(self.JOB_ID)
+            logger.info("Scheduler resumed")
+
+    def next_run_time(self) -> datetime | None:
+        """Return the next fire time, or None if paused/no job."""
+        job = self._scheduler.get_job(self.JOB_ID)
+        if job is None:
+            return None
+        return job.next_run_time
+
+    def is_running(self) -> bool:
+        """True if the scheduler is started and the job is active (not paused)."""
+        job = self._scheduler.get_job(self.JOB_ID)
+        if job is None:
+            return False
+        return job.next_run_time is not None
