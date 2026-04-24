@@ -72,22 +72,27 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from apscheduler.schedulers.background import BackgroundScheduler  # noqa: PLC0415
-
         from regwatch.db.models import AuthorizationType  # noqa: PLC0415
         from regwatch.pipeline.run_helpers import run_pipeline_background  # noqa: PLC0415
         from regwatch.services.cssf_discovery import CssfDiscoveryService  # noqa: PLC0415
+        from regwatch.services.discovery import DiscoveryService  # noqa: PLC0415
 
         bg_scheduler = BackgroundScheduler(timezone=config.ui.timezone)
-
         pipeline_progress = PipelineProgress()
 
+        def _any_process_running() -> bool:
+            if pipeline_progress.snapshot()["status"] == "running":
+                return True
+            dp = getattr(app.state, "cssf_discovery_progress", None)
+            if dp and getattr(dp, "status", "idle") == "running":
+                return True
+            return False
+
         def _scheduled_pipeline() -> None:
-            snap = pipeline_progress.snapshot()
-            if snap["status"] == "running":
-                logger.info("Scheduled pipeline tick skipped — already running")
+            if _any_process_running():
+                logger.info("Scheduled pipeline skipped — another process running")
                 return
-            from datetime import UTC  # noqa: PLC0415
-            from datetime import datetime as dt
+            from datetime import UTC, datetime as dt  # noqa: PLC0415
             pipeline_progress.reset_for_run(total_sources=0)
             pipeline_progress.message = "Scheduled pipeline run starting..."
             pipeline_progress.started_at = dt.now(UTC)
@@ -98,15 +103,36 @@ def create_app() -> FastAPI:
                 progress=pipeline_progress,
             )
 
+        def _scheduled_discovery() -> None:
+            if _any_process_running():
+                logger.info("Scheduled discovery skipped — another process running")
+                return
+            logger.info("Scheduled CSSF discovery (incremental) starting")
+            try:
+                auth_types = [
+                    AuthorizationType(a.type)
+                    for a in config.entity.authorizations
+                ]
+                service = CssfDiscoveryService(
+                    session_factory=session_factory,
+                    config=config.cssf_discovery,
+                )
+                service.run(
+                    entity_types=auth_types,
+                    mode="incremental",
+                    triggered_by="SCHEDULER",
+                )
+                logger.info("Scheduled CSSF discovery completed")
+            except Exception:  # noqa: BLE001
+                logger.exception("Scheduled CSSF discovery failed")
+
         def _scheduled_reconciliation() -> None:
-            # Skip if the pipeline is currently writing to avoid SQLite lock contention.
-            snap = pipeline_progress.snapshot()
-            if snap["status"] == "running":
+            if _any_process_running():
                 logger.info(
-                    "Scheduled reconciliation skipped — pipeline is running"
+                    "Scheduled reconciliation skipped — another process running"
                 )
                 return
-            logger.info("Scheduled CSSF reconciliation starting")
+            logger.info("Scheduled CSSF reconciliation (full) starting")
             try:
                 auth_types = [
                     AuthorizationType(a.type)
@@ -125,36 +151,53 @@ def create_app() -> FastAPI:
             except Exception:  # noqa: BLE001
                 logger.exception("Scheduled CSSF reconciliation failed")
 
+        def _scheduled_analysis() -> None:
+            if _any_process_running():
+                logger.info("Scheduled analysis skipped — another process running")
+                return
+            logger.info("Scheduled catalog refresh & analysis starting")
+            try:
+                auth_types = [a.type for a in config.entity.authorizations]
+                with session_factory() as s:
+                    svc = DiscoveryService(s, llm=app.state.llm_client)
+                    svc.classify_catalog()
+                    svc.discover_missing(auth_types)
+                    s.commit()
+                logger.info("Scheduled catalog refresh & analysis completed")
+            except Exception:  # noqa: BLE001
+                logger.exception("Scheduled catalog refresh & analysis failed")
+
+        SM = SchedulerManager
         scheduler_manager = SchedulerManager(
             scheduler=bg_scheduler,
-            pipeline_fn=_scheduled_pipeline,
-            reconciliation_fn=_scheduled_reconciliation,
+            jobs={
+                SM.PIPELINE_JOB_ID: _scheduled_pipeline,
+                SM.DISCOVERY_JOB_ID: _scheduled_discovery,
+                SM.RECONCILIATION_JOB_ID: _scheduled_reconciliation,
+                SM.ANALYSIS_JOB_ID: _scheduled_analysis,
+            },
         )
 
-        # Read schedule settings from DB.
+        # DB key prefix -> (job_id, default_enabled, default_freq, default_time)
+        job_defaults = {
+            "scheduler_": (SM.PIPELINE_JOB_ID, "true", "2days", "06:00"),
+            "discovery_": (SM.DISCOVERY_JOB_ID, "true", "weekly", "05:30"),
+            "reconciliation_": (
+                SM.RECONCILIATION_JOB_ID, "true", "weekly", "05:00",
+            ),
+            "analysis_": (SM.ANALYSIS_JOB_ID, "false", "monthly", "04:00"),
+        }
         with session_factory() as session:
             svc = SettingsService(session)
-            # Pipeline schedule
-            sched_enabled = svc.get("scheduler_enabled", "true") or "true"
-            sched_freq = svc.get("scheduler_frequency", "2days") or "2days"
-            sched_time = svc.get("scheduler_time", "06:00") or "06:00"
-            # Reconciliation schedule
-            recon_enabled = svc.get("reconciliation_enabled", "true") or "true"
-            recon_freq = svc.get("reconciliation_frequency", "weekly") or "weekly"
-            recon_time = svc.get("reconciliation_time", "05:00") or "05:00"
+            for prefix, (job_id, def_en, def_fr, def_ti) in job_defaults.items():
+                enabled = svc.get(f"{prefix}enabled", def_en) or def_en
+                freq = svc.get(f"{prefix}frequency", def_fr) or def_fr
+                time_str = svc.get(f"{prefix}time", def_ti) or def_ti
+                scheduler_manager.apply_schedule(job_id, freq, time_str)
+                if enabled != "true":
+                    scheduler_manager.pause(job_id)
 
-        scheduler_manager.apply_schedule(
-            SchedulerManager.PIPELINE_JOB_ID, sched_freq, sched_time
-        )
-        scheduler_manager.apply_schedule(
-            SchedulerManager.RECONCILIATION_JOB_ID, recon_freq, recon_time
-        )
         bg_scheduler.start()
-        if sched_enabled != "true":
-            scheduler_manager.pause(SchedulerManager.PIPELINE_JOB_ID)
-        if recon_enabled != "true":
-            scheduler_manager.pause(SchedulerManager.RECONCILIATION_JOB_ID)
-
         app.state.scheduler_manager = scheduler_manager
         app.state.pipeline_progress = pipeline_progress
         yield
