@@ -1,6 +1,7 @@
 """FastAPI application factory."""
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -21,8 +22,10 @@ from regwatch.db.schema_sync import sync_schema
 from regwatch.db.virtual_tables import create_virtual_tables
 from regwatch.llm.client import LLMClient
 from regwatch.pipeline.progress import PipelineProgress
-from regwatch.scheduler.jobs import build_scheduler
+from regwatch.scheduler.jobs import SchedulerManager
 from regwatch.services.settings import SettingsService
+
+logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).parent / "web" / "templates"
 _STATIC_DIR = Path(__file__).parent / "web" / "static"
@@ -68,17 +71,51 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        scheduler = build_scheduler(
-            config,
-            run_pipeline_for=lambda sources: None,
-            start=False,
+        from apscheduler.schedulers.background import BackgroundScheduler  # noqa: PLC0415
+        from regwatch.pipeline.run_helpers import run_pipeline_background  # noqa: PLC0415
+
+        bg_scheduler = BackgroundScheduler(timezone=config.ui.timezone)
+
+        pipeline_progress = PipelineProgress()
+
+        def _scheduled_run() -> None:
+            snap = pipeline_progress.snapshot()
+            if snap["status"] == "running":
+                logger.info("Scheduled tick skipped — pipeline already running")
+                return
+            from datetime import UTC, datetime as dt  # noqa: PLC0415
+            pipeline_progress.reset_for_run(total_sources=0)
+            pipeline_progress.message = "Scheduled pipeline run starting..."
+            pipeline_progress.started_at = dt.now(UTC)
+            run_pipeline_background(
+                session_factory=session_factory,
+                config=config,
+                llm_client=app.state.llm_client,
+                progress=pipeline_progress,
+            )
+
+        scheduler_manager = SchedulerManager(
+            scheduler=bg_scheduler,
+            run_fn=_scheduled_run,
         )
-        app.state.scheduler = scheduler
-        app.state.config = config
-        app.state.session_factory = session_factory
+
+        # Read schedule settings from DB.
+        with session_factory() as session:
+            svc = SettingsService(session)
+            sched_enabled = svc.get("scheduler_enabled", "true")
+            sched_freq = svc.get("scheduler_frequency", "2days")
+            sched_time = svc.get("scheduler_time", "06:00")
+
+        scheduler_manager.apply_schedule(sched_freq, sched_time)
+        bg_scheduler.start()
+        if sched_enabled != "true":
+            scheduler_manager.pause()
+
+        app.state.scheduler_manager = scheduler_manager
+        app.state.pipeline_progress = pipeline_progress
         yield
-        if scheduler.running:
-            scheduler.shutdown(wait=False)
+        if bg_scheduler.running:
+            bg_scheduler.shutdown(wait=False)
 
     app = FastAPI(title="Regulatory Watcher", lifespan=lifespan)
     templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
@@ -103,6 +140,9 @@ def create_app() -> FastAPI:
         embedding_model=embedding_model,
         timeout=float(config.analysis.llm_call_timeout_seconds),
     )
+    # Provide a default PipelineProgress so that routes work even when
+    # the lifespan has not run yet (e.g. in tests without a context manager).
+    # The lifespan will overwrite this with the scheduler-managed instance.
     app.state.pipeline_progress = PipelineProgress()
     from regwatch.analysis.progress import AnalysisProgress
     app.state.analysis_progress = AnalysisProgress()
