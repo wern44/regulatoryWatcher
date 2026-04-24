@@ -20,7 +20,8 @@ class EsmaRssSource:
 
     def fetch(self, since: datetime) -> Iterator[RawDocument]:
         now = datetime.now(UTC)
-        with httpx.Client(timeout=30.0, follow_redirects=True, headers={"User-Agent": USER_AGENT}) as client:
+        headers = {"User-Agent": USER_AGENT}
+        with httpx.Client(timeout=30.0, follow_redirects=True, headers=headers) as client:
             response = client.get(self.url)
             response.raise_for_status()
             feed = feedparser.parse(response.content)

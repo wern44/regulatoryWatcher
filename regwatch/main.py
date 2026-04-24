@@ -72,9 +72,10 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from apscheduler.schedulers.background import BackgroundScheduler  # noqa: PLC0415
+
+        from regwatch.db.models import AuthorizationType  # noqa: PLC0415
         from regwatch.pipeline.run_helpers import run_pipeline_background  # noqa: PLC0415
         from regwatch.services.cssf_discovery import CssfDiscoveryService  # noqa: PLC0415
-        from regwatch.db.models import AuthorizationType  # noqa: PLC0415
 
         bg_scheduler = BackgroundScheduler(timezone=config.ui.timezone)
 
@@ -85,7 +86,8 @@ def create_app() -> FastAPI:
             if snap["status"] == "running":
                 logger.info("Scheduled pipeline tick skipped — already running")
                 return
-            from datetime import UTC, datetime as dt  # noqa: PLC0415
+            from datetime import UTC  # noqa: PLC0415
+            from datetime import datetime as dt
             pipeline_progress.reset_for_run(total_sources=0)
             pipeline_progress.message = "Scheduled pipeline run starting..."
             pipeline_progress.started_at = dt.now(UTC)

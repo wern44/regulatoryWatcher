@@ -76,10 +76,16 @@ def settings_view(
             .all()
         )
 
-    from regwatch.scheduler.jobs import SchedulerManager as SM  # noqa: PLC0415
+    from regwatch.scheduler.jobs import SchedulerManager  # noqa: PLC0415
     scheduler_manager = getattr(request.app.state, "scheduler_manager", None)
-    next_run = scheduler_manager.next_run_time(SM.PIPELINE_JOB_ID) if scheduler_manager else None
-    recon_next_run = scheduler_manager.next_run_time(SM.RECONCILIATION_JOB_ID) if scheduler_manager else None
+    next_run = (
+        scheduler_manager.next_run_time(SchedulerManager.PIPELINE_JOB_ID)
+        if scheduler_manager else None
+    )
+    recon_next_run = (
+        scheduler_manager.next_run_time(SchedulerManager.RECONCILIATION_JOB_ID)
+        if scheduler_manager else None
+    )
     tz = ZoneInfo(config.ui.timezone)
     server_time = datetime.now(tz).strftime("%H:%M")
 

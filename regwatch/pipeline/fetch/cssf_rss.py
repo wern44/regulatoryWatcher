@@ -20,7 +20,9 @@ class CssfRssSource:
 
     def __init__(self, keywords: list[str]) -> None:
         self.keywords = keywords
-        self._client = httpx.Client(timeout=30.0, follow_redirects=True, headers={"User-Agent": USER_AGENT})
+        self._client = httpx.Client(
+            timeout=30.0, follow_redirects=True, headers={"User-Agent": USER_AGENT},
+        )
 
     def fetch(self, since: datetime) -> Iterator[RawDocument]:
         seen_links: set[str] = set()

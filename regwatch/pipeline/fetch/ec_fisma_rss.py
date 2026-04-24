@@ -33,7 +33,8 @@ class EcFismaRssSource:
     def fetch(self, since: datetime) -> Iterator[RawDocument]:
         seen_links: set[str] = set()
         now = datetime.now(UTC)
-        with httpx.Client(timeout=30.0, follow_redirects=True, headers={"User-Agent": USER_AGENT}) as client:
+        headers = {"User-Agent": USER_AGENT}
+        with httpx.Client(timeout=30.0, follow_redirects=True, headers=headers) as client:
             for url in self._feed_urls():
                 response = client.get(url)
                 response.raise_for_status()
