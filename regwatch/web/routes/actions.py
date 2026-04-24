@@ -4,22 +4,29 @@ from __future__ import annotations
 import threading
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 
 from regwatch.pipeline.progress import PipelineProgress
 from regwatch.pipeline.run_helpers import run_pipeline_background
+from regwatch.pipeline.sources import SOURCE_GROUPS
 
 router = APIRouter()
 
 
 @router.post("/run-pipeline", response_class=HTMLResponse)
-def run_pipeline(request: Request) -> HTMLResponse:
+def run_pipeline(
+    request: Request,
+    group: str | None = Form(None),
+) -> HTMLResponse:
     """Start a pipeline run in a background thread and return the progress widget.
 
     The widget polls `/run-pipeline/status` every 2s via HTMX. If a run is
     already in flight, we return the live widget for the existing run
     instead of starting a duplicate.
+
+    If *group* is a valid key in :data:`SOURCE_GROUPS`, only those sources
+    are executed.
     """
     progress: PipelineProgress = request.app.state.pipeline_progress
     templates = request.app.state.templates
@@ -31,6 +38,10 @@ def run_pipeline(request: Request) -> HTMLResponse:
             "partials/pipeline_progress.html",
             {"progress": snapshot},
         )
+
+    source_names: list[str] | None = None
+    if group and group in SOURCE_GROUPS:
+        source_names = SOURCE_GROUPS[group]
 
     # Reset eagerly so the immediate response shows "running" instead of
     # whatever the previous run left behind. The background thread will call
@@ -46,6 +57,7 @@ def run_pipeline(request: Request) -> HTMLResponse:
             "config": request.app.state.config,
             "llm_client": request.app.state.llm_client,
             "progress": progress,
+            "source_names": source_names,
         },
         name="regwatch-pipeline",
         daemon=True,

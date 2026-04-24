@@ -16,14 +16,16 @@ def run_pipeline_background(
     config,
     llm_client,
     progress: PipelineProgress,
+    source_names: list[str] | None = None,
 ) -> None:
     """Run all enabled sources in a fresh DB session.
 
     Used by both the manual "Run pipeline now" button and the scheduler.
     Catches all exceptions and reports them via *progress*.
+    If *source_names* is set, only those sources are run.
     """
     try:
-        sources = build_enabled_sources(config)
+        sources = build_enabled_sources(config, only=source_names)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Pipeline source instantiation failed")
         progress.finish(run_id=None, error=f"{type(exc).__name__}: {exc}")

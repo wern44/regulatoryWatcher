@@ -150,7 +150,7 @@ def test_dashboard_renders_run_button_and_progress_slot(
 
     r = client.get("/")
     assert r.status_code == 200
-    assert "Run pipeline now" in r.text
+    assert "Run all sources" in r.text
     assert 'id="pipeline-progress-slot"' in r.text
     # No run yet, so the slot is empty (status == idle is filtered out).
     assert 'id="pipeline-progress"' not in r.text
@@ -183,7 +183,7 @@ def test_run_pipeline_error_marks_progress_as_failed(
     # Force build_enabled_sources to raise.
     import regwatch.pipeline.run_helpers as run_helpers_module
 
-    def boom(_cfg):  # type: ignore[no-untyped-def]
+    def boom(_cfg, **_kw):  # type: ignore[no-untyped-def]
         raise RuntimeError("kaboom")
 
     monkeypatch.setattr(run_helpers_module, "build_enabled_sources", boom)
