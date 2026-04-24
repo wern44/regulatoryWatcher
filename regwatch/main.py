@@ -99,6 +99,13 @@ def create_app() -> FastAPI:
             )
 
         def _scheduled_reconciliation() -> None:
+            # Skip if the pipeline is currently writing to avoid SQLite lock contention.
+            snap = pipeline_progress.snapshot()
+            if snap["status"] == "running":
+                logger.info(
+                    "Scheduled reconciliation skipped — pipeline is running"
+                )
+                return
             logger.info("Scheduled CSSF reconciliation starting")
             try:
                 auth_types = [
