@@ -72,6 +72,7 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from apscheduler.schedulers.background import BackgroundScheduler  # noqa: PLC0415
+
         from regwatch.db.models import AuthorizationType  # noqa: PLC0415
         from regwatch.pipeline.run_helpers import run_pipeline_background  # noqa: PLC0415
         from regwatch.services.cssf_discovery import CssfDiscoveryService  # noqa: PLC0415
@@ -92,7 +93,8 @@ def create_app() -> FastAPI:
             if _any_process_running():
                 logger.info("Scheduled pipeline skipped — another process running")
                 return
-            from datetime import UTC, datetime as dt  # noqa: PLC0415
+            from datetime import UTC  # noqa: PLC0415
+            from datetime import datetime as dt
             pipeline_progress.reset_for_run(total_sources=0)
             pipeline_progress.message = "Scheduled pipeline run starting..."
             pipeline_progress.started_at = dt.now(UTC)
@@ -167,25 +169,24 @@ def create_app() -> FastAPI:
             except Exception:  # noqa: BLE001
                 logger.exception("Scheduled catalog refresh & analysis failed")
 
-        SM = SchedulerManager
         scheduler_manager = SchedulerManager(
             scheduler=bg_scheduler,
             jobs={
-                SM.PIPELINE_JOB_ID: _scheduled_pipeline,
-                SM.DISCOVERY_JOB_ID: _scheduled_discovery,
-                SM.RECONCILIATION_JOB_ID: _scheduled_reconciliation,
-                SM.ANALYSIS_JOB_ID: _scheduled_analysis,
+                SchedulerManager.PIPELINE_JOB_ID: _scheduled_pipeline,
+                SchedulerManager.DISCOVERY_JOB_ID: _scheduled_discovery,
+                SchedulerManager.RECONCILIATION_JOB_ID: _scheduled_reconciliation,
+                SchedulerManager.ANALYSIS_JOB_ID: _scheduled_analysis,
             },
         )
 
         # DB key prefix -> (job_id, default_enabled, default_freq, default_time)
         job_defaults = {
-            "scheduler_": (SM.PIPELINE_JOB_ID, "true", "2days", "06:00"),
-            "discovery_": (SM.DISCOVERY_JOB_ID, "true", "weekly", "05:30"),
+            "scheduler_": (SchedulerManager.PIPELINE_JOB_ID, "true", "2days", "06:00"),
+            "discovery_": (SchedulerManager.DISCOVERY_JOB_ID, "true", "weekly", "05:30"),
             "reconciliation_": (
-                SM.RECONCILIATION_JOB_ID, "true", "weekly", "05:00",
+                SchedulerManager.RECONCILIATION_JOB_ID, "true", "weekly", "05:00",
             ),
-            "analysis_": (SM.ANALYSIS_JOB_ID, "false", "monthly", "04:00"),
+            "analysis_": (SchedulerManager.ANALYSIS_JOB_ID, "false", "monthly", "04:00"),
         }
         with session_factory() as session:
             svc = SettingsService(session)
