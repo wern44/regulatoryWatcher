@@ -39,6 +39,18 @@ def run_pipeline(
             {"progress": snapshot},
         )
 
+    # Block if CSSF reconciliation is writing to the DB.
+    discovery_progress = getattr(request.app.state, "cssf_discovery_progress", None)
+    if discovery_progress and getattr(discovery_progress, "status", None) == "running":
+        progress.message = "Cannot start — CSSF reconciliation is running"
+        progress.status = "failed"
+        progress.error = "Wait for CSSF reconciliation to finish before running the pipeline."
+        return templates.TemplateResponse(
+            request,
+            "partials/pipeline_progress.html",
+            {"progress": progress.snapshot()},
+        )
+
     source_names: list[str] | None = None
     if group and group in SOURCE_GROUPS:
         source_names = SOURCE_GROUPS[group]

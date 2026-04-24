@@ -481,6 +481,14 @@ def catalog_discover_cssf(
     cfg = request.app.state.config
     progress = request.app.state.cssf_discovery_progress
 
+    # Prevent concurrent DB writes with the pipeline.
+    pipeline_progress = request.app.state.pipeline_progress
+    if pipeline_progress.snapshot()["status"] == "running":
+        return RedirectResponse(
+            "/settings?db_error=Cannot+start+reconciliation+while+pipeline+is+running",
+            status_code=303,
+        )
+
     if entity_types:
         auth_types: list[AuthorizationType] = []
         for name in entity_types:
