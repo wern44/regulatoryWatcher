@@ -8,7 +8,7 @@ from typing import Any
 from SPARQLWrapper import JSON, SPARQLWrapper
 
 from regwatch.domain.types import RawDocument
-from regwatch.pipeline.fetch.base import register_source
+from regwatch.pipeline.fetch.base import USER_AGENT, register_source
 
 ENDPOINT = "http://publications.europa.eu/webapi/rdf/sparql"
 
@@ -61,6 +61,8 @@ class EurLexProposalSource:
 
     def _run_query(self, query: str) -> dict[str, Any]:
         wrapper = SPARQLWrapper(ENDPOINT)
+        wrapper.addCustomHttpHeader("User-Agent", USER_AGENT)
+        wrapper.setTimeout(30)
         wrapper.setQuery(query)
         wrapper.setReturnFormat(JSON)
         return wrapper.queryAndConvert()  # type: ignore[return-value]

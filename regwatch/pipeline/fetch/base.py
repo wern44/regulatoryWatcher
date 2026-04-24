@@ -7,6 +7,8 @@ from typing import Protocol, runtime_checkable
 
 from regwatch.domain.types import RawDocument
 
+USER_AGENT = "RegulatoryWatcher/1.0"
+
 
 @runtime_checkable
 class Source(Protocol):

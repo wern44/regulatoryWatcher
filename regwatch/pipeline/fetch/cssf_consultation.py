@@ -15,7 +15,7 @@ import httpx
 from dateutil import parser as dateparser
 
 from regwatch.domain.types import RawDocument
-from regwatch.pipeline.fetch.base import register_source
+from regwatch.pipeline.fetch.base import USER_AGENT, register_source
 
 _BASE_URL = "https://www.cssf.lu/en/feed/publications"
 _CONSULTATION_KEYWORDS = (
@@ -31,7 +31,7 @@ class CssfConsultationSource:
 
     def fetch(self, since: datetime) -> Iterator[RawDocument]:
         now = datetime.now(UTC)
-        with httpx.Client(timeout=30.0, follow_redirects=True) as client:
+        with httpx.Client(timeout=30.0, follow_redirects=True, headers={"User-Agent": USER_AGENT}) as client:
             response = client.get(_BASE_URL)
             response.raise_for_status()
             feed = feedparser.parse(response.content)

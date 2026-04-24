@@ -15,7 +15,7 @@ import httpx
 from dateutil import parser as dateparser
 
 from regwatch.domain.types import RawDocument
-from regwatch.pipeline.fetch.base import register_source
+from regwatch.pipeline.fetch.base import USER_AGENT, register_source
 
 _BASE_URL = "https://ec.europa.eu/newsroom/fisma/feed"
 
@@ -33,7 +33,7 @@ class EcFismaRssSource:
     def fetch(self, since: datetime) -> Iterator[RawDocument]:
         seen_links: set[str] = set()
         now = datetime.now(UTC)
-        with httpx.Client(timeout=30.0, follow_redirects=True) as client:
+        with httpx.Client(timeout=30.0, follow_redirects=True, headers={"User-Agent": USER_AGENT}) as client:
             for url in self._feed_urls():
                 response = client.get(url)
                 response.raise_for_status()
