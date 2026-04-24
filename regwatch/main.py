@@ -72,20 +72,20 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from apscheduler.schedulers.background import BackgroundScheduler  # noqa: PLC0415
-
         from regwatch.pipeline.run_helpers import run_pipeline_background  # noqa: PLC0415
+        from regwatch.services.cssf_discovery import CssfDiscoveryService  # noqa: PLC0415
+        from regwatch.db.models import AuthorizationType  # noqa: PLC0415
 
         bg_scheduler = BackgroundScheduler(timezone=config.ui.timezone)
 
         pipeline_progress = PipelineProgress()
 
-        def _scheduled_run() -> None:
+        def _scheduled_pipeline() -> None:
             snap = pipeline_progress.snapshot()
             if snap["status"] == "running":
-                logger.info("Scheduled tick skipped — pipeline already running")
+                logger.info("Scheduled pipeline tick skipped — already running")
                 return
-            from datetime import UTC  # noqa: PLC0415
-            from datetime import datetime as dt
+            from datetime import UTC, datetime as dt  # noqa: PLC0415
             pipeline_progress.reset_for_run(total_sources=0)
             pipeline_progress.message = "Scheduled pipeline run starting..."
             pipeline_progress.started_at = dt.now(UTC)
@@ -96,24 +96,55 @@ def create_app() -> FastAPI:
                 progress=pipeline_progress,
             )
 
+        def _scheduled_reconciliation() -> None:
+            logger.info("Scheduled CSSF reconciliation starting")
+            try:
+                auth_types = [
+                    AuthorizationType(a.type)
+                    for a in config.entity.authorizations
+                ]
+                service = CssfDiscoveryService(
+                    session_factory=session_factory,
+                    config=config.cssf_discovery,
+                )
+                service.run(
+                    entity_types=auth_types,
+                    mode="full",
+                    triggered_by="SCHEDULER",
+                )
+                logger.info("Scheduled CSSF reconciliation completed")
+            except Exception:  # noqa: BLE001
+                logger.exception("Scheduled CSSF reconciliation failed")
+
         scheduler_manager = SchedulerManager(
             scheduler=bg_scheduler,
-            run_fn=_scheduled_run,
+            pipeline_fn=_scheduled_pipeline,
+            reconciliation_fn=_scheduled_reconciliation,
         )
 
         # Read schedule settings from DB.
         with session_factory() as session:
             svc = SettingsService(session)
-            sched_enabled = svc.get("scheduler_enabled", "true")
-            sched_freq = svc.get("scheduler_frequency", "2days")
-            sched_time = svc.get("scheduler_time", "06:00")
+            # Pipeline schedule
+            sched_enabled = svc.get("scheduler_enabled", "true") or "true"
+            sched_freq = svc.get("scheduler_frequency", "2days") or "2days"
+            sched_time = svc.get("scheduler_time", "06:00") or "06:00"
+            # Reconciliation schedule
+            recon_enabled = svc.get("reconciliation_enabled", "true") or "true"
+            recon_freq = svc.get("reconciliation_frequency", "weekly") or "weekly"
+            recon_time = svc.get("reconciliation_time", "05:00") or "05:00"
 
         scheduler_manager.apply_schedule(
-            sched_freq or "2days", sched_time or "06:00"
+            SchedulerManager.PIPELINE_JOB_ID, sched_freq, sched_time
+        )
+        scheduler_manager.apply_schedule(
+            SchedulerManager.RECONCILIATION_JOB_ID, recon_freq, recon_time
         )
         bg_scheduler.start()
         if sched_enabled != "true":
-            scheduler_manager.pause()
+            scheduler_manager.pause(SchedulerManager.PIPELINE_JOB_ID)
+        if recon_enabled != "true":
+            scheduler_manager.pause(SchedulerManager.RECONCILIATION_JOB_ID)
 
         app.state.scheduler_manager = scheduler_manager
         app.state.pipeline_progress = pipeline_progress

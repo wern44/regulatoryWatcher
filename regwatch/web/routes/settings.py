@@ -67,8 +67,9 @@ def settings_view(
             .all()
         )
 
+    from regwatch.scheduler.jobs import SchedulerManager as SM  # noqa: PLC0415
     scheduler_manager = getattr(request.app.state, "scheduler_manager", None)
-    next_run = scheduler_manager.next_run_time() if scheduler_manager else None
+    next_run = scheduler_manager.next_run_time(SM.PIPELINE_JOB_ID) if scheduler_manager else None
     tz = ZoneInfo(config.ui.timezone)
     server_time = datetime.now(tz).strftime("%H:%M")
 
@@ -160,12 +161,15 @@ def save_schedule(
         svc.set("scheduler_time", scheduler_time)
         session.commit()
 
+    from regwatch.scheduler.jobs import SchedulerManager  # noqa: PLC0415
     manager = request.app.state.scheduler_manager
-    manager.apply_schedule(scheduler_frequency, scheduler_time)
+    manager.apply_schedule(
+        SchedulerManager.PIPELINE_JOB_ID, scheduler_frequency, scheduler_time
+    )
     if enabled:
-        manager.resume()
+        manager.resume(SchedulerManager.PIPELINE_JOB_ID)
     else:
-        manager.pause()
+        manager.pause(SchedulerManager.PIPELINE_JOB_ID)
 
     return RedirectResponse(url="/settings", status_code=303)
 
