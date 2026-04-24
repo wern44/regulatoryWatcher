@@ -82,3 +82,31 @@ def test_save_schedule_pauses_when_disabled(
     )
     # No scheduler_enabled field means the checkbox was unchecked.
     assert resp.status_code == 303
+
+
+def test_settings_page_shows_reconciliation_section(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+    resp = client.get("/settings")
+    assert resp.status_code == 200
+    assert "Scheduled Reconciliation" in resp.text
+    assert "reconciliation_frequency" in resp.text
+
+
+def test_save_reconciliation_schedule_persists(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+    resp = client.post(
+        "/settings/save-reconciliation-schedule",
+        data={
+            "reconciliation_enabled": "true",
+            "reconciliation_frequency": "monthly",
+            "reconciliation_time": "04:00",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    resp2 = client.get("/settings")
+    assert "monthly" in resp2.text
