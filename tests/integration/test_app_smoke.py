@@ -50,3 +50,30 @@ def test_settings_page_shows_full_reconciliation_button(tmp_path: Path, monkeypa
     assert "Run full CSSF reconciliation" in body
     assert 'action="/catalog/discover-cssf"' in body
     assert 'name="mode" value="full"' in body
+
+
+def test_first_startup_redirect_does_not_fire_on_htmx_requests(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Regression: when no chat_model is set, FirstStartupMiddleware redirects
+    every non-/static non-/settings request to /settings/setup. Plain browser
+    navigation should still redirect, but htmx polls (e.g. /status-bar fires
+    on every page load) must NOT — htmx would follow the 307, swap the entire
+    /settings/setup page into the tiny status-bar fragment slot, and the
+    injected page's own status-bar poll would loop, stacking sidebars.
+    """
+    client = _client(tmp_path, monkeypatch)
+    # Simulate the production "no LLM configured" state.
+    client.app.state.llm_client.chat_model = ""
+
+    plain = client.get("/status-bar", follow_redirects=False)
+    assert plain.status_code == 307
+    assert plain.headers["location"] == "/settings/setup"
+
+    htmx = client.get(
+        "/status-bar",
+        headers={"HX-Request": "true"},
+        follow_redirects=False,
+    )
+    assert htmx.status_code == 200
+    assert htmx.text == ""

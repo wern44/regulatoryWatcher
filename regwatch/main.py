@@ -14,6 +14,7 @@ from sqlalchemy.orm import sessionmaker
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import RedirectResponse as StarletteRedirect
+from starlette.responses import Response
 
 from regwatch.config import load_config
 from regwatch.db.engine import create_app_engine
@@ -37,6 +38,15 @@ class FirstStartupMiddleware(BaseHTTPMiddleware):
         if path.startswith("/static") or path.startswith("/settings"):
             return await call_next(request)
         if not request.app.state.llm_client.chat_model:
+            # HTMX requests must NOT receive the 307 redirect: htmx would
+            # follow it, swap the entire /settings/setup page (which itself
+            # extends base.html and includes the sidebar) into the small
+            # fragment slot that issued the request, and the newly-injected
+            # page's own status-bar poll would fire immediately, looping
+            # and visually stacking sidebars. Return an empty 200 instead
+            # so the swap clears the slot harmlessly.
+            if request.headers.get("hx-request", "").lower() == "true":
+                return Response(content="", status_code=200)
             return StarletteRedirect(url="/settings/setup")
         return await call_next(request)
 
