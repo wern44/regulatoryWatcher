@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from threading import RLock
+from threading import Event, RLock
 from typing import Any
 
 
@@ -43,6 +43,7 @@ class PipelineProgress:
     run_id: int | None = None
 
     _lock: RLock = field(default_factory=RLock, repr=False, compare=False)
+    _cancel_event: Event = field(default_factory=Event, repr=False, compare=False)
 
     def reset_for_run(self, total_sources: int) -> None:
         with self._lock:
@@ -62,6 +63,7 @@ class PipelineProgress:
             self.message = "Starting pipeline..."
             self.error = None
             self.run_id = None
+            self._cancel_event.clear()
 
     def begin_source(self, name: str, index: int) -> None:
         with self._lock:
@@ -96,14 +98,32 @@ class PipelineProgress:
         with self._lock:
             self.docs_skipped += 1
 
-    def finish(self, *, run_id: int | None, error: str | None = None) -> None:
+    def request_cancel(self) -> None:
+        with self._lock:
+            self._cancel_event.set()
+            if self.status == "running":
+                self.message = "Cancellation requested — finishing current document…"
+
+    @property
+    def is_cancel_requested(self) -> bool:
+        return self._cancel_event.is_set()
+
+    def finish(
+        self, *, run_id: int | None, error: str | None = None, aborted: bool = False
+    ) -> None:
         with self._lock:
             self.finished_at = datetime.now(UTC)
             self.run_id = run_id
             self.current_phase = "DONE"
             self.current_source = None
             self.current_doc_title = None
-            if error:
+            if aborted:
+                self.status = "aborted"
+                self.message = (
+                    f"Aborted by user — kept {self.events_created} event(s), "
+                    f"{self.versions_created} version(s)."
+                )
+            elif error:
                 self.status = "failed"
                 self.error = error
                 self.message = f"Pipeline failed: {error}"
@@ -126,6 +146,7 @@ class PipelineProgress:
                 "current_phase": self.current_phase,
                 "docs_seen": self.docs_seen,
                 "docs_skipped": self.docs_skipped,
+                "cancel_requested": self._cancel_event.is_set(),
                 "current_doc_title": self.current_doc_title,
                 "events_created": self.events_created,
                 "versions_created": self.versions_created,

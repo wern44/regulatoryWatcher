@@ -95,3 +95,36 @@ def test_docs_skipped_counter_starts_at_zero_and_resets() -> None:
 
     p.reset_for_run(total_sources=1)
     assert p.snapshot()["docs_skipped"] == 0
+
+
+def test_cancel_event_starts_unset_and_can_be_requested() -> None:
+    p = PipelineProgress()
+    assert p.is_cancel_requested is False
+    assert p.snapshot()["cancel_requested"] is False
+
+    p.request_cancel()
+    assert p.is_cancel_requested is True
+    assert p.snapshot()["cancel_requested"] is True
+
+
+def test_reset_for_run_clears_cancel_event() -> None:
+    p = PipelineProgress()
+    p.request_cancel()
+    p.reset_for_run(total_sources=1)
+    assert p.is_cancel_requested is False
+    assert p.snapshot()["cancel_requested"] is False
+
+
+def test_finish_with_aborted_marks_status_aborted() -> None:
+    p = PipelineProgress()
+    p.reset_for_run(total_sources=1)
+    p.add_persist_result(events=2, versions=1)
+    p.request_cancel()
+    p.finish(run_id=11, aborted=True)
+
+    s = p.snapshot()
+    assert s["status"] == "aborted"
+    assert s["run_id"] == 11
+    assert s["events_created"] == 2
+    assert s["versions_created"] == 1
+    assert "Aborted by user" in s["message"]
