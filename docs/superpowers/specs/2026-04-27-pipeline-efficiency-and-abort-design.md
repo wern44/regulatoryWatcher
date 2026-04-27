@@ -51,7 +51,7 @@ extract  →  hash  →  in DB?
    - Run a single `SELECT 1 FROM update_event WHERE content_hash = :hash LIMIT 1`.
    - If a row exists: increment `progress.docs_skipped`, log at DEBUG level, continue to the next raw document.
    - Otherwise: proceed with `_match` and `persist_matched` exactly as today.
-3. Inside `persist_matched`, the existing `select(UpdateEvent).where(...)` guard is removed. The runner is now the single source of truth for the dedupe decision.
+3. The existing `select(UpdateEvent).where(...)` guard inside `persist_matched` stays as a safety net. `UpdateEvent.content_hash` is `unique=True`, so removing the guard would turn the documented "calling persist_matched twice is a no-op" contract (`tests/integration/test_persist.py::test_persist_is_idempotent`) into an `IntegrityError`. The runner's pre-check is the fast path; persist's guard is the contract.
 
 ### Edge cases
 
@@ -109,7 +109,7 @@ Already supported: `RUNNING`, `COMPLETED`, `COMPLETED_WITH_ERRORS`. Add `ABORTED
 |------|--------|
 | `regwatch/pipeline/hashing.py` (new) | `text_for_hashing(extracted) -> str`, `content_hash(text) -> str` |
 | `regwatch/pipeline/runner.py` | Hash check between extract and match; cancel-event checks between sources and between docs; `ABORTED` status path |
-| `regwatch/pipeline/persist.py` | Use `hashing.py`; remove the now-redundant `UpdateEvent` existence guard |
+| `regwatch/pipeline/persist.py` | Use `hashing.py` for the hash formula. Keep the `UpdateEvent` existence guard as a safety net (the column is `unique=True` and `test_persist_is_idempotent` depends on it). |
 | `regwatch/pipeline/progress.py` | `cancel_event`, `request_cancel()`, `is_cancel_requested`, `docs_skipped`; `finish(aborted=...)` |
 | `regwatch/pipeline/run_helpers.py` | Pass abort state through to `progress.finish` |
 | `regwatch/web/routes/actions.py` | New `POST /run-pipeline/abort` endpoint |
