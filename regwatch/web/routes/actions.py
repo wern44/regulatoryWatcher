@@ -95,6 +95,28 @@ def run_pipeline_status(request: Request) -> HTMLResponse:
     )
 
 
+@router.post("/run-pipeline/abort", response_class=HTMLResponse)
+def run_pipeline_abort(request: Request) -> HTMLResponse:
+    """Request a cooperative cancel of the running pipeline.
+
+    No-op if the pipeline is not running. The runner picks up the flag
+    between documents and between sources; the in-flight document is
+    allowed to finish so the DB never sees a partial write.
+    """
+    progress: PipelineProgress = request.app.state.pipeline_progress
+    templates = request.app.state.templates
+
+    snapshot = progress.snapshot()
+    if snapshot["status"] == "running":
+        progress.request_cancel()
+
+    return templates.TemplateResponse(
+        request,
+        "partials/pipeline_progress.html",
+        {"progress": progress.snapshot()},
+    )
+
+
 @router.get("/status-bar", response_class=HTMLResponse)
 def status_bar(request: Request) -> HTMLResponse:
     """Global status bar fragment polled by base.html via HTMX."""

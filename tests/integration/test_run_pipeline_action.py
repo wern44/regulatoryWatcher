@@ -192,3 +192,27 @@ def test_run_pipeline_error_marks_progress_as_failed(
     final = _wait_until_idle_or_done(client)
     assert final["status"] == "failed"
     assert "RuntimeError" in (final["error"] or "")
+
+
+def test_abort_endpoint_sets_cancel_when_running(tmp_path: Path, monkeypatch) -> None:
+    client = _cssf_only_client(tmp_path, monkeypatch)
+    progress = client.app.state.pipeline_progress
+    progress.reset_for_run(total_sources=1)
+    progress.message = "running"
+
+    resp = client.post("/run-pipeline/abort")
+
+    assert resp.status_code == 200
+    assert progress.is_cancel_requested is True
+    assert "Cancellation requested" in progress.snapshot()["message"]
+
+
+def test_abort_endpoint_is_noop_when_idle(tmp_path: Path, monkeypatch) -> None:
+    client = _cssf_only_client(tmp_path, monkeypatch)
+    progress = client.app.state.pipeline_progress
+    # Do not start a run.
+
+    resp = client.post("/run-pipeline/abort")
+
+    assert resp.status_code == 200
+    assert progress.is_cancel_requested is False
