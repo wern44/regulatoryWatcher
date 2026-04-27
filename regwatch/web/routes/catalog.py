@@ -23,7 +23,7 @@ from regwatch.db.models import (
 )
 from regwatch.services.analysis import AnalysisService
 from regwatch.services.cssf_discovery import CssfDiscoveryService
-from regwatch.services.discovery import DiscoveryService
+from regwatch.services.discovery_runner import run_catalog_refresh
 from regwatch.services.regulations import (
     RegulationFilter,
     RegulationService,
@@ -564,12 +564,31 @@ def catalog_discover_cssf(
 
 @router.post("/catalog/refresh")
 def refresh_catalog(request: Request) -> RedirectResponse:
+    """Spawn a background worker that runs DiscoveryService against the LLM.
+
+    The worker drives `app.state.analysis_progress` so the run is visible in
+    the global status bar with a working Abort button. Re-entry is guarded:
+    if an analysis or refresh is already running, we just redirect back to
+    the catalog and let the existing run continue.
+    """
+    progress = request.app.state.analysis_progress
+    if getattr(progress, "status", "idle") == "running":
+        return RedirectResponse(url="/catalog?refresh=already-running", status_code=303)
+
     llm = request.app.state.llm_client
     config = request.app.state.config
+    sf = request.app.state.session_factory
     auth_types = [a.type for a in config.entity.authorizations]
-    with request.app.state.session_factory() as session:
-        svc = DiscoveryService(session, llm=llm)
-        svc.classify_catalog()
-        svc.discover_missing(auth_types)
-        session.commit()
-    return RedirectResponse(url="/catalog", status_code=303)
+
+    threading.Thread(
+        target=run_catalog_refresh,
+        kwargs={
+            "session_factory": sf,
+            "llm": llm,
+            "auth_types": auth_types,
+            "progress": progress,
+        },
+        name="regwatch-catalog-refresh",
+        daemon=True,
+    ).start()
+    return RedirectResponse(url="/catalog?refresh=started", status_code=303)

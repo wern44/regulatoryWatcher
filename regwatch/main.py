@@ -95,7 +95,7 @@ def create_app() -> FastAPI:
         from regwatch.db.models import AuthorizationType  # noqa: PLC0415
         from regwatch.pipeline.run_helpers import run_pipeline_background  # noqa: PLC0415
         from regwatch.services.cssf_discovery import CssfDiscoveryService  # noqa: PLC0415
-        from regwatch.services.discovery import DiscoveryService  # noqa: PLC0415
+        from regwatch.services.discovery_runner import run_catalog_refresh  # noqa: PLC0415
 
         bg_scheduler = BackgroundScheduler(timezone=config.ui.timezone)
         pipeline_progress = PipelineProgress()
@@ -105,6 +105,9 @@ def create_app() -> FastAPI:
                 return True
             dp = getattr(app.state, "cssf_discovery_progress", None)
             if dp and getattr(dp, "status", "idle") == "running":
+                return True
+            ap = getattr(app.state, "analysis_progress", None)
+            if ap and getattr(ap, "status", "idle") == "running":
                 return True
             return False
 
@@ -177,16 +180,17 @@ def create_app() -> FastAPI:
                 logger.info("Scheduled analysis skipped — another process running")
                 return
             logger.info("Scheduled catalog refresh & analysis starting")
-            try:
-                auth_types = [a.type for a in config.entity.authorizations]
-                with session_factory() as s:
-                    svc = DiscoveryService(s, llm=app.state.llm_client)
-                    svc.classify_catalog()
-                    svc.discover_missing(auth_types)
-                    s.commit()
-                logger.info("Scheduled catalog refresh & analysis completed")
-            except Exception:  # noqa: BLE001
-                logger.exception("Scheduled catalog refresh & analysis failed")
+            auth_types = [a.type for a in config.entity.authorizations]
+            run_catalog_refresh(
+                session_factory=session_factory,
+                llm=app.state.llm_client,
+                auth_types=auth_types,
+                progress=app.state.analysis_progress,
+            )
+            logger.info(
+                "Scheduled catalog refresh & analysis finished with status %s",
+                app.state.analysis_progress.status,
+            )
 
         scheduler_manager = SchedulerManager(
             scheduler=bg_scheduler,

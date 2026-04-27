@@ -5,6 +5,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from regwatch.analysis.progress import AnalysisProgress
 from regwatch.db.models import (
     DoraPillar,
     LifecycleStage,
@@ -48,14 +49,26 @@ class DiscoveryService:
         self._session = session
         self._llm = llm
 
-    def classify_catalog(self) -> int:
-        """Classify all regulations in the catalog. Returns count of updated regulations."""
+    def classify_catalog(
+        self, *, progress: AnalysisProgress | None = None
+    ) -> int:
+        """Classify all regulations in the catalog. Returns count of updated regulations.
+
+        If `progress` is provided, ticks once per regulation and stops early when
+        `progress.is_cancel_requested` becomes True.
+        """
         overrides = self._load_overrides()
         regulations = self._session.query(Regulation).all()
         updated = 0
+        total = len(regulations)
 
-        for reg in regulations:
+        for idx, reg in enumerate(regulations, start=1):
+            if progress is not None and progress.is_cancel_requested:
+                break
+
             ref = reg.reference_number
+            if progress is not None:
+                progress.tick(idx, total, f"Classifying: {ref}")
 
             # Check for user overrides — user decisions always win
             ict_override = overrides.get((ref, "SET_ICT")) or overrides.get((ref, "UNSET_ICT"))
@@ -102,14 +115,29 @@ class DiscoveryService:
         self._session.flush()
         return updated
 
-    def discover_missing(self, auth_types: list[str]) -> int:
-        """Ask the LLM to suggest missing regulations. Returns count added."""
+    def discover_missing(
+        self,
+        auth_types: list[str],
+        *,
+        progress: AnalysisProgress | None = None,
+    ) -> int:
+        """Ask the LLM to suggest missing regulations. Returns count added.
+
+        If `progress` is provided and a cancel has been requested, returns 0 without
+        calling the LLM.
+        """
+        if progress is not None and progress.is_cancel_requested:
+            return 0
+
         existing = self._session.query(Regulation).all()
         overrides = self._load_overrides()
 
         catalog_text = "\n".join(
             f"- {r.reference_number}: {r.title}" for r in existing
         )
+
+        if progress is not None:
+            progress.tick(progress.done, progress.total, "Discovering missing regulations…")
 
         try:
             reply = self._llm.chat(

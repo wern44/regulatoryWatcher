@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from regwatch.analysis.progress import AnalysisProgress
 from regwatch.db.models import (
     Base,
     LifecycleStage,
@@ -314,3 +315,85 @@ def test_discover_missing_returns_0_on_unparseable_reply(tmp_path: Path) -> None
     added = svc.discover_missing(["AIFM"])
     session.commit()
     assert added == 0
+
+
+def test_classify_catalog_ticks_progress_per_regulation(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    _add_regulation(session, "CSSF 18/698")
+    _add_regulation(session, "CSSF 20/750")
+
+    llm = MagicMock()
+    llm.chat.return_value = json.dumps({
+        "is_ict": True,
+        "dora_pillar": None,
+        "applicable_entity_types": ["ALL"],
+        "is_superseded": False,
+        "superseded_by": None,
+        "confidence": 0.9,
+    })
+
+    progress = AnalysisProgress()
+    progress.start(run_id=0, total=2)
+    svc = DiscoveryService(session, llm=llm)
+    svc.classify_catalog(progress=progress)
+
+    # Each regulation should have ticked the progress bar.
+    assert progress.done == 2
+    assert progress.current_label is not None
+    assert "CSSF" in progress.current_label
+
+
+def test_classify_catalog_aborts_on_cancel(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    _add_regulation(session, "CSSF 18/698")
+    _add_regulation(session, "CSSF 20/750")
+    _add_regulation(session, "CSSF 22/806")
+
+    progress = AnalysisProgress()
+    progress.start(run_id=0, total=3)
+
+    call_count = {"n": 0}
+
+    def fake_chat(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            # Simulate user pressing Abort after the first regulation.
+            progress.request_cancel()
+        return json.dumps({
+            "is_ict": True,
+            "dora_pillar": None,
+            "applicable_entity_types": ["ALL"],
+            "is_superseded": False,
+            "superseded_by": None,
+            "confidence": 0.9,
+        })
+
+    llm = MagicMock()
+    llm.chat.side_effect = fake_chat
+
+    svc = DiscoveryService(session, llm=llm)
+    svc.classify_catalog(progress=progress)
+
+    # After cancel, the loop should not call the LLM for the remaining 2.
+    assert call_count["n"] == 1
+
+
+def test_discover_missing_skips_when_cancelled(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    _add_regulation(session, "CSSF 18/698")
+
+    progress = AnalysisProgress()
+    progress.start(run_id=0, total=1)
+    progress.request_cancel()
+
+    llm = MagicMock()
+    llm.chat.return_value = json.dumps([
+        {"reference_number": "CSSF 99/999", "title": "x", "type": "CSSF_CIRCULAR"}
+    ])
+
+    svc = DiscoveryService(session, llm=llm)
+    added = svc.discover_missing(["AIFM"], progress=progress)
+
+    # Cancelled before LLM call — no LLM invocation, nothing added.
+    assert added == 0
+    assert llm.chat.call_count == 0
