@@ -42,7 +42,7 @@ def _add_regulation(session, *, ref, lifecycle, is_ict, deadline=None, created_a
     return reg
 
 
-def _add_event(session, *, fetched_at, content_hash):
+def _add_event(session, *, fetched_at, content_hash, review_status="NEW"):
     ev = UpdateEvent(
         source="cssf_rss",
         source_url=f"https://example.com/ev/{content_hash}",
@@ -53,7 +53,7 @@ def _add_event(session, *, fetched_at, content_hash):
         content_hash=content_hash,
         is_ict=False,
         severity="INFORMATIONAL",
-        review_status="NEW",
+        review_status=review_status,
     )
     session.add(ev)
     session.flush()
@@ -85,24 +85,50 @@ def test_missing_setting_keys_return_zero_counts(tmp_path):
     assert counts.deadlines == 0
 
 
-def test_inbox_counts_events_after_last_visit(tmp_path):
+def test_inbox_counts_events_with_review_status_NEW(tmp_path):
+    """Inbox badge tracks the same items the inbox page shows: NEW events."""
     session = _session(tmp_path)
-    cutoff = datetime(2026, 4, 1, tzinfo=UTC)
-    session.add(Setting(
-        key="last_visit_inbox", value=cutoff.isoformat(), updated_at=cutoff,
-    ))
+    now = datetime.now(UTC)
     _add_event(
-        session, fetched_at=cutoff - timedelta(days=1), content_hash="old",
+        session, fetched_at=now, content_hash="new1", review_status="NEW",
     )
     _add_event(
-        session, fetched_at=cutoff + timedelta(days=1), content_hash="new1",
-    )
-    _add_event(
-        session, fetched_at=cutoff + timedelta(days=2), content_hash="new2",
+        session, fetched_at=now, content_hash="new2", review_status="NEW",
     )
     session.commit()
 
     assert SidebarBadgeService(session).counts().inbox == 2
+
+
+def test_inbox_does_not_count_seen_or_archived(tmp_path):
+    session = _session(tmp_path)
+    now = datetime.now(UTC)
+    _add_event(
+        session, fetched_at=now, content_hash="new1", review_status="NEW",
+    )
+    _add_event(
+        session, fetched_at=now, content_hash="seen", review_status="SEEN",
+    )
+    _add_event(
+        session, fetched_at=now, content_hash="arch", review_status="ARCHIVED",
+    )
+    session.commit()
+
+    assert SidebarBadgeService(session).counts().inbox == 1
+
+
+def test_inbox_count_does_not_depend_on_last_visit_setting(tmp_path):
+    """Per the new semantic, mark_visited('inbox') does NOT clear the inbox
+    badge. Only triaging events (mark-seen, archive) reduces the count."""
+    session = _session(tmp_path)
+    now = datetime.now(UTC)
+    _add_event(session, fetched_at=now, content_hash="n1", review_status="NEW")
+    session.commit()
+
+    # Even if last_visit_inbox is set to "now", the NEW event still counts.
+    SidebarBadgeService(session).mark_visited("inbox")
+    session.commit()
+    assert SidebarBadgeService(session).counts().inbox == 1
 
 
 def test_catalog_counts_regulations_after_last_visit(tmp_path):
@@ -124,19 +150,32 @@ def test_catalog_counts_regulations_after_last_visit(tmp_path):
     assert SidebarBadgeService(session).counts().catalog == 1
 
 
-def test_ict_counts_only_is_ict_true(tmp_path):
+def test_ict_counts_only_is_ict_true_and_in_force(tmp_path):
+    """ICT badge mirrors the /ict page: is_ict=True AND lifecycle=IN_FORCE."""
     session = _session(tmp_path)
     cutoff = datetime(2026, 4, 1, tzinfo=UTC)
     session.add(Setting(
         key="last_visit_ict", value=cutoff.isoformat(), updated_at=cutoff,
     ))
+    # Visible: ICT + IN_FORCE.
     _add_regulation(
         session, ref="ICT", lifecycle=LifecycleStage.IN_FORCE,
         is_ict=True, created_at=cutoff + timedelta(days=1),
     )
+    # Hidden: not ICT.
     _add_regulation(
         session, ref="NOT", lifecycle=LifecycleStage.IN_FORCE,
         is_ict=False, created_at=cutoff + timedelta(days=1),
+    )
+    # Hidden: ICT but lifecycle is AMENDED.
+    _add_regulation(
+        session, ref="AMENDED", lifecycle=LifecycleStage.AMENDED,
+        is_ict=True, created_at=cutoff + timedelta(days=1),
+    )
+    # Hidden: ICT but lifecycle is REPEALED.
+    _add_regulation(
+        session, ref="REPEALED", lifecycle=LifecycleStage.REPEALED,
+        is_ict=True, created_at=cutoff + timedelta(days=1),
     )
     session.commit()
 
@@ -166,21 +205,58 @@ def test_drafts_counts_only_drafty_lifecycles(tmp_path):
     assert SidebarBadgeService(session).counts().drafts == 4
 
 
-def test_deadlines_counts_regulations_with_any_deadline_set(tmp_path):
-    from datetime import date
+def test_deadlines_counts_only_in_window_and_not_done(tmp_path):
+    """Badge filter must mirror the /deadlines page: in window, not done."""
+    from datetime import date, timedelta as td
     session = _session(tmp_path)
-    cutoff = datetime(2026, 4, 1, tzinfo=UTC)
+    cutoff = datetime.now(UTC) - timedelta(hours=1)
     session.add(Setting(
         key="last_visit_deadlines", value=cutoff.isoformat(), updated_at=cutoff,
     ))
+    today = date.today()
+    in_window = today + td(days=180)
+    out_of_window = today + td(days=900)  # > 730 days
+
+    # Visible: deadline within 730 days, not done.
     _add_regulation(
-        session, ref="HAS_DL", lifecycle=LifecycleStage.IN_FORCE, is_ict=False,
-        deadline=date(2027, 1, 1), created_at=cutoff + timedelta(days=1),
+        session, ref="VISIBLE", lifecycle=LifecycleStage.IN_FORCE, is_ict=False,
+        deadline=in_window, created_at=datetime.now(UTC),
     )
+    # Hidden: deadline beyond 730 days.
+    _add_regulation(
+        session, ref="FAR_FUTURE", lifecycle=LifecycleStage.IN_FORCE, is_ict=False,
+        deadline=out_of_window, created_at=datetime.now(UTC),
+    )
+    # Hidden: no deadline at all.
     _add_regulation(
         session, ref="NO_DL", lifecycle=LifecycleStage.IN_FORCE, is_ict=False,
-        deadline=None, created_at=cutoff + timedelta(days=1),
+        deadline=None, created_at=datetime.now(UTC),
     )
+    # Hidden: deadline in window but already marked done.
+    done_reg = _add_regulation(
+        session, ref="DONE", lifecycle=LifecycleStage.IN_FORCE, is_ict=False,
+        deadline=in_window, created_at=datetime.now(UTC),
+    )
+    done_reg.transposition_done = True
+    session.commit()
+
+    assert SidebarBadgeService(session).counts().deadlines == 1
+
+
+def test_deadlines_counts_application_date_too(tmp_path):
+    """application_date is the second deadline kind; it should also count."""
+    from datetime import date, timedelta as td
+    session = _session(tmp_path)
+    cutoff = datetime.now(UTC) - timedelta(hours=1)
+    session.add(Setting(
+        key="last_visit_deadlines", value=cutoff.isoformat(), updated_at=cutoff,
+    ))
+    today = date.today()
+    reg = _add_regulation(
+        session, ref="APP_DL", lifecycle=LifecycleStage.IN_FORCE, is_ict=False,
+        deadline=None, created_at=datetime.now(UTC),
+    )
+    reg.application_date = today + td(days=90)
     session.commit()
 
     assert SidebarBadgeService(session).counts().deadlines == 1

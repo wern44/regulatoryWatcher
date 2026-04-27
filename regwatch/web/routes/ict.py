@@ -18,7 +18,9 @@ router = APIRouter()
 @router.get("/ict", response_class=HTMLResponse)
 def ict(request: Request) -> HTMLResponse:
     with request.app.state.session_factory() as session:
-        regs = RegulationService(session).list(RegulationFilter(is_ict=True))
+        regs = RegulationService(session).list(
+            RegulationFilter(is_ict=True, lifecycle_stages=["IN_FORCE"])
+        )
         SidebarBadgeService(session).mark_visited("ict")
         session.commit()
     return render_page(

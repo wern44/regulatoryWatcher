@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from regwatch.db.models import LifecycleStage, Regulation, Setting, UpdateEvent
+
+# Same window the deadlines page uses (DeadlineService.upcoming(window_days=730)).
+_DEADLINE_WINDOW_DAYS = 730
 
 SECTION_KEYS: dict[str, str] = {
     "inbox": "last_visit_inbox",
@@ -77,12 +80,13 @@ class SidebarBadgeService:
         return ts
 
     def _count_inbox(self) -> int:
-        cutoff = self._last_visit("inbox")
-        if cutoff is None:
-            return 0
+        # Inbox badge tracks the same items the inbox page shows: events the
+        # user has not yet triaged (review_status='NEW'). The badge naturally
+        # clears as the user marks events SEEN or ARCHIVED — there is no
+        # last_visit timestamp involved.
         n = self._session.scalar(
             select(func.count(UpdateEvent.event_id)).where(
-                UpdateEvent.fetched_at > cutoff
+                UpdateEvent.review_status == "NEW"
             )
         )
         return int(n or 0)
@@ -99,6 +103,9 @@ class SidebarBadgeService:
         return int(n or 0)
 
     def _count_ict(self) -> int:
+        # Mirror the /ict page filter: lifecycle_stage=IN_FORCE only.
+        # Amended/repealed/draft regulations are not visible on the page,
+        # so they must not be counted in the badge either.
         cutoff = self._last_visit("ict")
         if cutoff is None:
             return 0
@@ -106,6 +113,7 @@ class SidebarBadgeService:
             select(func.count(Regulation.regulation_id)).where(
                 Regulation.created_at > cutoff,
                 Regulation.is_ict.is_(True),
+                Regulation.lifecycle_stage == LifecycleStage.IN_FORCE,
             )
         )
         return int(n or 0)
@@ -123,16 +131,30 @@ class SidebarBadgeService:
         return int(n or 0)
 
     def _count_deadlines(self) -> int:
+        # Mirror the filter used by the /deadlines page (DeadlineService.upcoming):
+        # a deadline date is only displayed when it is non-null, falls inside
+        # the next _DEADLINE_WINDOW_DAYS, and the matching done flag is False.
+        # Without these filters the badge could show "4" while the page is
+        # empty (e.g. all 4 deadlines are years out, or already done).
         cutoff = self._last_visit("deadlines")
         if cutoff is None:
             return 0
+        today = date.today()
+        window_end = today + timedelta(days=_DEADLINE_WINDOW_DAYS)
+        transposition_active = (
+            Regulation.transposition_deadline.is_not(None)
+            & (Regulation.transposition_deadline <= window_end)
+            & (Regulation.transposition_done.is_(False))
+        )
+        application_active = (
+            Regulation.application_date.is_not(None)
+            & (Regulation.application_date <= window_end)
+            & (Regulation.application_done.is_(False))
+        )
         n = self._session.scalar(
             select(func.count(Regulation.regulation_id)).where(
                 Regulation.created_at > cutoff,
-                (
-                    Regulation.transposition_deadline.is_not(None)
-                    | Regulation.application_date.is_not(None)
-                ),
+                or_(transposition_active, application_active),
             )
         )
         return int(n or 0)
