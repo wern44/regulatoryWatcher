@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any, cast
 
-from sqlalchemy import case, desc
+from sqlalchemy import case, desc, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from regwatch.db.models import UpdateEvent
@@ -124,6 +126,21 @@ class InboxService:
         if ev is None:
             raise ValueError(f"UpdateEvent {event_id} not found")
         ev.review_status = "ARCHIVED"
+
+    def mark_all_seen(self) -> int:
+        """Bulk-mark every NEW event as SEEN with seen_at=now().
+
+        Returns the number of rows updated. Operates on all NEW events
+        regardless of any UI filter — the route is invoked from a header
+        button that means "drain my inbox".
+        """
+        now = datetime.now(UTC)
+        result = cast(CursorResult[Any], self._session.execute(
+            update(UpdateEvent)
+            .where(UpdateEvent.review_status == "NEW")
+            .values(review_status="SEEN", seen_at=now)
+        ))
+        return int(result.rowcount or 0)
 
 
 def _to_dto(ev: UpdateEvent) -> UpdateEventDTO:

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -28,8 +28,8 @@ def _add_event(
         source=source,
         source_url=f"https://example.com/{content_hash or title}",
         title=title,
-        published_at=published_at or datetime.now(timezone.utc),
-        fetched_at=datetime.now(timezone.utc),
+        published_at=published_at or datetime.now(UTC),
+        fetched_at=datetime.now(UTC),
         raw_payload={},
         content_hash=(content_hash or title).ljust(64, "x"),
         is_ict=False,
@@ -80,7 +80,7 @@ def test_list_new_orders_by_severity_then_published_at_desc(
     tmp_path: Path,
 ) -> None:
     session = _session(tmp_path)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     _add_event(
         session,
         severity="MATERIAL",
@@ -172,3 +172,57 @@ def test_archive_transitions_to_archived(tmp_path: Path) -> None:
     refreshed = session.get(UpdateEvent, ev.event_id)
     assert refreshed is not None
     assert refreshed.review_status == "ARCHIVED"
+
+
+def test_mark_all_seen_marks_every_new_event(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    e1 = _add_event(
+        session, severity="CRITICAL", review_status="NEW", content_hash="n1"
+    )
+    e2 = _add_event(
+        session, severity="MATERIAL", review_status="NEW", content_hash="n2"
+    )
+    e3 = _add_event(
+        session, severity="INFORMATIONAL", review_status="NEW", content_hash="n3"
+    )
+    seen = _add_event(
+        session, severity="MATERIAL", review_status="SEEN", content_hash="s1"
+    )
+    archived = _add_event(
+        session, severity="MATERIAL", review_status="ARCHIVED", content_hash="a1"
+    )
+    session.commit()
+
+    svc = InboxService(session)
+    count = svc.mark_all_seen()
+    session.commit()
+
+    assert count == 3
+    assert svc.count_new() == 0
+
+    # Previously-NEW rows are now SEEN with seen_at set.
+    for ev_id in (e1.event_id, e2.event_id, e3.event_id):
+        ev = session.get(UpdateEvent, ev_id)
+        assert ev is not None
+        assert ev.review_status == "SEEN"
+        assert ev.seen_at is not None
+
+    # Previously SEEN/ARCHIVED rows are untouched.
+    seen_after = session.get(UpdateEvent, seen.event_id)
+    archived_after = session.get(UpdateEvent, archived.event_id)
+    assert seen_after is not None and seen_after.review_status == "SEEN"
+    assert archived_after is not None and archived_after.review_status == "ARCHIVED"
+
+
+def test_mark_all_seen_returns_zero_when_inbox_empty(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    _add_event(
+        session, severity="MATERIAL", review_status="SEEN", content_hash="s",
+    )
+    session.commit()
+
+    svc = InboxService(session)
+    count = svc.mark_all_seen()
+    session.commit()
+
+    assert count == 0
