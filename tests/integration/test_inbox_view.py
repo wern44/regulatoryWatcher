@@ -75,3 +75,33 @@ def test_archive_removes_from_new_list(tmp_path: Path, monkeypatch) -> None:
         ev = session.get(UpdateEvent, eid)
         assert ev is not None
         assert ev.review_status == "ARCHIVED"
+
+
+def test_mark_all_seen_endpoint_clears_inbox_and_redirects(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+    _seed_event(tmp_path / "app.db", title="A", content_hash="a" * 64)
+    _seed_event(tmp_path / "app.db", title="B", content_hash="b" * 64)
+
+    # Pre-condition: both events visible.
+    pre = client.get("/inbox")
+    assert "Inbox (2 new)" in pre.text
+
+    # POST without following the redirect.
+    resp = client.post("/inbox/mark-all-seen", follow_redirects=False)
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/inbox"
+
+    # After the redirect target loads, the inbox is empty.
+    follow = client.get("/inbox")
+    assert "Inbox (0 new)" in follow.text
+
+    # DB rows actually changed to SEEN.
+    engine = create_app_engine(tmp_path / "app.db")
+    with Session(engine) as session:
+        rows = session.query(UpdateEvent).all()
+        assert len(rows) == 2
+        for ev in rows:
+            assert ev.review_status == "SEEN"
+            assert ev.seen_at is not None

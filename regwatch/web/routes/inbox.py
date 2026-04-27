@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from regwatch.services.inbox import SOURCE_DISPLAY_NAMES, InboxService
 from regwatch.web.templates_context import render_page
@@ -39,6 +39,19 @@ def inbox_list(
             "show_all": show_all,
         },
     )
+
+
+@router.post("/mark-all-seen")
+def mark_all_seen(request: Request) -> RedirectResponse:
+    """Mark every NEW event as SEEN, then redirect back to the inbox.
+
+    Always operates on the full set of NEW events; UI filters are
+    intentionally ignored.
+    """
+    with request.app.state.session_factory() as session:
+        InboxService(session).mark_all_seen()
+        session.commit()
+    return RedirectResponse(url="/inbox", status_code=303)
 
 
 @router.post("/{event_id}/mark-seen", response_class=HTMLResponse)
