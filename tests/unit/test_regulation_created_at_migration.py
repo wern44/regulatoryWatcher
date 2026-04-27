@@ -70,3 +70,45 @@ def test_migration_handles_missing_table(tmp_path):
 
     engine = create_engine(f"sqlite:///{tmp_path / 'empty.db'}")
     migrate_regulation_created_at(engine)  # must not raise
+
+
+def test_migration_runs_before_sync_schema_does_not_blow_up(tmp_path):
+    """Regression: sync_schema generates `ADD COLUMN created_at DATETIME NOT NULL`
+    with no DEFAULT (because _literal_default has no DateTime case), which SQLite
+    rejects on a populated table. The migration must run first so the column is
+    already present (nullable, backfilled) when sync_schema looks.
+    """
+    from regwatch.db.migrations import migrate_regulation_created_at
+    from regwatch.db.models import Base
+    from regwatch.db.schema_sync import sync_schema
+
+    engine = _engine_with_old_regulation_table(tmp_path)
+
+    # Order matches regwatch/main.py::create_app: migration FIRST.
+    migrate_regulation_created_at(engine)
+    sync_schema(engine, Base.metadata)  # must not raise
+
+    with engine.connect() as conn:
+        cols = [r[1] for r in conn.execute(text("PRAGMA table_info(regulation)"))]
+        assert "created_at" in cols
+
+
+def test_sync_schema_first_would_fail(tmp_path):
+    """Documents the failure mode the prior test guards against: running
+    sync_schema BEFORE the migration on a populated old-schema DB raises
+    `Cannot add a NOT NULL column with default value NULL`.
+
+    If this test starts passing without raising, sync_schema has been taught
+    to handle DateTime columns and the migration's ordering may no longer
+    be load-bearing.
+    """
+    import pytest
+    from sqlalchemy.exc import OperationalError
+
+    from regwatch.db.models import Base
+    from regwatch.db.schema_sync import sync_schema
+
+    engine = _engine_with_old_regulation_table(tmp_path)
+
+    with pytest.raises(OperationalError, match="NOT NULL"):
+        sync_schema(engine, Base.metadata)

@@ -47,14 +47,19 @@ def create_app() -> FastAPI:
 
     engine = create_app_engine(config.paths.db_file)
     Base.metadata.create_all(engine)
-    sync_schema(engine, Base.metadata)
-    create_virtual_tables(engine, embedding_dim=config.llm.embedding_dim)
+    # Run column-adding migrations BEFORE sync_schema. sync_schema generates
+    # NOT NULL ADD COLUMN statements with no DEFAULT for DateTime types,
+    # which SQLite rejects on populated tables; the migration adds the
+    # column as nullable and backfills, after which sync_schema is a no-op
+    # for that column.
     from regwatch.db.migrations import (
         migrate_discovery_run_item_columns,
         migrate_regulation_created_at,
     )
-    migrate_discovery_run_item_columns(engine)
     migrate_regulation_created_at(engine)
+    sync_schema(engine, Base.metadata)
+    create_virtual_tables(engine, embedding_dim=config.llm.embedding_dim)
+    migrate_discovery_run_item_columns(engine)
     session_factory = sessionmaker(engine, expire_on_commit=False)
 
     from regwatch.db.extraction_field_seed import seed_core_fields
