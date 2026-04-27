@@ -1,14 +1,33 @@
+{% macro badge(count) -%}
+  {% if count %}
+    <span class="ml-2 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5
+                 bg-amber-500 text-white text-xs font-semibold rounded-full shrink-0">
+      {{ count if count < 100 else '99+' }}
+    </span>
+  {% endif %}
+{%- endmacro %}
+
 <aside class="w-56 bg-slate-900 text-slate-100 min-h-screen p-4 flex flex-col">
   <div class="text-xl font-bold mb-6">RegWatch</div>
   <nav class="flex flex-col gap-1 text-sm">
     <a href="/" class="px-3 py-2 rounded hover:bg-slate-800 {% if active == 'dashboard' %}bg-slate-800{% endif %}">Dashboard</a>
-    <a href="/inbox" class="px-3 py-2 rounded hover:bg-slate-800 {% if active == 'inbox' %}bg-slate-800{% endif %}">Inbox</a>
-    <a href="/catalog" class="px-3 py-2 rounded hover:bg-slate-800 {% if active == 'catalog' %}bg-slate-800{% endif %}">Catalog</a>
+    <a href="/inbox" class="px-3 py-2 rounded hover:bg-slate-800 flex items-center justify-between {% if active == 'inbox' %}bg-slate-800{% endif %}">
+      <span>Inbox</span>{{ badge(sidebar_badges.get('inbox') if sidebar_badges else None) }}
+    </a>
+    <a href="/catalog" class="px-3 py-2 rounded hover:bg-slate-800 flex items-center justify-between {% if active == 'catalog' %}bg-slate-800{% endif %}">
+      <span>Catalog</span>{{ badge(sidebar_badges.get('catalog') if sidebar_badges else None) }}
+    </a>
     <a href="/catalog?authorization=AIFM" class="px-5 py-1 rounded hover:bg-slate-800 text-slate-300">AIFM</a>
     <a href="/catalog?authorization=CHAPTER15_MANCO" class="px-5 py-1 rounded hover:bg-slate-800 text-slate-300">Chapter 15 ManCo</a>
-    <a href="/ict" class="px-3 py-2 rounded hover:bg-slate-800 {% if active == 'ict' %}bg-slate-800{% endif %}">ICT / DORA</a>
-    <a href="/drafts" class="px-3 py-2 rounded hover:bg-slate-800 {% if active == 'drafts' %}bg-slate-800{% endif %}">Drafts</a>
-    <a href="/deadlines" class="px-3 py-2 rounded hover:bg-slate-800 {% if active == 'deadlines' %}bg-slate-800{% endif %}">Deadlines</a>
+    <a href="/ict" class="px-3 py-2 rounded hover:bg-slate-800 flex items-center justify-between {% if active == 'ict' %}bg-slate-800{% endif %}">
+      <span>ICT / DORA</span>{{ badge(sidebar_badges.get('ict') if sidebar_badges else None) }}
+    </a>
+    <a href="/drafts" class="px-3 py-2 rounded hover:bg-slate-800 flex items-center justify-between {% if active == 'drafts' %}bg-slate-800{% endif %}">
+      <span>Drafts</span>{{ badge(sidebar_badges.get('drafts') if sidebar_badges else None) }}
+    </a>
+    <a href="/deadlines" class="px-3 py-2 rounded hover:bg-slate-800 flex items-center justify-between {% if active == 'deadlines' %}bg-slate-800{% endif %}">
+      <span>Deadlines</span>{{ badge(sidebar_badges.get('deadlines') if sidebar_badges else None) }}
+    </a>
     <a href="/chat" class="px-3 py-2 rounded hover:bg-slate-800 {% if active == 'chat' %}bg-slate-800{% endif %}">Q&amp;A</a>
     <a href="/settings" class="mt-auto px-3 py-2 rounded hover:bg-slate-800 {% if active == 'settings' %}bg-slate-800{% endif %}">Settings</a>
     <a href="/settings/extraction" class="px-5 py-1 rounded hover:bg-slate-800 text-slate-300">Extraction Fields</a>
