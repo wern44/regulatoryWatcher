@@ -10,7 +10,7 @@ def test_render_page_injects_sidebar_badges_into_context(monkeypatch):
     captured: dict = {}
 
     class FakeTemplates:
-        def TemplateResponse(self, request, template_name, context):
+        def TemplateResponse(self, request, template_name, context):  # noqa: N802
             captured["request"] = request
             captured["template_name"] = template_name
             captured["context"] = context
@@ -54,7 +54,7 @@ def test_render_page_does_not_overwrite_caller_supplied_sidebar_badges(monkeypat
     captured: dict = {}
 
     class FakeTemplates:
-        def TemplateResponse(self, request, template_name, context):
+        def TemplateResponse(self, request, template_name, context):  # noqa: N802
             captured["context"] = context
             return None
 
