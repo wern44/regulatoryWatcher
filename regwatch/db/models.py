@@ -145,6 +145,9 @@ class Regulation(Base):
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
     transposition_done: Mapped[bool] = mapped_column(Boolean, default=False)
     application_done: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        TZDateTime, default=lambda: datetime.now(UTC), index=True
+    )
 
     aliases: Mapped[list[RegulationAlias]] = relationship(
         back_populates="regulation", cascade="all, delete-orphan"

@@ -61,3 +61,31 @@ def migrate_discovery_run_item_columns(engine: Engine) -> None:
             )
         conn.execute(text("ALTER TABLE discovery_run_item DROP COLUMN entity_types"))
         logger.info("Migrated %d discovery_run_item rows", len(rows))
+
+
+def migrate_regulation_created_at(engine: Engine) -> None:
+    """Add regulation.created_at and backfill existing rows to the migration time.
+
+    Backfilling to NOW() at migration time means existing regulations
+    will not count as 'new' once the user has visited each section once.
+    Idempotent: returns cleanly if the column already exists or the
+    table doesn't exist yet.
+    """
+    from datetime import UTC, datetime  # noqa: PLC0415
+
+    with engine.begin() as conn:
+        cols = [r[1] for r in conn.execute(text("PRAGMA table_info(regulation)"))]
+        if not cols:
+            return  # fresh DB; create_all handles it
+        if "created_at" in cols:
+            return  # already migrated
+
+        now_iso = datetime.now(UTC).isoformat()
+        conn.execute(text("ALTER TABLE regulation ADD COLUMN created_at DATETIME"))
+        result = conn.execute(
+            text("UPDATE regulation SET created_at = :ts WHERE created_at IS NULL"),
+            {"ts": now_iso},
+        )
+        logger.info(
+            "Backfilled regulation.created_at on %d existing rows", result.rowcount
+        )
