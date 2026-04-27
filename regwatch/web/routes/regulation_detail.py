@@ -18,6 +18,7 @@ from regwatch.services.analysis import AnalysisService
 from regwatch.services.cssf_discovery import CssfDiscoveryService, _slug_from_reference
 from regwatch.services.regulations import build_amendment_indexes
 from regwatch.services.updates import UpdateService
+from regwatch.web.templates_context import render_page
 
 router = APIRouter()
 
@@ -47,7 +48,6 @@ def _derive_cssf_page_url(reg: Regulation) -> str | None:
 
 @router.get("/regulations/{regulation_id}", response_class=HTMLResponse)
 def regulation_detail(request: Request, regulation_id: int) -> HTMLResponse:
-    templates = request.app.state.templates
     with request.app.state.session_factory() as session:
         reg = session.get(Regulation, regulation_id)
         if reg is None:
@@ -148,6 +148,6 @@ def regulation_detail(request: Request, regulation_id: int) -> HTMLResponse:
     )
     payload["discovery_sources"] = sources_svc.list_discovery_sources(regulation_id)
 
-    return templates.TemplateResponse(
+    return render_page(
         request, "regulation/detail.html", payload
     )

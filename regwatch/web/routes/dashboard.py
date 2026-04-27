@@ -7,13 +7,13 @@ from fastapi.responses import HTMLResponse
 from regwatch.services.deadlines import DeadlineService
 from regwatch.services.inbox import InboxService
 from regwatch.services.regulations import RegulationFilter, RegulationService
+from regwatch.web.templates_context import render_page
 
 router = APIRouter()
 
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard(request: Request) -> HTMLResponse:
-    templates = request.app.state.templates
     with request.app.state.session_factory() as session:
         reg_svc = RegulationService(session)
         inbox_svc = InboxService(session)
@@ -34,7 +34,7 @@ def dashboard(request: Request) -> HTMLResponse:
         upcoming = deadline_svc.upcoming(window_days=730)
         inbox_count = inbox_svc.count_new()
 
-    return templates.TemplateResponse(
+    return render_page(
         request,
         "dashboard.html",
         {

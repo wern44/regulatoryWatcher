@@ -16,6 +16,7 @@ from regwatch.services.extraction_fields import (
     FieldProtectedError,
 )
 from regwatch.services.settings import SettingsService
+from regwatch.web.templates_context import render_page
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -26,7 +27,6 @@ def settings_view(
     db_action: str | None = None,
     db_error: str | None = None,
 ) -> HTMLResponse:
-    templates = request.app.state.templates
     config = request.app.state.config
     llm = request.app.state.llm_client
     try:
@@ -53,7 +53,7 @@ def settings_view(
             .all()
         )
 
-    return templates.TemplateResponse(
+    return render_page(
         request,
         "settings.html",
         {
@@ -73,13 +73,12 @@ def settings_view(
 
 @router.get("/setup", response_class=HTMLResponse)
 def setup_view(request: Request) -> HTMLResponse:
-    templates = request.app.state.templates
     llm = request.app.state.llm_client
     try:
         models = llm.list_models()
     except Exception:  # noqa: BLE001
         models = []
-    return templates.TemplateResponse(
+    return render_page(
         request,
         "settings/setup.html",
         {"models": models},
@@ -153,10 +152,9 @@ async def upload_pdf(
 
 @router.get("/extraction", response_class=HTMLResponse)
 def extraction_fields_page(request: Request) -> HTMLResponse:
-    templates = request.app.state.templates
     with request.app.state.session_factory() as session:
         fields = ExtractionFieldService(session).list()
-    return templates.TemplateResponse(
+    return render_page(
         request,
         "settings/extraction.html",
         {

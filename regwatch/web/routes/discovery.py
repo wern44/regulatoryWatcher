@@ -8,6 +8,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from regwatch.db.models import DiscoveryRun, DiscoveryRunItem
+from regwatch.web.templates_context import render_page
 
 router = APIRouter()
 
@@ -20,7 +21,7 @@ def runs_list(request: Request):
             select(DiscoveryRun).order_by(desc(DiscoveryRun.started_at)).limit(50)
         ).all()
         dto_list = [_to_summary(r) for r in runs]
-    return request.app.state.templates.TemplateResponse(
+    return render_page(
         request,
         "discovery/list.html",
         {"runs": dto_list, "active": "catalog"},
@@ -34,7 +35,7 @@ def run_page(request: Request, run_id: int):
         run_info = _load_run(s, run_id)
     cell_breakdown = _compute_cell_breakdown(run_info["items"]) if run_info else []
     retired_count = run_info.get("retired_count", 0) if run_info else 0
-    return request.app.state.templates.TemplateResponse(
+    return render_page(
         request,
         "discovery/run.html",
         {

@@ -15,6 +15,7 @@ from regwatch.db.models import (
 )
 from regwatch.rag.chat_service import ChatService
 from regwatch.rag.retrieval import RetrievalFilters
+from regwatch.web.templates_context import render_page
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -63,14 +64,13 @@ def chat_ask_adhoc(
 
 @router.get("", response_class=HTMLResponse)
 def chat_list(request: Request) -> HTMLResponse:
-    templates = request.app.state.templates
     with request.app.state.session_factory() as session:
         sessions = (
             session.query(ChatSession)
             .order_by(ChatSession.created_at.desc())
             .all()
         )
-    return templates.TemplateResponse(
+    return render_page(
         request, "chat/list.html", {"active": "chat", "sessions": sessions}
     )
 
@@ -78,7 +78,6 @@ def chat_list(request: Request) -> HTMLResponse:
 @router.get("/new", response_class=HTMLResponse)
 def chat_new(request: Request) -> HTMLResponse:
     """Render the new-session page with scope picker."""
-    templates = request.app.state.templates
     cfg = request.app.state.config
     auth_types = [a.type for a in cfg.entity.authorizations]
 
@@ -107,7 +106,7 @@ def chat_new(request: Request) -> HTMLResponse:
                 "in_force": r.lifecycle_stage == LifecycleStage.IN_FORCE,
             })
 
-    return templates.TemplateResponse(
+    return render_page(
         request,
         "chat/new.html",
         {
@@ -156,7 +155,6 @@ def chat_create(
 
 @router.get("/{session_id}", response_class=HTMLResponse)
 def chat_session(request: Request, session_id: int) -> HTMLResponse:
-    templates = request.app.state.templates
     with request.app.state.session_factory() as session:
         cs = session.get(ChatSession, session_id)
         if cs is None:
@@ -178,7 +176,7 @@ def chat_session(request: Request, session_id: int) -> HTMLResponse:
             )
             scope_labels = [r.reference_number for r in regs]
 
-    return templates.TemplateResponse(
+    return render_page(
         request,
         "chat/session.html",
         {

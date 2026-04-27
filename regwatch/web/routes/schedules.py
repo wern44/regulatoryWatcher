@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from regwatch.db.models import DiscoveryRun, PipelineRun
 from regwatch.scheduler.jobs import FREQUENCY_OPTIONS, SchedulerManager
 from regwatch.services.settings import SettingsService
+from regwatch.web.templates_context import render_page
 
 router = APIRouter(prefix="/settings", tags=["schedules"])
 
@@ -60,7 +61,6 @@ JOB_META: list[dict[str, str]] = [
 
 @router.get("/schedules", response_class=HTMLResponse)
 def schedules_page(request: Request) -> HTMLResponse:
-    templates = request.app.state.templates
     config = request.app.state.config
     scheduler_manager = getattr(request.app.state, "scheduler_manager", None)
 
@@ -137,7 +137,7 @@ def schedules_page(request: Request) -> HTMLResponse:
                 "last_run": last_run,
             })
 
-    return templates.TemplateResponse(
+    return render_page(
         request,
         "settings/schedules.html",
         {

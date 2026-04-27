@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from regwatch.services.analysis import AnalysisService
+from regwatch.web.templates_context import render_page
 
 router = APIRouter()
 
@@ -12,7 +13,7 @@ router = APIRouter()
 def run_page(request: Request, run_id: int):
     with request.app.state.session_factory() as session:
         run = AnalysisService(session).get_run(run_id)
-    return request.app.state.templates.TemplateResponse(
+    return render_page(
         request,
         "analysis/run.html",
         {
