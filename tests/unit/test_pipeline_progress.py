@@ -82,3 +82,16 @@ def test_snapshot_does_not_alias_internal_lists() -> None:
     s = p.snapshot()
     s["sources_failed"].append("MUTATED")
     assert p.snapshot()["sources_failed"] == ["x"]
+
+
+def test_docs_skipped_counter_starts_at_zero_and_resets() -> None:
+    p = PipelineProgress()
+    assert p.snapshot()["docs_skipped"] == 0
+
+    p.reset_for_run(total_sources=1)
+    p.note_skipped()
+    p.note_skipped()
+    assert p.snapshot()["docs_skipped"] == 2
+
+    p.reset_for_run(total_sources=1)
+    assert p.snapshot()["docs_skipped"] == 0

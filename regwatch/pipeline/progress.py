@@ -31,6 +31,7 @@ class PipelineProgress:
     current_phase: str | None = None  # FETCH | EXTRACT | MATCH | PERSIST | DONE
 
     docs_seen: int = 0  # documents pulled from sources so far
+    docs_skipped: int = 0  # documents short-circuited by the content-hash pre-check
     current_doc_title: str | None = None
 
     events_created: int = 0
@@ -53,6 +54,7 @@ class PipelineProgress:
             self.current_source = None
             self.current_phase = None
             self.docs_seen = 0
+            self.docs_skipped = 0
             self.current_doc_title = None
             self.events_created = 0
             self.versions_created = 0
@@ -90,6 +92,10 @@ class PipelineProgress:
             self.events_created += events
             self.versions_created += versions
 
+    def note_skipped(self) -> None:
+        with self._lock:
+            self.docs_skipped += 1
+
     def finish(self, *, run_id: int | None, error: str | None = None) -> None:
         with self._lock:
             self.finished_at = datetime.now(UTC)
@@ -119,6 +125,7 @@ class PipelineProgress:
                 "current_source": self.current_source,
                 "current_phase": self.current_phase,
                 "docs_seen": self.docs_seen,
+                "docs_skipped": self.docs_skipped,
                 "current_doc_title": self.current_doc_title,
                 "events_created": self.events_created,
                 "versions_created": self.versions_created,
