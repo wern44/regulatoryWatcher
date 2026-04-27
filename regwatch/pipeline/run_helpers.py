@@ -47,4 +47,4 @@ def run_pipeline_background(
             progress.finish(run_id=None, error=f"{type(exc).__name__}: {exc}")
             return
 
-    progress.finish(run_id=run_id)
+    progress.finish(run_id=run_id, aborted=progress.is_cancel_requested)

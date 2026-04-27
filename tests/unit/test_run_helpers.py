@@ -46,3 +46,32 @@ def test_passes_source_names_to_build_enabled_sources():
     mock_build.assert_called_once()
     call_kwargs = mock_build.call_args
     assert call_kwargs.kwargs.get("only") == ["cssf_rss", "cssf_consultation"]
+
+
+def test_aborted_run_calls_finish_with_aborted_true():
+    progress = PipelineProgress()
+    mock_session = MagicMock()
+    mock_sf = MagicMock(return_value=MagicMock(
+        __enter__=MagicMock(return_value=mock_session),
+        __exit__=MagicMock(return_value=False),
+    ))
+
+    # Pretend a cancel was requested before the runner returned.
+    progress.request_cancel()
+
+    with patch(
+        "regwatch.pipeline.run_helpers.build_enabled_sources",
+        return_value=[],
+    ), patch(
+        "regwatch.pipeline.run_helpers.build_runner",
+    ) as mock_runner:
+        mock_runner.return_value.run_once.return_value = 99
+        run_pipeline_background(
+            session_factory=mock_sf,
+            config=MagicMock(),
+            llm_client=MagicMock(),
+            progress=progress,
+        )
+
+    assert progress.snapshot()["status"] == "aborted"
+    assert progress.snapshot()["run_id"] == 99
