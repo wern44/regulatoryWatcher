@@ -1,9 +1,13 @@
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from regwatch.db.models import Base, PipelineRun
+from regwatch.db.models import Base, PipelineRun, UpdateEvent
+from regwatch.domain.types import ExtractedDocument, MatchedDocument, RawDocument
+from regwatch.pipeline.hashing import content_hash
+from regwatch.pipeline.progress import PipelineProgress
 from regwatch.pipeline.runner import PipelineRunner
 
 
@@ -56,3 +60,78 @@ def test_run_sets_completed_when_all_sources_ok(tmp_path):
         run = session.get(PipelineRun, run_id)
         assert run.status == "COMPLETED"
         assert run.sources_failed == []
+
+
+def _raw_doc() -> RawDocument:
+    now = datetime.now(UTC)
+    return RawDocument(
+        source="cssf_rss",
+        source_url="https://example.com/dup",
+        title="dup",
+        published_at=now,
+        raw_payload={},
+        fetched_at=now,
+    )
+
+
+def test_runner_skips_match_when_hash_already_in_update_event(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    Base.metadata.create_all(engine)
+
+    raw = _raw_doc()
+    body = "the body that is already in the catalog"
+    pre_existing_hash = content_hash(body)
+
+    class OneDocSource:
+        name = "src_one"
+
+        def fetch(self, since):
+            return iter([raw])
+
+    def fake_extract(r: RawDocument) -> ExtractedDocument:
+        return ExtractedDocument(
+            raw=r,
+            html_text=body,
+            pdf_path=None,
+            pdf_extracted_text=None,
+            pdf_is_protected=False,
+        )
+
+    match_calls: list[ExtractedDocument] = []
+
+    def fake_match(extracted: ExtractedDocument) -> MatchedDocument:
+        match_calls.append(extracted)
+        return MatchedDocument(extracted=extracted)
+
+    with Session(engine) as session:
+        session.add(
+            UpdateEvent(
+                source="prior_run",
+                source_url="https://example.com/dup-prior",
+                title="prior",
+                published_at=datetime.now(UTC),
+                fetched_at=datetime.now(UTC),
+                raw_payload={},
+                content_hash=pre_existing_hash,
+                is_ict=False,
+                severity="INFORMATIONAL",
+                review_status="NEW",
+            )
+        )
+        session.flush()
+
+        progress = PipelineProgress()
+        progress.reset_for_run(total_sources=1)
+
+        runner = PipelineRunner(
+            session,
+            sources=[OneDocSource()],
+            extract=fake_extract,
+            match=fake_match,
+        )
+        runner.run_once(progress=progress)
+        session.commit()
+
+    assert match_calls == []  # match never invoked for the duplicate
+    assert progress.snapshot()["docs_skipped"] == 1
+    assert progress.snapshot()["docs_seen"] == 1

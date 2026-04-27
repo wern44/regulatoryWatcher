@@ -6,11 +6,12 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from regwatch.db.models import PipelineRun
+from regwatch.db.models import PipelineRun, UpdateEvent
 from regwatch.domain.types import ExtractedDocument, MatchedDocument, RawDocument
+from regwatch.pipeline.hashing import content_hash, text_for_hashing
 from regwatch.pipeline.persist import persist_matched
 from regwatch.pipeline.progress import PipelineProgress
 
@@ -80,6 +81,16 @@ class PipelineRunner:
                         progress.begin_document(raw.title or raw.source_url)
                     try:
                         extracted = self._extract(raw)
+                        text_hash = content_hash(text_for_hashing(extracted))
+                        already_seen = self._session.scalar(
+                            select(UpdateEvent.event_id).where(
+                                UpdateEvent.content_hash == text_hash
+                            )
+                        )
+                        if already_seen is not None:
+                            if progress is not None:
+                                progress.note_skipped()
+                            continue
                         if progress is not None:
                             progress.set_phase("MATCH")
                         matched = self._match(extracted)
