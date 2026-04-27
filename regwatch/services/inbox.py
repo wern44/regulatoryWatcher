@@ -3,10 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, cast
 
 from sqlalchemy import case, desc, update
-from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from regwatch.db.models import UpdateEvent
@@ -135,12 +133,14 @@ class InboxService:
         button that means "drain my inbox".
         """
         now = datetime.now(UTC)
-        result = cast(CursorResult[Any], self._session.execute(
+        result = self._session.execute(
             update(UpdateEvent)
             .where(UpdateEvent.review_status == "NEW")
             .values(review_status="SEEN", seen_at=now)
-        ))
-        return int(result.rowcount or 0)
+        )
+        # SQLAlchemy types Session.execute as the abstract Result; rowcount
+        # exists on the CursorResult subclass that's actually returned.
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]
 
 
 def _to_dto(ev: UpdateEvent) -> UpdateEventDTO:
