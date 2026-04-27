@@ -1,7 +1,6 @@
 """Tests for the regulation.created_at backfill migration."""
 from datetime import UTC, datetime
 
-import pytest
 from sqlalchemy import create_engine, text
 
 
