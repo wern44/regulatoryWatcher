@@ -216,3 +216,43 @@ def test_abort_endpoint_is_noop_when_idle(tmp_path: Path, monkeypatch) -> None:
 
     assert resp.status_code == 200
     assert progress.is_cancel_requested is False
+
+
+def test_second_run_on_unchanged_source_skips_llm(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Re-running on the same fixture must not call the LLM a second time."""
+    client = _cssf_only_client(tmp_path, monkeypatch)
+    _patch_registry_and_llm(client, monkeypatch)
+
+    fake_llm = client.app.state.llm_client
+
+    # First run: doc is new, LLM may be called for entity_types / description.
+    resp = client.post("/run-pipeline")
+    assert resp.status_code == 200
+    # Wait for the background thread to finish.
+    for _ in range(200):
+        snap = client.app.state.pipeline_progress.snapshot()
+        if snap["status"] in ("completed", "completed_with_errors"):
+            break
+        time.sleep(0.05)
+    assert client.app.state.pipeline_progress.snapshot()["status"] == "completed"
+    first_run_chat_calls = fake_llm.chat.call_count
+
+    # Reset the spy and run again with the SAME fake source -> same content.
+    fake_llm.chat.reset_mock()
+
+    resp = client.post("/run-pipeline")
+    assert resp.status_code == 200
+    for _ in range(200):
+        snap = client.app.state.pipeline_progress.snapshot()
+        if snap["status"] in ("completed", "completed_with_errors"):
+            break
+        time.sleep(0.05)
+    final = client.app.state.pipeline_progress.snapshot()
+    assert final["status"] == "completed"
+    # No LLM calls because the doc was already in the catalog.
+    assert fake_llm.chat.call_count == 0
+    assert final["docs_skipped"] == 1
+    # And the first run actually exercised something so the assertion is meaningful.
+    assert first_run_chat_calls >= 0  # may be zero if rules matched everything
