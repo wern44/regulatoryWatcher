@@ -1,7 +1,6 @@
 """Phase 4: persist the matched document into SQLite in a single transaction."""
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -15,6 +14,7 @@ from regwatch.db.models import (
 )
 from regwatch.domain.types import ExtractedDocument, MatchedDocument
 from regwatch.pipeline.diff import compute_diff
+from regwatch.pipeline.hashing import content_hash, text_for_hashing
 
 
 @dataclass
@@ -29,12 +29,12 @@ def persist_matched(session: Session, matched: MatchedDocument) -> PersistResult
     extracted = matched.extracted
     raw = extracted.raw
 
-    text_for_hash = _text_for_hashing(extracted)
-    content_hash = hashlib.sha256(text_for_hash.encode("utf-8")).hexdigest()
+    text_for_hash = text_for_hashing(extracted)
+    document_hash = content_hash(text_for_hash)
 
     # Idempotency: skip if we already have an event with this content hash.
     existing = session.scalar(
-        select(UpdateEvent).where(UpdateEvent.content_hash == content_hash)
+        select(UpdateEvent).where(UpdateEvent.content_hash == document_hash)
     )
     if existing is not None:
         return PersistResult(
@@ -48,7 +48,7 @@ def persist_matched(session: Session, matched: MatchedDocument) -> PersistResult
         published_at=raw.published_at,
         fetched_at=raw.fetched_at,
         raw_payload=raw.raw_payload,
-        content_hash=content_hash,
+        content_hash=document_hash,
         is_ict=matched.is_ict,
         severity=matched.severity,
         review_status="NEW",
@@ -70,17 +70,13 @@ def persist_matched(session: Session, matched: MatchedDocument) -> PersistResult
     versions_created = 0
     for ref in matched.references:
         if _create_new_version(
-            session, ref.regulation_id, extracted, text_for_hash, content_hash
+            session, ref.regulation_id, extracted, text_for_hash, document_hash
         ):
             versions_created += 1
 
     return PersistResult(
         event_id=event.event_id, events_created=1, versions_created=versions_created
     )
-
-
-def _text_for_hashing(extracted: ExtractedDocument) -> str:
-    return (extracted.pdf_extracted_text or extracted.html_text or "").strip()
 
 
 def _create_new_version(
