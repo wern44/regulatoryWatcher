@@ -7,26 +7,30 @@
   {% endif %}
 {%- endmacro %}
 
+{# `sidebar_badges` is None until the route uses render_page (Tasks 5/6).
+   Once it's set, it is the SidebarBadges dataclass — attribute access works. #}
+{% set sb = sidebar_badges|default(None) %}
+
 <aside class="w-56 bg-slate-900 text-slate-100 min-h-screen p-4 flex flex-col">
   <div class="text-xl font-bold mb-6">RegWatch</div>
   <nav class="flex flex-col gap-1 text-sm">
     <a href="/" class="px-3 py-2 rounded hover:bg-slate-800 {% if active == 'dashboard' %}bg-slate-800{% endif %}">Dashboard</a>
     <a href="/inbox" class="px-3 py-2 rounded hover:bg-slate-800 flex items-center justify-between {% if active == 'inbox' %}bg-slate-800{% endif %}">
-      <span>Inbox</span>{{ badge(sidebar_badges.get('inbox') if sidebar_badges else None) }}
+      <span>Inbox</span>{{ badge(sb.inbox if sb else 0) }}
     </a>
     <a href="/catalog" class="px-3 py-2 rounded hover:bg-slate-800 flex items-center justify-between {% if active == 'catalog' %}bg-slate-800{% endif %}">
-      <span>Catalog</span>{{ badge(sidebar_badges.get('catalog') if sidebar_badges else None) }}
+      <span>Catalog</span>{{ badge(sb.catalog if sb else 0) }}
     </a>
     <a href="/catalog?authorization=AIFM" class="px-5 py-1 rounded hover:bg-slate-800 text-slate-300">AIFM</a>
     <a href="/catalog?authorization=CHAPTER15_MANCO" class="px-5 py-1 rounded hover:bg-slate-800 text-slate-300">Chapter 15 ManCo</a>
     <a href="/ict" class="px-3 py-2 rounded hover:bg-slate-800 flex items-center justify-between {% if active == 'ict' %}bg-slate-800{% endif %}">
-      <span>ICT / DORA</span>{{ badge(sidebar_badges.get('ict') if sidebar_badges else None) }}
+      <span>ICT / DORA</span>{{ badge(sb.ict if sb else 0) }}
     </a>
     <a href="/drafts" class="px-3 py-2 rounded hover:bg-slate-800 flex items-center justify-between {% if active == 'drafts' %}bg-slate-800{% endif %}">
-      <span>Drafts</span>{{ badge(sidebar_badges.get('drafts') if sidebar_badges else None) }}
+      <span>Drafts</span>{{ badge(sb.drafts if sb else 0) }}
     </a>
     <a href="/deadlines" class="px-3 py-2 rounded hover:bg-slate-800 flex items-center justify-between {% if active == 'deadlines' %}bg-slate-800{% endif %}">
-      <span>Deadlines</span>{{ badge(sidebar_badges.get('deadlines') if sidebar_badges else None) }}
+      <span>Deadlines</span>{{ badge(sb.deadlines if sb else 0) }}
     </a>
     <a href="/chat" class="px-3 py-2 rounded hover:bg-slate-800 {% if active == 'chat' %}bg-slate-800{% endif %}">Q&amp;A</a>
     <a href="/settings" class="mt-auto px-3 py-2 rounded hover:bg-slate-800 {% if active == 'settings' %}bg-slate-800{% endif %}">Settings</a>
