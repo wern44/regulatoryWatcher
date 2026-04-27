@@ -1,7 +1,16 @@
 {% extends "base.html" %}
 {% block title %}RegWatch — Inbox{% endblock %}
 {% block content %}
-  <h1 class="text-2xl font-bold mb-4">Inbox ({{ events|length }} new)</h1>
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-2xl font-bold">Inbox ({{ events|length }} new)</h1>
+    {% if events %}
+      <form method="post" action="/inbox/mark-all-seen">
+        <button class="px-3 py-1 bg-slate-700 text-white rounded text-xs hover:bg-slate-800">
+          Mark all as seen
+        </button>
+      </form>
+    {% endif %}
+  </div>
 
   <div class="flex gap-3 mb-4 items-center text-sm">
     <form class="flex gap-2 items-center">
