@@ -9,17 +9,19 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from regwatch.db.models import Regulation, RegulationOverride
 from regwatch.services.discovery import DiscoveryService
 from regwatch.services.regulations import RegulationFilter, RegulationService
+from regwatch.services.sidebar_badges import SidebarBadgeService
+from regwatch.web.templates_context import render_page
 
 router = APIRouter()
 
 
 @router.get("/ict", response_class=HTMLResponse)
 def ict(request: Request) -> HTMLResponse:
-    templates = request.app.state.templates
     with request.app.state.session_factory() as session:
-        svc = RegulationService(session)
-        regs = svc.list(RegulationFilter(is_ict=True))
-    return templates.TemplateResponse(
+        regs = RegulationService(session).list(RegulationFilter(is_ict=True))
+        SidebarBadgeService(session).mark_visited("ict")
+        session.commit()
+    return render_page(
         request,
         "ict/list.html",
         {"active": "ict", "regulations": regs},

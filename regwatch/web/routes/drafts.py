@@ -5,13 +5,14 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from regwatch.services.regulations import RegulationFilter, RegulationService
+from regwatch.services.sidebar_badges import SidebarBadgeService
+from regwatch.web.templates_context import render_page
 
 router = APIRouter()
 
 
 @router.get("/drafts", response_class=HTMLResponse)
 def drafts(request: Request) -> HTMLResponse:
-    templates = request.app.state.templates
     with request.app.state.session_factory() as session:
         svc = RegulationService(session)
         regs = svc.list(
@@ -24,7 +25,9 @@ def drafts(request: Request) -> HTMLResponse:
                 ]
             )
         )
-    return templates.TemplateResponse(
+        SidebarBadgeService(session).mark_visited("drafts")
+        session.commit()
+    return render_page(
         request,
         "drafts/list.html",
         {"active": "drafts", "regulations": regs},

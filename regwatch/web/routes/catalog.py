@@ -29,11 +29,13 @@ from regwatch.services.regulations import (
     RegulationService,
     build_amendment_indexes,
 )
+from regwatch.services.sidebar_badges import SidebarBadgeService
 from regwatch.services.upload import (
     UploadRejectedError,
     index_uploaded_version,
     save_upload,
 )
+from regwatch.web.templates_context import render_page
 
 router = APIRouter()
 
@@ -57,8 +59,6 @@ def catalog(
     show_amendments: bool = False,
     reset: bool = False,
 ):
-    templates = request.app.state.templates
-
     # --- Filter persistence ---
     # If the user asked to reset, clear the cookie and show defaults.
     if reset:
@@ -154,6 +154,9 @@ def catalog(
             else:
                 status_by_reg[r.regulation_id] = "ok"
 
+        SidebarBadgeService(session).mark_visited("catalog")
+        session.commit()
+
     # Read and clear the one-shot flash cookie (set by analyse error redirects).
     flash_error = request.cookies.get("catalog_flash")
     flash_messages = {
@@ -165,7 +168,7 @@ def catalog(
 
     # Pass effective_lifecycle, effective_ict, show_amendments to the template
     # so the dropdowns show the current selection correctly.
-    response = templates.TemplateResponse(
+    response = render_page(
         request,
         "catalog/list.html",
         {
