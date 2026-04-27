@@ -254,5 +254,7 @@ def test_second_run_on_unchanged_source_skips_llm(
     # No LLM calls because the doc was already in the catalog.
     assert fake_llm.chat.call_count == 0
     assert final["docs_skipped"] == 1
-    # And the first run actually exercised something so the assertion is meaningful.
-    assert first_run_chat_calls >= 0  # may be zero if rules matched everything
+    # `first_run_chat_calls` may be 0 (rule matcher caught everything) or >0
+    # (LLM invoked for entity_types/description). Either is fine — what matters
+    # is that the second run's count is unconditionally 0.
+    _ = first_run_chat_calls
