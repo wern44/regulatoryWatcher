@@ -66,17 +66,31 @@ class PipelineRunner:
         self._session.add(run)
         self._session.flush()
 
+        pre_cancel = progress is not None and progress.is_cancel_requested
         if progress is not None:
             progress.reset_for_run(total_sources=len(self._sources))
+        if pre_cancel and progress is not None:
+            progress.request_cancel()
 
         since = since or datetime(2000, 1, 1, tzinfo=UTC)
 
+        aborted = False
+
+        def _cancelled() -> bool:
+            return progress is not None and progress.is_cancel_requested
+
         for idx, source in enumerate(self._sources, start=1):
+            if _cancelled():
+                aborted = True
+                break
             if progress is not None:
                 progress.begin_source(source.name, idx)
             run.sources_attempted = [*run.sources_attempted, source.name]
             try:
                 for raw in source.fetch(since):
+                    if _cancelled():
+                        aborted = True
+                        break
                     if progress is not None:
                         progress.begin_document(raw.title or raw.source_url)
                     try:
@@ -105,6 +119,8 @@ class PipelineRunner:
                             )
                     except Exception:  # noqa: BLE001
                         logger.exception("Per-document failure in %s", source.name)
+                if aborted:
+                    break
             except Exception:  # noqa: BLE001
                 logger.exception("Source %s failed", source.name)
                 run.sources_failed = [*run.sources_failed, source.name]
@@ -112,7 +128,12 @@ class PipelineRunner:
                     progress.fail_source(source.name)
 
         run.finished_at = datetime.now(UTC)
-        run.status = "COMPLETED_WITH_ERRORS" if run.sources_failed else "COMPLETED"
+        if aborted:
+            run.status = "ABORTED"
+        else:
+            run.status = (
+                "COMPLETED_WITH_ERRORS" if run.sources_failed else "COMPLETED"
+            )
         self._session.flush()
         return run.run_id
 
