@@ -6,7 +6,12 @@ from typing import Annotated
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from regwatch.services.entity_types import EntityTypeService
+from regwatch.services.entity_types import (
+    EntityTypeService,
+    InvalidSlugError,
+    SlugConflictError,
+    prompt_segment,
+)
 from regwatch.web.templates_context import render_page
 
 router = APIRouter(prefix="/settings", tags=["entity_types"])
@@ -52,3 +57,57 @@ def entity_types_list(request: Request) -> HTMLResponse:
             "hidden_rows": [r for r in rows if not r.active],
         },
     )
+
+
+@router.post("/entity-types")
+def entity_types_add(
+    request: Request,
+    slug: Annotated[str, Form()],
+    label: Annotated[str, Form()],
+    cssf_entity_filter_id: Annotated[str, Form()] = "",
+    cssf_detail_labels: Annotated[str, Form()] = "",
+    sort_order: Annotated[int, Form()] = 100,
+) -> RedirectResponse:
+    parsed_filter_id: int | None
+    if cssf_entity_filter_id.strip():
+        try:
+            parsed_filter_id = int(cssf_entity_filter_id)
+        except ValueError:
+            return RedirectResponse(
+                "/settings/entity-types?error=filter-id-not-int", status_code=303
+            )
+    else:
+        parsed_filter_id = None
+
+    parsed_labels: list[str] | None
+    if cssf_detail_labels.strip():
+        parsed_labels = [
+            chunk.strip()
+            for chunk in cssf_detail_labels.split(",")
+            if chunk.strip()
+        ] or None
+    else:
+        parsed_labels = None
+
+    with request.app.state.session_factory() as session:
+        svc = EntityTypeService(session)
+        try:
+            svc.create(
+                slug=slug.strip(),
+                label=label.strip(),
+                cssf_entity_filter_id=parsed_filter_id,
+                cssf_detail_labels=parsed_labels,
+                sort_order=sort_order,
+            )
+            session.commit()
+            request.app.state.entity_type_prompt = prompt_segment(session)
+        except InvalidSlugError:
+            return RedirectResponse(
+                "/settings/entity-types?error=slug-invalid", status_code=303
+            )
+        except SlugConflictError:
+            return RedirectResponse(
+                "/settings/entity-types?error=slug-conflict", status_code=303
+            )
+
+    return RedirectResponse("/settings/entity-types", status_code=303)
