@@ -79,6 +79,14 @@ def create_app() -> FastAPI:
         seed_core_fields(session)
         session.commit()
 
+    # Build the entity-type LLM prompt segment once at startup; the pipeline
+    # matcher has no DB session at call time, and per-document DB hits would
+    # be wasteful. CRUD routes that mutate the EntityType table must refresh
+    # ``app.state.entity_type_prompt`` after writes.
+    from regwatch.services.entity_types import prompt_segment
+    with session_factory() as session:
+        entity_type_prompt = prompt_segment(session)
+
     from regwatch.analysis.startup import sweep_stuck_runs
     with session_factory() as session:
         sweep_stuck_runs(session)
@@ -126,6 +134,9 @@ def create_app() -> FastAPI:
                 config=config,
                 llm_client=app.state.llm_client,
                 progress=pipeline_progress,
+                entity_type_prompt=getattr(
+                    app.state, "entity_type_prompt", None
+                ),
             )
 
         def _scheduled_discovery() -> None:
@@ -244,6 +255,7 @@ def create_app() -> FastAPI:
     app.state.templates = templates
     app.state.config = config
     app.state.session_factory = session_factory
+    app.state.entity_type_prompt = entity_type_prompt
     app.state.llm_client = LLMClient(
         base_url=config.llm.base_url,
         chat_model=chat_model,

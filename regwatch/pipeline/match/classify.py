@@ -44,22 +44,34 @@ def is_ict_document(text: str, *, llm: LLMClient | None = None) -> bool:
         return False
 
 
+_DEFAULT_ENTITY_TYPE_HINT = (
+    'Valid entity_type slugs include: "AIFM", "CHAPTER15_MANCO", '
+    '"CREDIT_INSTITUTION", "CASP", "INVESTMENT_FIRM", "INSURANCE", '
+    '"PENSION_FUND", "ALL". (This list is overridden by the EntityType '
+    "registry at runtime — see app.state.entity_type_prompt.)"
+)
+
+
 def classify_entity_types(
-    title: str, text: str, *, llm: LLMClient | None = None
+    title: str,
+    text: str,
+    *,
+    llm: LLMClient | None = None,
+    entity_type_prompt: str | None = None,
 ) -> list[str] | None:
     """Use the LLM to determine which entity types a document applies to."""
     if llm is None:
         return None
+    hint = entity_type_prompt or _DEFAULT_ENTITY_TYPE_HINT
     try:
         reply = llm.chat(
             system=(
-                "You analyze regulatory documents to determine which types of financial "
-                "entities they apply to. Respond with ONLY a JSON array of entity type "
-                'strings. Common types: "AIFM" (Alternative Investment Fund Manager), '
-                '"CHAPTER15_MANCO" (UCITS Management Company), "CASP" (Crypto-Asset '
-                'Service Provider), "CREDIT_INSTITUTION", "INVESTMENT_FIRM", '
-                '"INSURANCE", "PENSION_FUND". If the document applies broadly to all '
-                'financial entities, respond with ["ALL"].'
+                "You analyze regulatory documents to determine which types of "
+                "financial entities they apply to. Respond with ONLY a JSON array "
+                "of entity type slugs.\n"
+                f"{hint}\n"
+                "If the document applies broadly to all financial entities, "
+                'respond with ["ALL"].'
             ),
             user=(
                 f"Which entity types does this document apply to?\n\n"

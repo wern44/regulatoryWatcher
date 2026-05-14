@@ -70,6 +70,9 @@ def run_pipeline(
             "llm_client": request.app.state.llm_client,
             "progress": progress,
             "source_names": source_names,
+            "entity_type_prompt": getattr(
+                request.app.state, "entity_type_prompt", None
+            ),
         },
         name="regwatch-pipeline",
         daemon=True,

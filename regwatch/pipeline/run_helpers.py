@@ -17,12 +17,15 @@ def run_pipeline_background(
     llm_client,
     progress: PipelineProgress,
     source_names: list[str] | None = None,
+    entity_type_prompt: str | None = None,
 ) -> None:
     """Run all enabled sources in a fresh DB session.
 
     Used by both the manual "Run pipeline now" button and the scheduler.
     Catches all exceptions and reports them via *progress*.
     If *source_names* is set, only those sources are run.
+    *entity_type_prompt* is the cached LLM-facing entity-type bullet list,
+    typically read from ``app.state.entity_type_prompt``.
     """
     try:
         sources = build_enabled_sources(config, only=source_names)
@@ -38,6 +41,7 @@ def run_pipeline_background(
                 sources=sources,
                 archive_root=config.paths.pdf_archive,
                 llm_client=llm_client,
+                entity_type_prompt=entity_type_prompt,
             )
             run_id = runner.run_once(progress=progress)
             session.commit()

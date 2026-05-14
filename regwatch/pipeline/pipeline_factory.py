@@ -32,6 +32,7 @@ def build_runner(
     sources: Iterable,
     archive_root: Path | str,
     llm_client: LLMClient | None = None,
+    entity_type_prompt: str | None = None,
 ) -> PipelineRunner:
     combined = CombinedMatcher(session, ollama=llm_client)
 
@@ -75,7 +76,10 @@ def build_runner(
         full_text = extracted.raw.title + " " + (text_for_match or "")
         is_ict = is_ict_document(full_text, llm=llm_client)
         entity_types = classify_entity_types(
-            extracted.raw.title, text_for_match, llm=llm_client
+            extracted.raw.title,
+            text_for_match,
+            llm=llm_client,
+            entity_type_prompt=entity_type_prompt,
         )
         description = generate_description(
             extracted.raw.title,
