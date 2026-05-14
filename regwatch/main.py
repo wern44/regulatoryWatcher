@@ -257,6 +257,12 @@ def create_app() -> FastAPI:
     app.state.templates = templates
     app.state.config = config
     app.state.session_factory = session_factory
+    if config.cssf_discovery.entity_filter_ids:
+        logger.warning(
+            "config.cssf_discovery.entity_filter_ids is deprecated; "
+            "manage filter IDs from Settings → Entity Types. Ignoring %s",
+            config.cssf_discovery.entity_filter_ids,
+        )
     app.state.entity_type_prompt = entity_type_prompt
     app.state.llm_client = LLMClient(
         base_url=config.llm.base_url,

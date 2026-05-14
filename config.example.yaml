@@ -75,9 +75,7 @@ cssf_discovery:
   max_retries: 1
   user_agent: "RegulatoryWatcher/1.0"
   retire_min_scraped: 10
-  entity_filter_ids:
-    AIFM: 502
-    CHAPTER15_MANCO: 2001
+  # entity_filter_ids moved to the EntityType table (Settings → Entity Types).
   publication_types:
     - { label: "CSSF circular",            filter_id: 567,  type: CSSF_CIRCULAR }
     - { label: "CSSF regulation",          filter_id: 575,  type: CSSF_REGULATION }

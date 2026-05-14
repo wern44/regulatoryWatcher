@@ -76,12 +76,9 @@ class CssfDiscoveryConfig(BaseModel):
     request_delay_ms: int = 500
     max_retries: int = 1
     user_agent: str = "RegulatoryWatcher/1.0"
-    entity_filter_ids: dict[str, int] = Field(
-        default_factory=lambda: {
-            "AIFM": 502,
-            "CHAPTER15_MANCO": 2001,
-        }
-    )
+    # DEPRECATED in Task 19: filter IDs are now managed in the EntityType table.
+    # Logged as a warning on startup if non-empty.
+    entity_filter_ids: dict[str, int] = Field(default_factory=dict)
     publication_types: list[PublicationTypeConfig] = Field(default_factory=list)
     retire_min_scraped: int = 10
     """Minimum total_scraped rows required before auto-retire is allowed to
