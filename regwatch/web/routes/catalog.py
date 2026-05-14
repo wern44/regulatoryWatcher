@@ -73,10 +73,17 @@ def catalog(
         if saved:
             return RedirectResponse(url=f"/catalog?{saved}", status_code=303)
 
-    # Normalise authorization. The filter-bar form submits the empty string
-    # ("Any authorisation") which we map to "no filter". Any non-empty value is
-    # treated as an entity-type slug and forwarded to RegulationService.
-    auth_value: str | None = authorization or None
+    # Resolve the active entity type:
+    # 1. Explicit ?authorization=X wins (empty string = "All").
+    # 2. Otherwise, read the sidebar cookie.
+    # 3. Otherwise, no filter.
+    if authorization is not None:
+        auth_value: str | None = authorization or None
+        cookie_value_to_set: str | None = authorization
+    else:
+        cookie_value = request.cookies.get("active_entity_type", "")
+        auth_value = cookie_value or None
+        cookie_value_to_set = None  # don't rewrite the cookie on cookie-driven reads
 
     # Default to IN_FORCE; "all" means no lifecycle filter; unknown values
     # quietly fall back to the default.
@@ -189,6 +196,15 @@ def catalog(
             max_age=_CATALOG_COOKIE_MAX_AGE,
             httponly=True, samesite="lax",
         )
+    # Sync the active-entity-type cookie with explicit per-page selections.
+    if cookie_value_to_set is not None:
+        if cookie_value_to_set:
+            response.set_cookie(
+                "active_entity_type", cookie_value_to_set,
+                max_age=60 * 60 * 24 * 30, httponly=True, samesite="lax",
+            )
+        else:
+            response.delete_cookie("active_entity_type")
     return response
 
 

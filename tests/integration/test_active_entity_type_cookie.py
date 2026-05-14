@@ -48,3 +48,44 @@ def test_sidebar_marks_active_option_when_cookie_set(tmp_path, monkeypatch):
         client.cookies.set("active_entity_type", "AIFM")
         r = client.get("/catalog")
     assert 'value="AIFM" selected' in r.text or 'selected value="AIFM"' in r.text
+
+
+def test_catalog_dropdown_renders_from_db(tmp_path, monkeypatch):
+    with _client(tmp_path, monkeypatch) as client:
+        # Add a third entity type — it should appear in the dropdown.
+        with client.app.state.session_factory() as s:
+            from regwatch.services.entity_types import EntityTypeService
+            EntityTypeService(s).create(slug="PSF_SPECIALISED", label="PSF Specialised")
+            s.commit()
+        r = client.get("/catalog")
+    assert r.status_code == 200
+    assert "PSF Specialised" in r.text
+
+
+def test_catalog_cookie_filters_when_no_query_param(tmp_path, monkeypatch):
+    """A bare /catalog?... visit (with a non-empty query, no authorization) uses the cookie."""
+    with _client(tmp_path, monkeypatch) as client:
+        # Seed a regulation for AIFM only.
+        with client.app.state.session_factory() as s:
+            from regwatch.db.models import (
+                LifecycleStage, Regulation, RegulationApplicability, RegulationType,
+            )
+            reg = Regulation(
+                reference_number="AIFM-ONLY",
+                type=RegulationType.CSSF_CIRCULAR,
+                title="AIFM only",
+                issuing_authority="CSSF",
+                lifecycle_stage=LifecycleStage.IN_FORCE,
+                url="http://x",
+                source_of_truth="SEED",
+            )
+            s.add(reg)
+            s.flush()
+            s.add(RegulationApplicability(
+                regulation_id=reg.regulation_id, authorization_type="AIFM"
+            ))
+            s.commit()
+        client.cookies.set("active_entity_type", "CHAPTER15_MANCO")
+        # No "authorization=" in URL but cookie set: AIFM-only reg should be hidden.
+        r = client.get("/catalog?lifecycle=IN_FORCE")
+    assert "AIFM-ONLY" not in r.text
