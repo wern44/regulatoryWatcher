@@ -18,7 +18,7 @@ from regwatch.llm.json_parser import extract_json_array, extract_json_object
 
 logger = logging.getLogger(__name__)
 
-_CLASSIFY_SYSTEM = (
+_CLASSIFY_SYSTEM_TEMPLATE = (
     "You are a regulatory classification expert for Luxembourg financial entities.\n"
     "Given a regulation or circular, determine:\n"
     "1. is_ict: Is this related to ICT, cybersecurity, digital operational resilience, "
@@ -27,8 +27,8 @@ _CLASSIFY_SYSTEM = (
     "(ICT_RISK_MGMT, INCIDENT_REPORTING, RESILIENCE_TESTING, THIRD_PARTY_RISK, "
     "INFO_SHARING, or null)\n"
     "3. applicable_entity_types: Which entity types does this apply to? "
-    '(JSON array of: "AIFM", "CHAPTER15_MANCO", "CREDIT_INSTITUTION", "CASP", '
-    '"INVESTMENT_FIRM", "INSURANCE", "PENSION_FUND", or "ALL")\n'
+    "(JSON array.)\n"
+    "{entity_types}\n"
     "4. is_superseded: Has this been replaced by a newer version? (true/false)\n"
     "5. superseded_by: If superseded, the reference number of the replacement (or null)\n"
     "6. confidence: How confident are you in this classification? (0.0 to 1.0)\n\n"
@@ -189,8 +189,12 @@ class DiscoveryService:
         return added
 
     def _classify_regulation(self, reg: Regulation) -> dict | None:
+        from regwatch.services.entity_types import prompt_segment  # noqa: PLC0415
+        system = _CLASSIFY_SYSTEM_TEMPLATE.format(
+            entity_types=prompt_segment(self._session)
+        )
         reply = self._llm.chat(
-            system=_CLASSIFY_SYSTEM,
+            system=system,
             user=(
                 f"Classify this regulation:\n"
                 f"Reference: {reg.reference_number}\n"

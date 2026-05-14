@@ -397,3 +397,37 @@ def test_discover_missing_skips_when_cancelled(tmp_path: Path) -> None:
     # Cancelled before LLM call — no LLM invocation, nothing added.
     assert added == 0
     assert llm.chat.call_count == 0
+
+
+def test_classify_regulation_uses_current_entity_type_registry(tmp_path: Path) -> None:
+    """Adding a new EntityType row should appear in the next LLM prompt."""
+    from regwatch.db.entity_type_seed import seed_default_entity_types
+    from regwatch.services.entity_types import EntityTypeService
+
+    session = _session(tmp_path)
+    seed_default_entity_types(session)
+    EntityTypeService(session).create(
+        slug="PSF_SPECIALISED",
+        label="PSF Specialised",
+    )
+    # Also create a minimal Regulation to classify.
+    reg = Regulation(
+        reference_number="TEST/1",
+        type=RegulationType.CSSF_CIRCULAR,
+        title="Test",
+        issuing_authority="CSSF",
+        lifecycle_stage=LifecycleStage.IN_FORCE,
+        url="http://x",
+        source_of_truth="SEED",
+    )
+    session.add(reg)
+    session.commit()
+
+    llm = MagicMock()
+    llm.chat.return_value = '{"is_ict": false, "confidence": 0.9}'
+    svc = DiscoveryService(session, llm=llm)
+    svc.classify_catalog()
+
+    sent_system = llm.chat.call_args.kwargs["system"]
+    assert "PSF_SPECIALISED" in sent_system
+    assert "AIFM" in sent_system
