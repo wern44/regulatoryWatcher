@@ -297,6 +297,9 @@ def create_app() -> FastAPI:
         discovery as discovery_routes,
     )
     from regwatch.web.routes import (
+        entity_types as entity_types_routes,
+    )
+    from regwatch.web.routes import (
         schedules as schedules_routes,
     )
     from regwatch.web.routes import (
@@ -316,6 +319,7 @@ def create_app() -> FastAPI:
     app.include_router(actions.router)
     app.include_router(analysis_routes.router)
     app.include_router(discovery_routes.router)
+    app.include_router(entity_types_routes.router)
     app.include_router(db_admin.router)
 
     return app
