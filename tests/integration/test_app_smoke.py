@@ -77,3 +77,16 @@ def test_first_startup_redirect_does_not_fire_on_htmx_requests(
     )
     assert htmx.status_code == 200
     assert htmx.text == ""
+
+
+def test_app_startup_seeds_entity_types(tmp_path, monkeypatch):
+    """create_app() populates the entity_type table on first boot."""
+    from sqlalchemy import select
+
+    from regwatch.db.models import EntityType
+    client_ctx = _client(tmp_path, monkeypatch)
+    with client_ctx as client:
+        with client.app.state.session_factory() as s:
+            slugs = sorted(s.scalars(select(EntityType.slug)).all())
+        assert "AIFM" in slugs
+        assert "CHAPTER15_MANCO" in slugs

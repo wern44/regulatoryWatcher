@@ -72,8 +72,10 @@ def create_app() -> FastAPI:
     migrate_discovery_run_item_columns(engine)
     session_factory = sessionmaker(engine, expire_on_commit=False)
 
+    from regwatch.db.entity_type_seed import seed_default_entity_types
     from regwatch.db.extraction_field_seed import seed_core_fields
     with session_factory() as session:
+        seed_default_entity_types(session)
         seed_core_fields(session)
         session.commit()
 
