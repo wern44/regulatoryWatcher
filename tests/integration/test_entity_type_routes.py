@@ -90,3 +90,47 @@ def test_add_refreshes_app_state_prompt_cache(tmp_path, monkeypatch):
             follow_redirects=False,
         )
         assert "PSF_SUPPORT" in client.app.state.entity_type_prompt
+
+
+def test_deactivate_hides_from_active_list(tmp_path, monkeypatch):
+    # NOTE: same `_client` constraint as test_add_entity_type_happy_path — the
+    # helper calls `(tmp_path / "pdfs").mkdir()` without exist_ok=True, so we
+    # use a single `_client` block. Each `session_factory()` call still gets a
+    # fresh DBAPI connection (NullPool), so we can verify persistence by
+    # re-opening a session after the POST against the same on-disk db.
+    with _client(tmp_path, monkeypatch) as client:
+        with client.app.state.session_factory() as s:
+            from regwatch.services.entity_types import EntityTypeService
+            aifm_id = EntityTypeService(s).get_by_slug("AIFM").entity_type_id
+        r = client.post(
+            f"/settings/entity-types/{aifm_id}/deactivate",
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+
+        with client.app.state.session_factory() as s:
+            from regwatch.services.entity_types import EntityTypeService
+            active = [r.slug for r in EntityTypeService(s).list_active()]
+        assert "AIFM" not in active
+
+
+def test_reactivate(tmp_path, monkeypatch):
+    # NOTE: see test_deactivate_hides_from_active_list — single `_client` block
+    # is required because the helper's `mkdir()` call has no exist_ok=True.
+    with _client(tmp_path, monkeypatch) as client:
+        with client.app.state.session_factory() as s:
+            from regwatch.services.entity_types import EntityTypeService
+            svc = EntityTypeService(s)
+            aifm_id = svc.get_by_slug("AIFM").entity_type_id
+            svc.deactivate(aifm_id)
+            s.commit()
+        r = client.post(
+            f"/settings/entity-types/{aifm_id}/reactivate",
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+
+        with client.app.state.session_factory() as s:
+            from regwatch.services.entity_types import EntityTypeService
+            active = [r.slug for r in EntityTypeService(s).list_active()]
+        assert "AIFM" in active

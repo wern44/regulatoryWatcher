@@ -111,3 +111,25 @@ def entity_types_add(
             )
 
     return RedirectResponse("/settings/entity-types", status_code=303)
+
+
+@router.post("/entity-types/{entity_type_id}/deactivate")
+def entity_types_deactivate(
+    request: Request, entity_type_id: int
+) -> RedirectResponse:
+    with request.app.state.session_factory() as session:
+        EntityTypeService(session).deactivate(entity_type_id)
+        session.commit()
+        request.app.state.entity_type_prompt = prompt_segment(session)
+    return RedirectResponse("/settings/entity-types", status_code=303)
+
+
+@router.post("/entity-types/{entity_type_id}/reactivate")
+def entity_types_reactivate(
+    request: Request, entity_type_id: int
+) -> RedirectResponse:
+    with request.app.state.session_factory() as session:
+        EntityTypeService(session).reactivate(entity_type_id)
+        session.commit()
+        request.app.state.entity_type_prompt = prompt_segment(session)
+    return RedirectResponse("/settings/entity-types", status_code=303)
