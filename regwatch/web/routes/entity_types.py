@@ -4,7 +4,10 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
+
+from regwatch.services.entity_types import EntityTypeService
+from regwatch.web.templates_context import render_page
 
 router = APIRouter(prefix="/settings", tags=["entity_types"])
 
@@ -34,3 +37,18 @@ def set_active_entity_type(
     else:
         response.delete_cookie(_COOKIE)
     return response
+
+
+@router.get("/entity-types", response_class=HTMLResponse)
+def entity_types_list(request: Request) -> HTMLResponse:
+    with request.app.state.session_factory() as session:
+        rows = EntityTypeService(session).list_all()
+    return render_page(
+        request,
+        "settings/entity_types.html",
+        {
+            "active": "settings",
+            "active_rows": [r for r in rows if r.active],
+            "hidden_rows": [r for r in rows if not r.active],
+        },
+    )

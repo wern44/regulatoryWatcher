@@ -1,0 +1,17 @@
+<tr id="et-row-{{ et.entity_type_id }}">
+  <td class="p-2 font-mono">{{ et.slug }}</td>
+  <td class="p-2">{{ et.label }}</td>
+  <td class="p-2">{{ et.cssf_entity_filter_id or '—' }}</td>
+  <td class="p-2">{{ et.sort_order }}</td>
+  <td class="p-2 space-x-1">
+    {% if et.active %}
+      <form method="post" action="/settings/entity-types/{{ et.entity_type_id }}/deactivate" class="inline">
+        <button class="text-xs text-amber-700 hover:underline">Deactivate</button>
+      </form>
+    {% else %}
+      <form method="post" action="/settings/entity-types/{{ et.entity_type_id }}/reactivate" class="inline">
+        <button class="text-xs text-emerald-700 hover:underline">Reactivate</button>
+      </form>
+    {% endif %}
+  </td>
+</tr>
