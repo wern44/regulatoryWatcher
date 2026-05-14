@@ -28,3 +28,23 @@ def test_active_entity_type_cookie_filters_catalog(tmp_path, monkeypatch):
         )
         assert r2.status_code == 303
         assert "active_entity_type=AIFM" in r2.headers.get("set-cookie", "")
+
+
+def test_sidebar_shows_global_switcher(tmp_path, monkeypatch):
+    with _client(tmp_path, monkeypatch) as client:
+        r = client.get("/catalog")
+    assert r.status_code == 200
+    # The switcher form posts to the cookie route.
+    assert 'action="/settings/active-entity-type"' in r.text
+    # "All entity types" is the default option.
+    assert "All entity types" in r.text
+    # Hardcoded sidebar links are gone.
+    assert '/catalog?authorization=AIFM"' not in r.text
+    assert '/catalog?authorization=CHAPTER15_MANCO"' not in r.text
+
+
+def test_sidebar_marks_active_option_when_cookie_set(tmp_path, monkeypatch):
+    with _client(tmp_path, monkeypatch) as client:
+        client.cookies.set("active_entity_type", "AIFM")
+        r = client.get("/catalog")
+    assert 'value="AIFM" selected' in r.text or 'selected value="AIFM"' in r.text

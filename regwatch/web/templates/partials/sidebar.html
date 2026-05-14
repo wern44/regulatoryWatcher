@@ -10,9 +10,23 @@
 {# `sidebar_badges` is None until the route uses render_page (Tasks 5/6).
    Once it's set, it is the SidebarBadges dataclass — attribute access works. #}
 {% set sb = sidebar_badges|default(None) %}
+{% set ets = entity_types|default([]) %}
+{% set active_et = active_entity_type|default('') %}
 
 <aside class="w-56 bg-slate-900 text-slate-100 min-h-screen p-4 flex flex-col">
-  <div class="text-xl font-bold mb-6">RegWatch</div>
+  <div class="text-xl font-bold mb-4">RegWatch</div>
+
+  <form method="post" action="/settings/active-entity-type" class="mb-6">
+    <label class="text-xs uppercase text-slate-400">Viewing</label>
+    <select name="entity_type" onchange="this.form.submit()"
+            class="w-full bg-slate-800 text-slate-100 text-sm rounded px-2 py-1 mt-1">
+      <option value="" {% if not active_et %}selected{% endif %}>All entity types</option>
+      {% for et in ets %}
+        <option value="{{ et.slug }}" {% if active_et == et.slug %}selected{% endif %}>{{ et.label }}</option>
+      {% endfor %}
+    </select>
+  </form>
+
   <nav class="flex flex-col gap-1 text-sm">
     <a href="/" class="px-3 py-2 rounded hover:bg-slate-800 {% if active == 'dashboard' %}bg-slate-800{% endif %}">Dashboard</a>
     <a href="/inbox" class="px-3 py-2 rounded hover:bg-slate-800 flex items-center justify-between {% if active == 'inbox' %}bg-slate-800{% endif %}">
@@ -21,8 +35,6 @@
     <a href="/catalog" class="px-3 py-2 rounded hover:bg-slate-800 flex items-center justify-between {% if active == 'catalog' %}bg-slate-800{% endif %}">
       <span>Catalog</span>{{ badge(sb.catalog if sb else 0) }}
     </a>
-    <a href="/catalog?authorization=AIFM" class="px-5 py-1 rounded hover:bg-slate-800 text-slate-300">AIFM</a>
-    <a href="/catalog?authorization=CHAPTER15_MANCO" class="px-5 py-1 rounded hover:bg-slate-800 text-slate-300">Chapter 15 ManCo</a>
     <a href="/ict" class="px-3 py-2 rounded hover:bg-slate-800 flex items-center justify-between {% if active == 'ict' %}bg-slate-800{% endif %}">
       <span>ICT / DORA</span>{{ badge(sb.ict if sb else 0) }}
     </a>
@@ -36,5 +48,6 @@
     <a href="/settings" class="mt-auto px-3 py-2 rounded hover:bg-slate-800 {% if active == 'settings' %}bg-slate-800{% endif %}">Settings</a>
     <a href="/settings/extraction" class="px-5 py-1 rounded hover:bg-slate-800 text-slate-300">Extraction Fields</a>
     <a href="/settings/schedules" class="px-5 py-1 rounded hover:bg-slate-800 text-slate-300">Schedules</a>
+    <a href="/settings/entity-types" class="px-5 py-1 rounded hover:bg-slate-800 text-slate-300">Entity Types</a>
   </nav>
 </aside>
