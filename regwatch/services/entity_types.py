@@ -140,3 +140,24 @@ class EntityTypeService:
         if row is not None:
             row.active = True
             self._session.flush()
+
+
+def prompt_segment(session: Session) -> str:
+    """Return a bullet list of active entity-type slugs for inclusion in LLM prompts.
+
+    The returned string ends with an ``"ALL"`` sentinel meaning "applies to
+    all financial entities". Used by both the CSSF classifier
+    (``services/discovery.py``) and the per-document classifier
+    (``pipeline/match/classify.py``).
+    """
+    rows = session.scalars(
+        select(EntityType)
+        .where(EntityType.active.is_(True))
+        .order_by(EntityType.sort_order, EntityType.slug)
+    ).all()
+    bullets = "\n".join(f'- "{r.slug}" ({r.label})' for r in rows)
+    return (
+        "Valid entity_type slugs:\n"
+        f"{bullets}\n"
+        '- "ALL" (applies broadly to all financial entities)'
+    )
