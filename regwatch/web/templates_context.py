@@ -1,16 +1,12 @@
-"""Render helper that auto-injects sidebar_badges into full-page renders.
-
-Use `render_page` instead of `templates.TemplateResponse` for any view
-that extends `base.html`. Partials and HTMX fragment endpoints should
-keep using `templates.TemplateResponse` directly — they do not include
-the sidebar and the extra DB hit would be wasted.
-"""
+"""Render helper that auto-injects sidebar_badges, entity_types, and
+active_entity_type into full-page renders."""
 from __future__ import annotations
 
 from typing import Any
 
 from fastapi import Request
 
+from regwatch.services.entity_types import EntityTypeService
 from regwatch.services.sidebar_badges import SidebarBadgeService
 
 
@@ -19,14 +15,15 @@ def render_page(
     template_name: str,
     context: dict[str, Any],
 ) -> Any:
-    """TemplateResponse with `sidebar_badges` auto-injected.
-
-    If the caller already set `sidebar_badges` in *context*, it is
-    preserved (used by tests that want to control the sidebar state).
-    """
     templates = request.app.state.templates
+    extras: dict[str, Any] = {}
     if "sidebar_badges" not in context:
         with request.app.state.session_factory() as session:
-            badges = SidebarBadgeService(session).counts()
-        context = {**context, "sidebar_badges": badges}
-    return templates.TemplateResponse(request, template_name, context)
+            extras["sidebar_badges"] = SidebarBadgeService(session).counts()
+    if "entity_types" not in context:
+        with request.app.state.session_factory() as session:
+            extras["entity_types"] = EntityTypeService(session).list_active()
+    if "active_entity_type" not in context:
+        extras["active_entity_type"] = request.cookies.get("active_entity_type", "") or ""
+    final_context = {**extras, **context}
+    return templates.TemplateResponse(request, template_name, final_context)
