@@ -63,9 +63,11 @@ def create_app() -> FastAPI:
     # column as nullable and backfills, after which sync_schema is a no-op
     # for that column.
     from regwatch.db.migrations import (
+        migrate_authorization_type_drop_check,
         migrate_discovery_run_item_columns,
         migrate_regulation_created_at,
     )
+    migrate_authorization_type_drop_check(engine)
     migrate_regulation_created_at(engine)
     sync_schema(engine, Base.metadata)
     create_virtual_tables(engine, embedding_dim=config.llm.embedding_dim)

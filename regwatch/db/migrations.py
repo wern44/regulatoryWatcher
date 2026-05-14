@@ -89,3 +89,60 @@ def migrate_regulation_created_at(engine: Engine) -> None:
         logger.info(
             "Backfilled regulation.created_at on %d existing rows", result.rowcount
         )
+
+
+def migrate_authorization_type_drop_check(engine: Engine) -> None:
+    """Remove the legacy CHECK(type IN ('AIFM','CHAPTER15_MANCO')) constraint on
+    authorization.type so new entity-type slugs can be inserted.
+
+    SQLite has no DROP CONSTRAINT — we use the table-rewrite pattern:
+    rename old table, create new (without CHECK), copy rows, drop old.
+
+    Idempotent: returns cleanly if the table doesn't exist or the
+    constraint is already gone.
+    """
+    with engine.begin() as conn:
+        row = conn.execute(text(
+            "SELECT sql FROM sqlite_master "
+            "WHERE type='table' AND name='authorization'"
+        )).first()
+        if row is None:
+            return  # fresh DB; create_all handles it
+        ddl = (row[0] or "")
+        if "CHECK" not in ddl.upper() or "AIFM" not in ddl.upper():
+            return  # already migrated or never had the constraint
+
+        logger.info("Migrating authorization table to drop legacy type CHECK")
+
+        # Capture column list so the INSERT SELECT below copies every column
+        # (a future column add would otherwise be silently dropped).
+        col_rows = conn.execute(text("PRAGMA table_info(authorization)")).all()
+        cols = [r[1] for r in col_rows]
+        col_list = ", ".join(cols)
+
+        conn.execute(text(
+            "ALTER TABLE authorization RENAME TO _authorization_old"
+        ))
+        # Recreate the table with the canonical (no-CHECK) shape.
+        # We intentionally hand-write the DDL rather than relying on
+        # Base.metadata so this migration works against any future model
+        # tweak; the *intent* is to drop a constraint, not refresh schema.
+        conn.execute(text("""
+            CREATE TABLE authorization (
+                authorization_id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                lei VARCHAR(20) NOT NULL,
+                type VARCHAR(20) NOT NULL,
+                cssf_entity_id VARCHAR(20),
+                authorization_date DATE,
+                status VARCHAR(50),
+                cssf_url VARCHAR(500),
+                FOREIGN KEY(lei) REFERENCES entity (lei),
+                CONSTRAINT uq_authorization_lei_type UNIQUE (lei, type)
+            )
+        """))
+        conn.execute(text(
+            f"INSERT INTO authorization ({col_list}) "
+            f"SELECT {col_list} FROM _authorization_old"
+        ))
+        conn.execute(text("DROP TABLE _authorization_old"))
+        logger.info("authorization table migrated; CHECK constraint dropped")

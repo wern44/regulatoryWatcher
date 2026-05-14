@@ -127,7 +127,7 @@ class Authorization(Base):
 
     authorization_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     lei: Mapped[str] = mapped_column(ForeignKey("entity.lei"))
-    type: Mapped[AuthorizationType] = mapped_column(Enum(AuthorizationType))
+    type: Mapped[str] = mapped_column(String(20))
     cssf_entity_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
     authorization_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[str | None] = mapped_column(String(50), nullable=True)
