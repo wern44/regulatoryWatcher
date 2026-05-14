@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from regwatch.config import CssfDiscoveryConfig, PublicationTypeConfig
 from regwatch.db.engine import create_app_engine
+from regwatch.db.entity_type_seed import seed_default_entity_types
 from regwatch.db.models import (
-    AuthorizationType,
     Base,
     DiscoveryRun,
     DiscoveryRunItem,
@@ -300,9 +300,14 @@ def test_dry_run_new_path_writes_null_regulation_id(tmp_path):
     )
     svc = CssfDiscoveryService(session_factory=sf, config=cfg, http_client=client)
 
+    # Seed the entity_type table so the service can look up filter IDs.
+    with sf() as s:
+        seed_default_entity_types(s)
+        s.commit()
+
     # Run in dry-run mode — must not raise FOREIGN KEY constraint failed.
     run_id = svc.run(
-        entity_types=[AuthorizationType.AIFM],
+        entity_types=["AIFM"],
         mode="full",
         triggered_by="TEST",
         dry_run=True,

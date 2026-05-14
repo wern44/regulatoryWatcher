@@ -13,7 +13,6 @@ from regwatch.analysis.runner import AnalysisRunner
 from regwatch.db.models import (
     AnalysisRun,
     AnalysisRunStatus,
-    AuthorizationType,
     DiscoveryRun,
     DocumentVersion,
     LifecycleStage,
@@ -493,16 +492,11 @@ def catalog_discover_cssf(
         )
 
     if entity_types:
-        auth_types: list[AuthorizationType] = []
-        for name in entity_types:
-            try:
-                auth_types.append(AuthorizationType(name))
-            except ValueError:
-                pass
+        auth_slugs: list[str] = list(entity_types)
     else:
-        auth_types = [AuthorizationType(a.type) for a in cfg.entity.authorizations]
+        auth_slugs = [a.type for a in cfg.entity.authorizations]
 
-    if not auth_types:
+    if not auth_slugs:
         return RedirectResponse("/catalog?error=no-entity-types", status_code=303)
 
     if mode not in ("incremental", "full"):
@@ -514,7 +508,7 @@ def catalog_discover_cssf(
             status="RUNNING",
             started_at=datetime.now(UTC),
             triggered_by="USER_UI",
-            entity_types=[et.value for et in auth_types],
+            entity_types=list(auth_slugs),
             mode=mode,
         )
         s.add(run)
@@ -540,7 +534,7 @@ def catalog_discover_cssf(
         progress.start(run_id)
         try:
             service.run(
-                entity_types=auth_types,
+                entity_types=auth_slugs,
                 mode=mode,  # type: ignore[arg-type]
                 triggered_by="USER_UI",
                 existing_run_id=run_id,

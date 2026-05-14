@@ -19,6 +19,13 @@ def _setup(tmp_path, monkeypatch):
     engine = create_app_engine(db)
     Base.metadata.create_all(engine)
     sf = sessionmaker(engine, expire_on_commit=False)
+    # Seed entity_type rows so the CLI's slug-validation lookup succeeds.
+    # Task 19 introduces the shared seeded_entity_types fixture; until then,
+    # every test that exercises the discover-cssf command must seed inline.
+    from regwatch.db.entity_type_seed import seed_default_entity_types
+    with sf() as s:
+        seed_default_entity_types(s)
+        s.commit()
     cfg = tmp_path / "config.yaml"
     cfg.write_text(
         open("config.example.yaml").read().replace(

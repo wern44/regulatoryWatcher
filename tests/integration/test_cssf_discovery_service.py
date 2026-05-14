@@ -9,7 +9,6 @@ from sqlalchemy.orm import sessionmaker
 from regwatch.config import CssfDiscoveryConfig, PublicationTypeConfig
 from regwatch.db.engine import create_app_engine
 from regwatch.db.models import (
-    AuthorizationType,
     Base,
     DiscoveryRun,
     DiscoveryRunItem,
@@ -30,6 +29,19 @@ def _setup_db(tmp_path):
     engine = create_app_engine(tmp_path / "app.db")
     Base.metadata.create_all(engine)
     return sessionmaker(engine, expire_on_commit=False)
+
+
+def _seed_default_entity_types(sf) -> None:
+    """Seed the entity_type table with AIFM + CHAPTER15_MANCO defaults.
+
+    Inlined here (rather than a shared conftest fixture) because Task 19
+    introduces the shared ``seeded_entity_types`` fixture; until then,
+    every test that exercises ``CssfDiscoveryService.run()`` must seed.
+    """
+    from regwatch.db.entity_type_seed import seed_default_entity_types  # noqa: PLC0415
+    with sf() as s:
+        seed_default_entity_types(s)
+        s.commit()
 
 
 def _mock_transport(listing_body=LISTING_HTML, detail_body=DETAIL_22_806):
@@ -66,9 +78,10 @@ def _first_ref_in_listing() -> str:
 
 def test_full_crawl_creates_new_rows_and_applicability(tmp_path):
     sf = _setup_db(tmp_path)
+    _seed_default_entity_types(sf)
     client = httpx.Client(transport=_mock_transport(), base_url="https://www.cssf.lu")
     run_id = _svc(sf, client=client).run(
-        entity_types=[AuthorizationType.AIFM], mode="full", triggered_by="USER_CLI",
+        entity_types=["AIFM"], mode="full", triggered_by="USER_CLI",
     )
     with sf() as s:
         run = s.get(DiscoveryRun, run_id)
@@ -86,6 +99,7 @@ def test_full_crawl_creates_new_rows_and_applicability(tmp_path):
 
 def test_incremental_stops_at_first_known_ref(tmp_path):
     sf = _setup_db(tmp_path)
+    _seed_default_entity_types(sf)
     first_ref = _first_ref_in_listing()
     with sf() as s:
         s.add(Regulation(
@@ -96,7 +110,7 @@ def test_incremental_stops_at_first_known_ref(tmp_path):
         s.commit()
     client = httpx.Client(transport=_mock_transport(), base_url="https://www.cssf.lu")
     run_id = _svc(sf, client=client).run(
-        entity_types=[AuthorizationType.AIFM], mode="incremental", triggered_by="USER_CLI",
+        entity_types=["AIFM"], mode="incremental", triggered_by="USER_CLI",
     )
     with sf() as s:
         run = s.get(DiscoveryRun, run_id)
@@ -109,6 +123,7 @@ def test_incremental_stops_at_first_known_ref(tmp_path):
 
 def test_override_exclude_skips_regulation(tmp_path):
     sf = _setup_db(tmp_path)
+    _seed_default_entity_types(sf)
     with sf() as s:
         s.add(RegulationOverride(
             reference_number="CSSF 22/806",
@@ -118,7 +133,7 @@ def test_override_exclude_skips_regulation(tmp_path):
         s.commit()
     client = httpx.Client(transport=_mock_transport(), base_url="https://www.cssf.lu")
     run_id = _svc(sf, client=client).run(
-        entity_types=[AuthorizationType.AIFM], mode="full", triggered_by="USER_CLI",
+        entity_types=["AIFM"], mode="full", triggered_by="USER_CLI",
     )
     with sf() as s:
         reg = s.query(Regulation).filter_by(reference_number="CSSF 22/806").one_or_none()
@@ -130,6 +145,7 @@ def test_override_exclude_skips_regulation(tmp_path):
 
 def test_detail_404_marks_existing_regulation_repealed(tmp_path):
     sf = _setup_db(tmp_path)
+    _seed_default_entity_types(sf)
     first_ref = _first_ref_in_listing()
     with sf() as s:
         s.add(Regulation(
@@ -149,7 +165,7 @@ def test_detail_404_marks_existing_regulation_repealed(tmp_path):
 
     client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://www.cssf.lu")
     _svc(sf, client=client).run(
-        entity_types=[AuthorizationType.AIFM], mode="full", triggered_by="USER_CLI",
+        entity_types=["AIFM"], mode="full", triggered_by="USER_CLI",
     )
     with sf() as s:
         reg = s.query(Regulation).filter_by(reference_number=first_ref).one()
@@ -158,9 +174,10 @@ def test_detail_404_marks_existing_regulation_repealed(tmp_path):
 
 def test_stubs_created_for_unknown_amendment_targets(tmp_path):
     sf = _setup_db(tmp_path)
+    _seed_default_entity_types(sf)
     client = httpx.Client(transport=_mock_transport(), base_url="https://www.cssf.lu")
     _svc(sf, client=client).run(
-        entity_types=[AuthorizationType.AIFM], mode="full", triggered_by="USER_CLI",
+        entity_types=["AIFM"], mode="full", triggered_by="USER_CLI",
     )
     with sf() as s:
         stubs = s.query(Regulation).filter_by(source_of_truth="CSSF_STUB").all()
@@ -284,33 +301,129 @@ def test_reclassify_respects_override(tmp_path):
         assert reg.is_ict is True  # override respected
 
 
-def test_map_labels_to_auth_types():
-    from regwatch.services.cssf_discovery import _map_labels_to_auth_types
-    assert AuthorizationType.AIFM in _map_labels_to_auth_types(
-        ["Alternative investment fund managers", "Credit institutions"]
+def test_map_labels_to_slugs(tmp_path):
+    """``_map_labels_to_slugs`` matches detail-page labels against the
+    DB-built substring map and returns the entity-type slugs."""
+    from regwatch.services.cssf_discovery import _map_labels_to_slugs, build_label_map
+
+    sf = _setup_db(tmp_path)
+    _seed_default_entity_types(sf)
+    with sf() as s:
+        label_map = build_label_map(s)
+
+    assert "AIFM" in _map_labels_to_slugs(
+        ["Alternative investment fund managers", "Credit institutions"], label_map
     )
-    assert AuthorizationType.CHAPTER15_MANCO in _map_labels_to_auth_types(
-        ["UCITS management companies"]
+    assert "CHAPTER15_MANCO" in _map_labels_to_slugs(
+        ["UCITS management companies"], label_map
     )
-    result = _map_labels_to_auth_types(
-        ["Alternative investment fund managers", "UCITS management companies"]
+    result = _map_labels_to_slugs(
+        ["Alternative investment fund managers", "UCITS management companies"],
+        label_map,
     )
-    assert set(result) == {AuthorizationType.AIFM, AuthorizationType.CHAPTER15_MANCO}
+    assert set(result) == {"AIFM", "CHAPTER15_MANCO"}
     # Unrelated labels → empty
-    assert _map_labels_to_auth_types(["Credit institutions", "Insurance companies"]) == []
+    assert _map_labels_to_slugs(
+        ["Credit institutions", "Insurance companies"], label_map
+    ) == []
 
 
 def test_all_failed_when_listing_500s(tmp_path):
     sf = _setup_db(tmp_path)
+    _seed_default_entity_types(sf)
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500)
 
     client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://www.cssf.lu")
     run_id = _svc(sf, client=client).run(
-        entity_types=[AuthorizationType.AIFM], mode="full", triggered_by="USER_CLI",
+        entity_types=["AIFM"], mode="full", triggered_by="USER_CLI",
     )
     with sf() as s:
         run = s.get(DiscoveryRun, run_id)
         assert run.status in ("FAILED", "PARTIAL")
         assert run.error_summary is not None
+
+
+def test_run_reads_filter_ids_from_entity_type_table(tmp_path):
+    """Filter IDs come from EntityType.cssf_entity_filter_id, not config."""
+    from regwatch.db.entity_type_seed import seed_default_entity_types
+    from regwatch.services.entity_types import EntityTypeService
+
+    sf = _setup_db(tmp_path)
+    with sf() as s:
+        seed_default_entity_types(s)
+        # Set AIFM's filter ID to a sentinel and verify the scraper requests it.
+        svc = EntityTypeService(s)
+        aifm = svc.get_by_slug("AIFM")
+        assert aifm is not None
+        svc.update(aifm.entity_type_id, cssf_entity_filter_id=99999)
+        s.commit()
+
+    seen_entity_filter_ids: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        params = dict(request.url.params)
+        if "entity_type" in params:
+            seen_entity_filter_ids.append(params["entity_type"])
+        if path in ("/en/regulatory-framework/", "/en/regulatory-framework"):
+            return httpx.Response(200, text="<html><body></body></html>")
+        if "/en/regulatory-framework/page/" in path:
+            return httpx.Response(200, text="<html><body></body></html>")
+        return httpx.Response(404)
+
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="https://www.cssf.lu"
+    )
+    cfg = CssfDiscoveryConfig(
+        request_delay_ms=0,
+        publication_types=[
+            PublicationTypeConfig(label="CSSF circular", filter_id=567, type="CSSF_CIRCULAR"),
+        ],
+        retire_min_scraped=0,
+    )
+    service = CssfDiscoveryService(session_factory=sf, config=cfg, http_client=client)
+    run_id = service.run(entity_types=["AIFM"], mode="full", triggered_by="TEST")
+    assert run_id > 0
+    # The scraper must have used the DB-stored filter id (99999), not the
+    # legacy hard-coded 502.
+    assert "99999" in seen_entity_filter_ids, (
+        f"expected filter_id=99999 in requests; saw {seen_entity_filter_ids}"
+    )
+    assert "502" not in seen_entity_filter_ids
+
+
+def test_run_skips_slugs_without_filter_id(tmp_path, caplog):
+    """A slug with cssf_entity_filter_id=NULL is skipped with INFO log."""
+    import logging
+
+    from regwatch.db.entity_type_seed import seed_default_entity_types
+    from regwatch.services.entity_types import EntityTypeService
+
+    sf = _setup_db(tmp_path)
+    with sf() as s:
+        seed_default_entity_types(s)
+        EntityTypeService(s).create(
+            slug="PSF_SPECIALISED",
+            label="PSF Specialised",
+            cssf_entity_filter_id=None,
+        )
+        s.commit()
+
+    cfg = CssfDiscoveryConfig(
+        request_delay_ms=0,
+        publication_types=[
+            PublicationTypeConfig(label="CSSF circular", filter_id=567, type="CSSF_CIRCULAR"),
+        ],
+        retire_min_scraped=0,
+    )
+    service = CssfDiscoveryService(session_factory=sf, config=cfg)
+    with caplog.at_level(logging.INFO):
+        service.run(
+            entity_types=["PSF_SPECIALISED"], mode="full", triggered_by="TEST",
+        )
+    assert any(
+        "PSF_SPECIALISED" in r.message and "no CSSF filter ID" in r.message
+        for r in caplog.records
+    ), f"expected skip-log for PSF_SPECIALISED; saw: {[r.message for r in caplog.records]}"

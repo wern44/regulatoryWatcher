@@ -15,8 +15,8 @@ from sqlalchemy.orm import sessionmaker
 
 from regwatch.config import CssfDiscoveryConfig, PublicationTypeConfig
 from regwatch.db.engine import create_app_engine
+from regwatch.db.entity_type_seed import seed_default_entity_types
 from regwatch.db.models import (
-    AuthorizationType,
     Base,
     DiscoveryRun,
     DiscoveryRunItem,
@@ -137,7 +137,7 @@ def _build_svc(
 # Shared fixtures
 # ---------------------------------------------------------------------------
 
-_ENTITY_TYPES = [AuthorizationType.AIFM, AuthorizationType.CHAPTER15_MANCO]
+_ENTITY_TYPES = ["AIFM", "CHAPTER15_MANCO"]
 
 # Three publication types: circular, regulation, professional standard.
 _PUB_TYPES_3 = [
@@ -153,7 +153,14 @@ _PUB_TYPES_3 = [
 def sf(tmp_path):
     engine = create_app_engine(tmp_path / "e2e.db")
     Base.metadata.create_all(engine)
-    return sessionmaker(engine, expire_on_commit=False)
+    session_factory = sessionmaker(engine, expire_on_commit=False)
+    # Seed entity_type rows (AIFM filter_id=502, CHAPTER15_MANCO filter_id=2001)
+    # so the service can resolve slugs against the DB registry. The legacy
+    # filter IDs match the matrix transport's _CELL_MAP keys.
+    with session_factory() as s:
+        seed_default_entity_types(s)
+        s.commit()
+    return session_factory
 
 
 # ---------------------------------------------------------------------------

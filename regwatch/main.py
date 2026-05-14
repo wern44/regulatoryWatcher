@@ -94,7 +94,6 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         from apscheduler.schedulers.background import BackgroundScheduler  # noqa: PLC0415
 
-        from regwatch.db.models import AuthorizationType  # noqa: PLC0415
         from regwatch.pipeline.run_helpers import run_pipeline_background  # noqa: PLC0415
         from regwatch.services.cssf_discovery import CssfDiscoveryService  # noqa: PLC0415
         from regwatch.services.discovery_runner import run_catalog_refresh  # noqa: PLC0415
@@ -135,16 +134,15 @@ def create_app() -> FastAPI:
                 return
             logger.info("Scheduled CSSF discovery (incremental) starting")
             try:
-                auth_types = [
-                    AuthorizationType(a.type)
-                    for a in config.entity.authorizations
+                auth_slugs: list[str] = [
+                    a.type for a in config.entity.authorizations
                 ]
                 service = CssfDiscoveryService(
                     session_factory=session_factory,
                     config=config.cssf_discovery,
                 )
                 service.run(
-                    entity_types=auth_types,
+                    entity_types=auth_slugs,
                     mode="incremental",
                     triggered_by="SCHEDULER",
                 )
@@ -160,16 +158,15 @@ def create_app() -> FastAPI:
                 return
             logger.info("Scheduled CSSF reconciliation (full) starting")
             try:
-                auth_types = [
-                    AuthorizationType(a.type)
-                    for a in config.entity.authorizations
+                auth_slugs: list[str] = [
+                    a.type for a in config.entity.authorizations
                 ]
                 service = CssfDiscoveryService(
                     session_factory=session_factory,
                     config=config.cssf_discovery,
                 )
                 service.run(
-                    entity_types=auth_types,
+                    entity_types=auth_slugs,
                     mode="full",
                     triggered_by="SCHEDULER",
                 )

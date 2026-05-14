@@ -205,11 +205,10 @@ def test_reactivation_flips_repealed_to_in_force(sf):
         applicable_entities=[], pdf_url_en=None, pdf_url_fr=None,
         published_at=None, updated_at=None, description="",
     )
-    from regwatch.db.models import AuthorizationType
     svc = CssfDiscoveryService(session_factory=sf, config=_stub_cfg())
     pub = _stub_cfg().publication_types[0]
     with patch("regwatch.services.cssf_discovery.fetch_circular_detail", return_value=detail):
-        svc._reconcile_row(run_id, AuthorizationType.AIFM, pub, listing)
+        svc._reconcile_row(run_id, "AIFM", pub, listing, {})
 
     with sf() as s:
         reg = s.get(Regulation, reg_id)

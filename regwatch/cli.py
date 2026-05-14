@@ -14,7 +14,6 @@ from regwatch.analysis.startup import sweep_stuck_runs
 from regwatch.config import AppConfig, load_config
 from regwatch.db.engine import create_app_engine
 from regwatch.db.models import (
-    AuthorizationType,
     Base,
     DiscoveryRun,
     DocumentChunk,
@@ -393,22 +392,26 @@ def discover_cssf(
         )
         raise typer.Exit(code=2)
 
-    # Resolve entity types
+    # Resolve entity-type slugs against the EntityType DB registry.
+    from regwatch.services.entity_types import EntityTypeService  # noqa: PLC0415
+
     if entity:
-        auth_types: list[AuthorizationType] = []
+        auth_slugs: list[str] = []
+        with sf() as _s:
+            ets = EntityTypeService(_s)
+            known = {dto.slug for dto in ets.list_all()}
         for name in entity:
-            try:
-                auth_types.append(AuthorizationType(name))
-            except ValueError as e:
+            if name not in known:
                 typer.echo(
                     f"Unknown entity: {name!r}. "
-                    f"Valid: {[e.value for e in AuthorizationType]}"
+                    f"Valid: {sorted(known)}"
                 )
-                raise typer.Exit(code=2) from e
+                raise typer.Exit(code=2)
+            auth_slugs.append(name)
     else:
-        auth_types = [AuthorizationType(a.type) for a in cfg.entity.authorizations]
+        auth_slugs = [a.type for a in cfg.entity.authorizations]
 
-    if not auth_types:
+    if not auth_slugs:
         typer.echo("No authorization types configured.")
         raise typer.Exit(code=1)
 
@@ -428,10 +431,10 @@ def discover_cssf(
 
     typer.echo(
         f"Starting CSSF discovery: mode={mode}, "
-        f"entity_types={[e.value for e in auth_types]}"
+        f"entity_types={auth_slugs}"
     )
     run_id = service.run(
-        entity_types=auth_types,
+        entity_types=auth_slugs,
         mode=mode,
         triggered_by="USER_CLI",
         dry_run=dry_run,

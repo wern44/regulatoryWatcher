@@ -15,8 +15,8 @@ from sqlalchemy.orm import sessionmaker
 
 from regwatch.config import CssfDiscoveryConfig, PublicationTypeConfig
 from regwatch.db.engine import create_app_engine
+from regwatch.db.entity_type_seed import seed_default_entity_types
 from regwatch.db.models import (
-    AuthorizationType,
     Base,
     DiscoveryRun,
     Regulation,
@@ -107,7 +107,15 @@ def _make_transport() -> httpx.MockTransport:
 def sf(tmp_path):
     engine = create_app_engine(tmp_path / "app.db")
     Base.metadata.create_all(engine)
-    return sessionmaker(engine, expire_on_commit=False)
+    session_factory = sessionmaker(engine, expire_on_commit=False)
+    # Seed the entity_type table so CssfDiscoveryService.run() can look up
+    # filter IDs and the detail-label substring map. The legacy default
+    # filter IDs (AIFM=502, CHAPTER15_MANCO=2001) match the matrix transport's
+    # _CELL_MAP keys above.
+    with session_factory() as s:
+        seed_default_entity_types(s)
+        s.commit()
+    return session_factory
 
 
 @pytest.fixture
@@ -135,7 +143,7 @@ def svc(sf):
 
 def test_matrix_creates_four_regulations(sf, svc):
     run_id = svc.run(
-        entity_types=[AuthorizationType.AIFM, AuthorizationType.CHAPTER15_MANCO],
+        entity_types=["AIFM", "CHAPTER15_MANCO"],
         mode="full",
         triggered_by="TEST",
     )
@@ -150,7 +158,7 @@ def test_matrix_creates_four_regulations(sf, svc):
 
 def test_matrix_creates_four_discovery_source_rows(sf, svc):
     svc.run(
-        entity_types=[AuthorizationType.AIFM, AuthorizationType.CHAPTER15_MANCO],
+        entity_types=["AIFM", "CHAPTER15_MANCO"],
         mode="full",
         triggered_by="TEST",
     )
@@ -165,7 +173,7 @@ def test_matrix_creates_four_discovery_source_rows(sf, svc):
 def test_matrix_regulation_types_match_pub_type_config(sf, svc):
     """Regulation.type is derived from the cell's PublicationTypeConfig.type."""
     svc.run(
-        entity_types=[AuthorizationType.AIFM, AuthorizationType.CHAPTER15_MANCO],
+        entity_types=["AIFM", "CHAPTER15_MANCO"],
         mode="full",
         triggered_by="TEST",
     )
@@ -187,7 +195,7 @@ def test_matrix_regulation_types_match_pub_type_config(sf, svc):
 def test_matrix_discovery_source_entity_and_content_types(sf, svc):
     """Each source row carries the correct entity_type and content_type."""
     svc.run(
-        entity_types=[AuthorizationType.AIFM, AuthorizationType.CHAPTER15_MANCO],
+        entity_types=["AIFM", "CHAPTER15_MANCO"],
         mode="full",
         triggered_by="TEST",
     )

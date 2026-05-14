@@ -20,9 +20,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from regwatch.config import CssfDiscoveryConfig, PublicationTypeConfig
 from regwatch.db.models import (
-    AuthorizationType,
     DiscoveryRun,
     DiscoveryRunItem,
+    EntityType,
     LifecycleStage,
     Regulation,
     RegulationApplicability,
@@ -61,29 +61,33 @@ class RetirePreview:
     total_scraped: int             # for transparency
 
 
-# CSSF detail pages list applicable entities using these human-readable labels.
-# Map them to our AuthorizationType enum. Substring-match: the label as it appears
-# in ``.entities-list li`` on CSSF detail pages is checked for any of these prefixes.
-CSSF_ENTITY_LABEL_TO_AUTH: dict[str, AuthorizationType] = {
-    "Alternative investment fund manager": AuthorizationType.AIFM,
-    "AIFM": AuthorizationType.AIFM,
-    "UCITS management company": AuthorizationType.CHAPTER15_MANCO,
-    "UCITS management companies": AuthorizationType.CHAPTER15_MANCO,
-    "Chapter 15 management company": AuthorizationType.CHAPTER15_MANCO,
-    "Chapter 15 management companies": AuthorizationType.CHAPTER15_MANCO,
-    "Management company": AuthorizationType.CHAPTER15_MANCO,
-}
+def build_label_map(session: Session) -> dict[str, str]:
+    """Substring pattern -> slug, built from EntityType.cssf_detail_labels.
+
+    Patterns are matched case-insensitively as substrings of the
+    ``.entities-list li`` text on CSSF detail pages. Built once per
+    discovery run from the active ``entity_type`` rows.
+    """
+    out: dict[str, str] = {}
+    for et in session.scalars(
+        select(EntityType).where(EntityType.active.is_(True))
+    ).all():
+        for label in (et.cssf_detail_labels or []):
+            out[label] = et.slug
+    return out
 
 
-def _map_labels_to_auth_types(labels: list[str]) -> list[AuthorizationType]:
-    """Match each label against the known prefix mapping; return deduped list."""
-    found: set[AuthorizationType] = set()
+def _map_labels_to_slugs(
+    labels: list[str], label_map: dict[str, str]
+) -> list[str]:
+    """Match each label against the prefix mapping; return deduped, sorted slug list."""
+    found: set[str] = set()
     for label in labels:
         norm = label.strip()
-        for prefix, auth in CSSF_ENTITY_LABEL_TO_AUTH.items():
+        for prefix, slug in label_map.items():
             if prefix.lower() in norm.lower():
-                found.add(auth)
-    return sorted(found, key=lambda a: a.value)
+                found.add(slug)
+    return sorted(found)
 
 
 def _compose_title(detail: CircularDetail, listing: CircularListingRow) -> str:
@@ -183,7 +187,7 @@ class CssfDiscoveryService:
     def run(
         self,
         *,
-        entity_types: list[AuthorizationType],
+        entity_types: list[str],
         mode: Literal["full", "incremental"],
         triggered_by: str,
         existing_run_id: int | None = None,
@@ -206,13 +210,25 @@ class CssfDiscoveryService:
                     f"publication_type in config"
                 )
 
+        # Build slug -> EntityType row map and the detail-page label map once
+        # per run from the active entity_type rows. The caller passes slug
+        # strings; everything downstream resolves IDs/labels from the DB.
+        with self._sf() as s:
+            by_slug: dict[str, EntityType] = {
+                et.slug: et
+                for et in s.scalars(
+                    select(EntityType).where(EntityType.active.is_(True))
+                ).all()
+            }
+            label_map = build_label_map(s)
+
         if existing_run_id is None:
             with self._sf() as s:
                 run = DiscoveryRun(
                     status="RUNNING",
                     started_at=datetime.now(UTC),
                     triggered_by=triggered_by,
-                    entity_types=[et.value for et in entity_types],
+                    entity_types=list(entity_types),
                     mode=mode,
                 )
                 s.add(run)
@@ -228,26 +244,34 @@ class CssfDiscoveryService:
                 if run.started_at is None:
                     run.started_at = datetime.now(UTC)
                 run.triggered_by = triggered_by
-                run.entity_types = [et.value for et in entity_types]
+                run.entity_types = list(entity_types)
                 run.mode = mode
                 s.commit()
 
         aggregate_error: str | None = None
         try:
-            for et in entity_types:
-                entity_filter_id = self._config.entity_filter_ids.get(et.value)
-                if entity_filter_id is None:
-                    logger.warning("no filter_id mapped for %s; skipping", et.value)
+            for slug in entity_types:
+                et_row = by_slug.get(slug)
+                if et_row is None:
+                    logger.warning("unknown entity slug %s; skipping", slug)
                     continue
+                if et_row.cssf_entity_filter_id is None:
+                    logger.info(
+                        "skipping %s: no CSSF filter ID configured", slug
+                    )
+                    continue
+                entity_filter_id = et_row.cssf_entity_filter_id
                 for pub in pubs_to_use:
                     try:
-                        self._run_for_cell(run_id, et, entity_filter_id, pub, mode)
+                        self._run_for_cell(
+                            run_id, slug, entity_filter_id, pub, mode, label_map
+                        )
                     except Exception as e:  # noqa: BLE001
                         logger.exception(
                             "cell failed: entity=%s (%d) x content=%s (%d)",
-                            et.value, entity_filter_id, pub.label, pub.filter_id,
+                            slug, entity_filter_id, pub.label, pub.filter_id,
                         )
-                        msg = f"{et.value} x {pub.label}: {e}"
+                        msg = f"{slug} x {pub.label}: {e}"
                         aggregate_error = (
                             f"{aggregate_error}\n{msg}" if aggregate_error else msg
                         )
@@ -259,15 +283,16 @@ class CssfDiscoveryService:
     def _run_for_cell(
         self,
         run_id: int,
-        auth_type: AuthorizationType,
+        slug: str,
         entity_filter_id: int,
         pub: PublicationTypeConfig,
         mode: str,
+        label_map: dict[str, str],
     ) -> None:
         total = 0
         self._on_progress(
             total_scraped=0,
-            entity_type=auth_type.value,
+            entity_type=slug,
             content_type=pub.label,
         )
         for row in list_circulars(
@@ -281,24 +306,26 @@ class CssfDiscoveryService:
             self._on_progress(
                 total_scraped=total,
                 reference=row.reference_number,
-                entity_type=auth_type.value,
+                entity_type=slug,
                 content_type=pub.label,
             )
             if mode == "incremental" and self._reference_exists(row.reference_number):
                 break
-            outcome = self._reconcile_row(run_id, auth_type, pub, row)
+            outcome = self._reconcile_row(run_id, slug, pub, row, label_map)
             logger.info(
                 "cell %s x %s  row %s -> %s",
-                auth_type.value, pub.label, row.reference_number, outcome,
+                slug, pub.label, row.reference_number, outcome,
             )
 
     def _reconcile_row(
         self,
         run_id: int,
-        auth_type: AuthorizationType,
+        slug: str,
         pub: PublicationTypeConfig,
         listing: CircularListingRow,
+        label_map: dict[str, str],
     ) -> str:
+        del label_map  # reserved for future cross-cell label mapping
         with self._sf() as s:
             override = s.scalar(
                 select(RegulationOverride).where(
@@ -309,7 +336,7 @@ class CssfDiscoveryService:
             if override is not None:
                 self._write_item(
                     run_id, None, listing.reference_number, "UNCHANGED",
-                    listing.detail_url, auth_type.value, pub.label,
+                    listing.detail_url, slug, pub.label,
                     note="excluded by RegulationOverride",
                 )
                 return "UNCHANGED"
@@ -321,12 +348,12 @@ class CssfDiscoveryService:
                 request_delay_ms=self._config.request_delay_ms,
             )
         except CircularNotFoundError:
-            return self._handle_withdrawal(run_id, auth_type, pub, listing)
+            return self._handle_withdrawal(run_id, slug, pub, listing)
         except Exception as e:  # noqa: BLE001
             logger.warning("detail fetch failed for %s: %s", listing.reference_number, e)
             self._write_item(
                 run_id, None, listing.reference_number, "FAILED",
-                listing.detail_url, auth_type.value, pub.label,
+                listing.detail_url, slug, pub.label,
                 note=f"detail fetch failed: {e}",
             )
             return "FAILED"
@@ -349,7 +376,7 @@ class CssfDiscoveryService:
                 if override2 is not None:
                     self._write_item(
                         run_id, None, canonical_ref, "UNCHANGED",
-                        listing.detail_url, auth_type.value, pub.label,
+                        listing.detail_url, slug, pub.label,
                         note="excluded by RegulationOverride",
                     )
                     return "UNCHANGED"
@@ -363,7 +390,7 @@ class CssfDiscoveryService:
                 select(Regulation).where(Regulation.reference_number == canonical_ref)
             )
             if existing is None:
-                reg = self._create_regulation(s, detail, listing, auth_type, pub)
+                reg = self._create_regulation(s, detail, listing, slug, pub)
                 self._ensure_amendment_stubs(s, detail)
                 self._sync_lifecycle_links(s, reg, detail)
                 if not self._dry_run:
@@ -371,7 +398,7 @@ class CssfDiscoveryService:
                 outcome = "NEW"
                 reg_id = reg.regulation_id
             else:
-                self._ensure_applicability(s, existing, auth_type)
+                self._ensure_applicability(s, existing, slug)
 
                 # Reactivation: a previously-retired row is back in the matrix.
                 if (
@@ -415,12 +442,12 @@ class CssfDiscoveryService:
 
         self._write_item(
             run_id, audit_reg_id, canonical_ref, outcome,
-            listing.detail_url, auth_type.value, pub.label, note=note,
+            listing.detail_url, slug, pub.label, note=note,
         )
         if persist_provenance and reg_id is not None:
             self._upsert_discovery_source(
                 run_id=run_id, regulation_id=reg_id,
-                entity_type=auth_type.value, content_type=pub.label,
+                entity_type=slug, content_type=pub.label,
             )
         return outcome
 
@@ -469,7 +496,7 @@ class CssfDiscoveryService:
     def _handle_withdrawal(
         self,
         run_id: int,
-        auth_type: AuthorizationType,
+        slug: str,
         pub: PublicationTypeConfig,
         listing: CircularListingRow,
     ) -> str:
@@ -483,12 +510,12 @@ class CssfDiscoveryService:
                     s.commit()
                 self._write_item(
                     run_id, existing.regulation_id, listing.reference_number, "WITHDRAWN",
-                    listing.detail_url, auth_type.value, pub.label, note="detail 404",
+                    listing.detail_url, slug, pub.label, note="detail 404",
                 )
                 return "WITHDRAWN"
         self._write_item(
             run_id, None, listing.reference_number, "FAILED",
-            listing.detail_url, auth_type.value, pub.label,
+            listing.detail_url, slug, pub.label,
             note="detail 404 and no existing regulation row",
         )
         return "FAILED"
@@ -498,7 +525,7 @@ class CssfDiscoveryService:
         s: Session,
         detail: CircularDetail,
         listing: CircularListingRow,
-        auth_type: AuthorizationType,
+        slug: str,
         pub: PublicationTypeConfig,
     ) -> Regulation:
         composed_title = _compose_title(detail, listing)
@@ -527,7 +554,7 @@ class CssfDiscoveryService:
         )
         s.add(reg)
         s.flush()
-        self._ensure_applicability(s, reg, auth_type)
+        self._ensure_applicability(s, reg, slug)
         return reg
 
     def _ict_override(self, s: Session, ref: str) -> str | None:
@@ -539,18 +566,18 @@ class CssfDiscoveryService:
         )
 
     def _ensure_applicability(
-        self, s: Session, reg: Regulation, auth_type: AuthorizationType
+        self, s: Session, reg: Regulation, slug: str
     ) -> None:
         exists = s.scalar(
             select(RegulationApplicability).where(
                 RegulationApplicability.regulation_id == reg.regulation_id,
-                RegulationApplicability.authorization_type == auth_type.value,
+                RegulationApplicability.authorization_type == slug,
             )
         )
         if exists is None:
             s.add(RegulationApplicability(
                 regulation_id=reg.regulation_id,
-                authorization_type=auth_type.value,
+                authorization_type=slug,
             ))
             s.flush()
 
