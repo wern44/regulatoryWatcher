@@ -28,9 +28,9 @@ CONFIG_EXAMPLE = Path(__file__).resolve().parents[2] / "config.example.yaml"
 def _load_expected_mappings() -> tuple[dict[str, int], dict[str, int]]:
     """Read config.example.yaml and return (entity_label_to_id, content_label_to_id).
 
-    entity_filter_ids in config is keyed by AuthorizationType enum value
+    entity_filter_ids in config is keyed by entity-type slug
     (e.g. "AIFM"); we need the human-readable label CSSF renders
-    (e.g. "AIFMs"). A small hardcoded enum-value -> CSSF-label map
+    (e.g. "AIFMs"). A small hardcoded slug -> CSSF-label map
     bridges the gap.
     """
     data = yaml.safe_load(CONFIG_EXAMPLE.read_text(encoding="utf-8"))

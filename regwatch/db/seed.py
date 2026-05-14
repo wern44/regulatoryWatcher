@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from regwatch.db.models import (
     Authorization,
-    AuthorizationType,
     Entity,
     LifecycleStage,
     Regulation,
@@ -50,13 +49,13 @@ def load_seed(session: Session, seed_path: Path | str) -> None:
 
     session.flush()
 
-    existing_auth = {a.type.value: a for a in entity.authorizations}
+    existing_auth = {a.type: a for a in entity.authorizations}
     for auth_data in data.get("authorizations", []):
         auth_type = auth_data["type"]
         if auth_type in existing_auth:
             auth = existing_auth[auth_type]
         else:
-            auth = Authorization(lei=entity.lei, type=AuthorizationType(auth_type))
+            auth = Authorization(lei=entity.lei, type=auth_type)
             entity.authorizations.append(auth)
         auth.cssf_entity_id = auth_data.get("cssf_entity_id")
 

@@ -26,7 +26,7 @@ from regwatch.llm.client import LLMClient
 @dataclass
 class RetrievalFilters:
     is_ict: bool | None = None
-    authorization_type: str | None = None  # "AIFM" or "CHAPTER15_MANCO"
+    authorization_type: str | None = None  # entity-type slug
     lifecycle_stages: list[str] = field(default_factory=list)
     regulation_ids: list[int] = field(default_factory=list)
     version_ids: list[int] = field(default_factory=list)

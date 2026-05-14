@@ -4,7 +4,6 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
-from typing import Literal
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -19,7 +18,7 @@ from regwatch.db.models import (
 
 @dataclass
 class RegulationFilter:
-    authorization_type: Literal["AIFM", "CHAPTER15_MANCO"] | None = None
+    authorization_type: str | None = None
     is_ict: bool | None = None
     lifecycle_stages: list[str] | None = None
     search: str | None = None

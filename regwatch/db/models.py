@@ -47,11 +47,6 @@ class Base(DeclarativeBase):
     pass
 
 
-class AuthorizationType(StrEnum):
-    AIFM = "AIFM"
-    CHAPTER15_MANCO = "CHAPTER15_MANCO"
-
-
 class RegulationType(StrEnum):
     LU_LAW = "LU_LAW"
     LU_GRAND_DUCAL_REGULATION = "LU_GRAND_DUCAL_REGULATION"

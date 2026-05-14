@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 from regwatch.db.engine import create_app_engine
 from regwatch.db.models import (
     Authorization,
-    AuthorizationType,
     Base,
     DocumentChunk,
     DocumentVersion,
@@ -37,10 +36,10 @@ def test_create_entity_and_authorizations(tmp_path: Path) -> None:
         legal_name="Union Investment Luxembourg S.A.",
     )
     entity.authorizations.append(
-        Authorization(type=AuthorizationType.AIFM, cssf_entity_id="7073800")
+        Authorization(type="AIFM", cssf_entity_id="7073800")
     )
     entity.authorizations.append(
-        Authorization(type=AuthorizationType.CHAPTER15_MANCO, cssf_entity_id="6918042")
+        Authorization(type="CHAPTER15_MANCO", cssf_entity_id="6918042")
     )
     session.add(entity)
     session.commit()

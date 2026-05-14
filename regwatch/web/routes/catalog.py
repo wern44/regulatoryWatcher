@@ -4,7 +4,7 @@ from __future__ import annotations
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -74,12 +74,9 @@ def catalog(
             return RedirectResponse(url=f"/catalog?{saved}", status_code=303)
 
     # Normalise authorization. The filter-bar form submits the empty string
-    # ("Any authorisation") which a strict Literal type would 422 on.
-    auth_value: Literal["AIFM", "CHAPTER15_MANCO"] | None
-    if authorization in ("AIFM", "CHAPTER15_MANCO"):
-        auth_value = authorization  # type: ignore[assignment]
-    else:
-        auth_value = None
+    # ("Any authorisation") which we map to "no filter". Any non-empty value is
+    # treated as an entity-type slug and forwarded to RegulationService.
+    auth_value: str | None = authorization or None
 
     # Default to IN_FORCE; "all" means no lifecycle filter; unknown values
     # quietly fall back to the default.

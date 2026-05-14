@@ -2,16 +2,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field
 
-AuthorizationType = Literal["AIFM", "CHAPTER15_MANCO"]
-
 
 class AuthorizationConfig(BaseModel):
-    type: AuthorizationType
+    type: str
     cssf_entity_id: str
 
 
