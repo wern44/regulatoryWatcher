@@ -17,12 +17,19 @@ def inbox_list(
     entity_type: str | None = None,
     show_all: bool = False,
 ) -> HTMLResponse:
+    # Cookie fallback: if no explicit ?entity_type=X, read the sidebar selection.
+    if entity_type is None:
+        cookie_value = request.cookies.get("active_entity_type", "")
+        effective_entity_type = cookie_value or None
+    else:
+        effective_entity_type = entity_type or None
+
     config = request.app.state.config
     auth_types = [a.type for a in config.entity.authorizations]
     with request.app.state.session_factory() as session:
         events = InboxService(session).list_new(
             source_display=source,
-            entity_type=entity_type,
+            entity_type=effective_entity_type,
             authorization_types=auth_types,
             show_all=show_all,
         )
@@ -35,7 +42,7 @@ def inbox_list(
             "events": events,
             "source_options": source_options,
             "current_source": source,
-            "current_entity_type": entity_type,
+            "current_entity_type": effective_entity_type or "",
             "show_all": show_all,
         },
     )

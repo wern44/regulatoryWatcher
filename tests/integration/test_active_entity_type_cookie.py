@@ -89,3 +89,14 @@ def test_catalog_cookie_filters_when_no_query_param(tmp_path, monkeypatch):
         # No "authorization=" in URL but cookie set: AIFM-only reg should be hidden.
         r = client.get("/catalog?lifecycle=IN_FORCE")
     assert "AIFM-ONLY" not in r.text
+
+
+def test_inbox_dropdown_renders_from_db(tmp_path, monkeypatch):
+    with _client(tmp_path, monkeypatch) as client:
+        with client.app.state.session_factory() as s:
+            from regwatch.services.entity_types import EntityTypeService
+            EntityTypeService(s).create(slug="PSF_SUPPORT", label="PSF Support")
+            s.commit()
+        r = client.get("/inbox")
+    assert r.status_code == 200
+    assert "PSF Support" in r.text

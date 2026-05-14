@@ -24,8 +24,9 @@
       <label class="font-medium ml-3">Entity Type:</label>
       <select name="entity_type" onchange="this.form.submit()" class="border rounded px-2 py-1 text-sm">
         <option value="">All (relevant)</option>
-        <option value="AIFM" {% if current_entity_type == 'AIFM' %}selected{% endif %}>AIFM</option>
-        <option value="CHAPTER15_MANCO" {% if current_entity_type == 'CHAPTER15_MANCO' %}selected{% endif %}>Chapter 15 ManCo</option>
+        {% for et in entity_types %}
+        <option value="{{ et.slug }}" {% if current_entity_type == et.slug %}selected{% endif %}>{{ et.label }}</option>
+        {% endfor %}
       </select>
       <label class="flex items-center gap-1 ml-3">
         <input type="checkbox" name="show_all" value="true"
