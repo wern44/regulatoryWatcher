@@ -86,6 +86,26 @@ class DoraPillar(StrEnum):
     INFO_SHARING = "INFO_SHARING"
 
 
+class EntityType(Base):
+    __tablename__ = "entity_type"
+
+    entity_type_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    slug: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    label: Mapped[str] = mapped_column(String(120))
+    cssf_entity_filter_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cssf_detail_labels: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=100)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TZDateTime, default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TZDateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
 class Entity(Base):
     __tablename__ = "entity"
 
