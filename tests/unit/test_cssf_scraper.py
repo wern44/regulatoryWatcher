@@ -12,11 +12,13 @@ import pytest
 from regwatch.discovery.cssf_scraper import (
     CircularListingRow,
     CircularNotFoundError,
+    EntityTypeOption,
     _parse_detail_html,
     _parse_listing_html,
     _parse_listing_page,
     fetch_circular_detail,
     list_circulars,
+    parse_entity_type_options,
 )
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "cssf"
@@ -419,3 +421,28 @@ def test_list_circulars_uses_numeric_url_params(httpx_mock) -> None:
     assert "entity_type=502" in str(req.url)
     assert "content_type=567" in str(req.url)
     assert "fwp_" not in str(req.url), f"legacy fwp_* param leaked: {req.url}"
+
+
+def test_parse_entity_type_options_from_fixture() -> None:
+    """The CSSF listing-page sidebar exposes ~30 entity-type filter checkboxes
+    with `<span id="entity_type-NNN">Label</span>` — we want them all."""
+    html = (FIXTURES / "listing_aifms_page1.html").read_text(encoding="utf-8")
+    options = parse_entity_type_options(html)
+
+    assert len(options) > 20, f"expected many options, got {len(options)}"
+    # Spot-check well-known IDs.
+    by_id = {o.filter_id: o.label for o in options}
+    assert by_id[502] == "AIFMs"
+    assert by_id[486] == "UCITS"
+    assert by_id[2001] == "Management companies - Chapter 15"
+    assert by_id[16] == "Specialised PFS"
+    # Sorted alphabetically by label.
+    labels = [o.label for o in options]
+    assert labels == sorted(labels, key=str.lower)
+    # All options are unique.
+    assert len({o.filter_id for o in options}) == len(options)
+    # Type sanity.
+    for o in options:
+        assert isinstance(o, EntityTypeOption)
+        assert isinstance(o.filter_id, int)
+        assert o.label

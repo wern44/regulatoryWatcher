@@ -9,6 +9,13 @@ from fastapi import Request
 from regwatch.services.entity_types import EntityTypeService
 from regwatch.services.sidebar_badges import SidebarBadgeService
 
+ACTIVE_ENTITY_TYPE_COOKIE = "active_entity_type"
+
+
+def active_entity_type(request: Request) -> str | None:
+    """Return the user's sidebar entity-type selection, or None for 'All'."""
+    return request.cookies.get(ACTIVE_ENTITY_TYPE_COOKIE, "") or None
+
 
 def render_page(
     request: Request,
@@ -24,6 +31,12 @@ def render_page(
         with request.app.state.session_factory() as session:
             extras["entity_types"] = EntityTypeService(session).list_active()
     if "active_entity_type" not in context:
-        extras["active_entity_type"] = request.cookies.get("active_entity_type", "") or ""
+        extras["active_entity_type"] = active_entity_type(request) or ""
+    if "active_entity_type_label" not in context:
+        ets = extras.get("entity_types") or context.get("entity_types") or []
+        slug = extras.get("active_entity_type") or context.get("active_entity_type") or ""
+        extras["active_entity_type_label"] = next(
+            (et.label for et in ets if et.slug == slug), ""
+        )
     final_context = {**extras, **context}
     return templates.TemplateResponse(request, template_name, final_context)

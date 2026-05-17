@@ -8,7 +8,7 @@ from typing import Literal
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from regwatch.db.models import Regulation
+from regwatch.db.models import Regulation, RegulationApplicability
 
 DeadlineKind = Literal["TRANSPOSITION", "APPLICATION"]
 
@@ -49,17 +49,26 @@ class DeadlineService:
             return "BLUE"
         return "GREY"
 
-    def upcoming(self, window_days: int, show_completed: bool = False) -> list[DeadlineDTO]:
-        rows = (
-            self._session.query(Regulation)
-            .filter(
+    def upcoming(
+        self,
+        window_days: int,
+        show_completed: bool = False,
+        authorization_type: str | None = None,
+    ) -> list[DeadlineDTO]:
+        query = self._session.query(Regulation).filter(
+            or_(
+                Regulation.transposition_deadline.is_not(None),
+                Regulation.application_date.is_not(None),
+            )
+        )
+        if authorization_type:
+            query = query.join(RegulationApplicability).filter(
                 or_(
-                    Regulation.transposition_deadline.is_not(None),
-                    Regulation.application_date.is_not(None),
+                    RegulationApplicability.authorization_type == authorization_type,
+                    RegulationApplicability.authorization_type == "BOTH",
                 )
             )
-            .all()
-        )
+        rows = query.all()
         today = date.today()
         items: list[DeadlineDTO] = []
         for reg in rows:

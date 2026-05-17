@@ -12,6 +12,8 @@
     {% endif %}
   </div>
 
+  {% include "partials/entity_type_pill.html" %}
+
   <div class="flex gap-3 mb-4 items-center text-sm">
     <form class="flex gap-2 items-center">
       <label class="font-medium">Source:</label>
@@ -19,13 +21,6 @@
         <option value="">All</option>
         {% for s in source_options %}
         <option value="{{ s }}" {% if current_source == s %}selected{% endif %}>{{ s }}</option>
-        {% endfor %}
-      </select>
-      <label class="font-medium ml-3">Entity Type:</label>
-      <select name="entity_type" onchange="this.form.submit()" class="border rounded px-2 py-1 text-sm">
-        <option value="">All (relevant)</option>
-        {% for et in entity_types %}
-        <option value="{{ et.slug }}" {% if current_entity_type == et.slug %}selected{% endif %}>{{ et.label }}</option>
         {% endfor %}
       </select>
       <label class="flex items-center gap-1 ml-3">

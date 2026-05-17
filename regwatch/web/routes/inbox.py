@@ -5,7 +5,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from regwatch.services.inbox import SOURCE_DISPLAY_NAMES, InboxService
-from regwatch.web.templates_context import render_page
+from regwatch.web.templates_context import active_entity_type, render_page
 
 router = APIRouter(prefix="/inbox", tags=["inbox"])
 
@@ -14,15 +14,9 @@ router = APIRouter(prefix="/inbox", tags=["inbox"])
 def inbox_list(
     request: Request,
     source: str | None = None,
-    entity_type: str | None = None,
     show_all: bool = False,
 ) -> HTMLResponse:
-    # Cookie fallback: if no explicit ?entity_type=X, read the sidebar selection.
-    if entity_type is None:
-        cookie_value = request.cookies.get("active_entity_type", "")
-        effective_entity_type = cookie_value or None
-    else:
-        effective_entity_type = entity_type or None
+    effective_entity_type = active_entity_type(request)
 
     config = request.app.state.config
     auth_types = [a.type for a in config.entity.authorizations]
@@ -42,7 +36,6 @@ def inbox_list(
             "events": events,
             "source_options": source_options,
             "current_source": source,
-            "current_entity_type": effective_entity_type or "",
             "show_all": show_all,
         },
     )

@@ -52,6 +52,14 @@ class CircularListingRow:
     publication_type_label: str = ""  # e.g. "CSSF circular", "Law"
 
 
+@dataclass(frozen=True)
+class EntityTypeOption:
+    """A selectable option from the CSSF listing-page entity-type filter."""
+
+    filter_id: int  # WordPress taxonomy term ID (e.g. 502 = AIFMs)
+    label: str  # e.g. "AIFMs", "UCITS", "Specialised PFS"
+
+
 @dataclass
 class CircularDetail:
     """Parsed content of a CSSF circular detail page."""
@@ -154,6 +162,55 @@ def list_circulars(
     finally:
         if owns_client:
             client.close()
+
+
+def fetch_entity_type_options(
+    client: httpx.Client | None = None,
+) -> list[EntityTypeOption]:
+    """Scrape the CSSF listing-page sidebar for entity-type filter options.
+
+    Returns a list of (filter_id, label) pairs sorted alphabetically by
+    label. Used by the Settings → Entity Types form to render a friendly
+    dropdown instead of asking the user to know numeric WordPress term IDs.
+    """
+    owns_client = client is None
+    if client is None:
+        client = httpx.Client(
+            headers={"User-Agent": _USER_AGENT},
+            follow_redirects=True,
+            timeout=30.0,
+        )
+    try:
+        resp = client.get(urljoin(_BASE_URL, _LISTING_PATH))
+        resp.raise_for_status()
+        return parse_entity_type_options(resp.text)
+    finally:
+        if owns_client:
+            client.close()
+
+
+def parse_entity_type_options(html: str) -> list[EntityTypeOption]:
+    """Parse the entity-type filter options out of CSSF listing HTML.
+
+    Exposed separately so tests can run against captured fixtures.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    seen: dict[int, str] = {}
+    for span in soup.select('span[id^="entity_type-"]'):
+        span_id = span.get("id", "")
+        if not isinstance(span_id, str):
+            continue
+        suffix = span_id.removeprefix("entity_type-")
+        if not suffix.isdigit():
+            continue
+        filter_id = int(suffix)
+        label = span.get_text(strip=True)
+        if label and filter_id not in seen:
+            seen[filter_id] = label
+    return sorted(
+        (EntityTypeOption(filter_id=fid, label=lbl) for fid, lbl in seen.items()),
+        key=lambda o: o.label.lower(),
+    )
 
 
 def _build_listing_url(page: int) -> str:

@@ -1,0 +1,18 @@
+{# Renders the global entity-type filter status.
+   Expects `active_entity_type` (slug or '') and `active_entity_type_label` in context.
+   Both are auto-injected by render_page. #}
+{% set _aet = active_entity_type|default('') %}
+{% set _label = active_entity_type_label|default('') or _aet %}
+{% if _aet %}
+  <div class="inline-flex items-center gap-2 mb-3 px-3 py-1 text-xs
+              bg-amber-50 border border-amber-200 text-amber-900 rounded">
+    <span class="font-medium">Filtered by entity type:</span>
+    <span class="px-1.5 py-0.5 bg-amber-200 text-amber-900 rounded font-semibold">{{ _label }}</span>
+    <form method="post" action="/settings/active-entity-type" class="inline">
+      <input type="hidden" name="entity_type" value="">
+      <button type="submit" class="ml-1 underline hover:no-underline">show all</button>
+    </form>
+  </div>
+{% else %}
+  <div class="text-xs text-slate-400 mb-3">Showing all entity types.</div>
+{% endif %}

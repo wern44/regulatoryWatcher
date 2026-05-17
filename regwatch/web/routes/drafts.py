@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse
 
 from regwatch.services.regulations import RegulationFilter, RegulationService
 from regwatch.services.sidebar_badges import SidebarBadgeService
-from regwatch.web.templates_context import render_page
+from regwatch.web.templates_context import active_entity_type, render_page
 
 router = APIRouter()
 
@@ -17,12 +17,13 @@ def drafts(request: Request) -> HTMLResponse:
         svc = RegulationService(session)
         regs = svc.list(
             RegulationFilter(
+                authorization_type=active_entity_type(request),
                 lifecycle_stages=[
                     "CONSULTATION",
                     "PROPOSAL",
                     "DRAFT_BILL",
                     "ADOPTED_NOT_IN_FORCE",
-                ]
+                ],
             )
         )
         SidebarBadgeService(session).mark_visited("drafts")

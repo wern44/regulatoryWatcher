@@ -10,7 +10,7 @@ from regwatch.db.models import Regulation, RegulationOverride
 from regwatch.services.discovery import DiscoveryService
 from regwatch.services.regulations import RegulationFilter, RegulationService
 from regwatch.services.sidebar_badges import SidebarBadgeService
-from regwatch.web.templates_context import render_page
+from regwatch.web.templates_context import active_entity_type, render_page
 
 router = APIRouter()
 
@@ -19,7 +19,11 @@ router = APIRouter()
 def ict(request: Request) -> HTMLResponse:
     with request.app.state.session_factory() as session:
         regs = RegulationService(session).list(
-            RegulationFilter(is_ict=True, lifecycle_stages=["IN_FORCE"])
+            RegulationFilter(
+                is_ict=True,
+                lifecycle_stages=["IN_FORCE"],
+                authorization_type=active_entity_type(request),
+            )
         )
         SidebarBadgeService(session).mark_visited("ict")
         session.commit()

@@ -1,11 +1,16 @@
 """Entity-type registry CRUD + the global 'active entity type' cookie route."""
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from regwatch.discovery.cssf_scraper import (
+    EntityTypeOption,
+    fetch_entity_type_options,
+)
 from regwatch.services.entity_types import (
     EntityTypeService,
     InvalidSlugError,
@@ -14,7 +19,32 @@ from regwatch.services.entity_types import (
 )
 from regwatch.web.templates_context import render_page
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/settings", tags=["entity_types"])
+
+
+def _get_cssf_entity_options(request: Request) -> tuple[list[EntityTypeOption], bool]:
+    """Return (options, fetched_ok). Lazy-loads and caches on app.state.
+
+    A failed fetch caches an empty list under a flag so we don't retry on
+    every page render; the user can press 'Refresh' to try again.
+    """
+    state = request.app.state
+    cached = getattr(state, "cssf_entity_type_options", None)
+    cached_ok = getattr(state, "cssf_entity_type_options_ok", None)
+    if cached is not None and cached_ok is not None:
+        return cached, cached_ok
+    try:
+        options = fetch_entity_type_options()
+        state.cssf_entity_type_options = options
+        state.cssf_entity_type_options_ok = True
+        return options, True
+    except Exception as e:  # noqa: BLE001 — scraper, network, parse all OK to swallow
+        logger.warning("Could not fetch CSSF entity-type options: %s", e)
+        state.cssf_entity_type_options = []
+        state.cssf_entity_type_options_ok = False
+        return [], False
 
 _COOKIE = "active_entity_type"
 _COOKIE_MAX_AGE = 60 * 60 * 24 * 30  # 30 days
@@ -48,6 +78,7 @@ def set_active_entity_type(
 def entity_types_list(request: Request) -> HTMLResponse:
     with request.app.state.session_factory() as session:
         rows = EntityTypeService(session).list_all()
+    options, options_ok = _get_cssf_entity_options(request)
     return render_page(
         request,
         "settings/entity_types.html",
@@ -55,8 +86,18 @@ def entity_types_list(request: Request) -> HTMLResponse:
             "active": "settings",
             "active_rows": [r for r in rows if r.active],
             "hidden_rows": [r for r in rows if not r.active],
+            "cssf_entity_options": options,
+            "cssf_entity_options_ok": options_ok,
         },
     )
+
+
+@router.post("/entity-types/refresh-cssf-options")
+def entity_types_refresh_cssf_options(request: Request) -> RedirectResponse:
+    """Clear the cached CSSF entity-type options so the next render re-fetches."""
+    request.app.state.cssf_entity_type_options = None
+    request.app.state.cssf_entity_type_options_ok = None
+    return RedirectResponse("/settings/entity-types", status_code=303)
 
 
 @router.post("/entity-types")

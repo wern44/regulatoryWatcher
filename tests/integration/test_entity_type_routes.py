@@ -1,7 +1,19 @@
 """HTTP route tests for the Entity Types Settings page."""
 from __future__ import annotations
 
+import pytest
+
 from tests.integration.test_app_smoke import _client
+
+
+@pytest.fixture(autouse=True)
+def _no_live_cssf_options_fetch(monkeypatch):
+    """Stub out the CSSF entity-type-options scraper so unit tests don't
+    hit the network. Tests that need specific options pre-populate
+    `app.state.cssf_entity_type_options` directly."""
+    import regwatch.web.routes.entity_types as et_routes
+
+    monkeypatch.setattr(et_routes, "fetch_entity_type_options", lambda: [])
 
 
 def test_listing_page_renders(tmp_path, monkeypatch):
@@ -134,3 +146,66 @@ def test_reactivate(tmp_path, monkeypatch):
             from regwatch.services.entity_types import EntityTypeService
             active = [r.slug for r in EntityTypeService(s).list_active()]
         assert "AIFM" in active
+
+
+def test_form_shows_select_when_cssf_options_loaded(tmp_path, monkeypatch):
+    """The 'CSSF filter' field renders as a labeled <select> when the
+    cached options list is non-empty."""
+    from regwatch.discovery.cssf_scraper import EntityTypeOption
+
+    with _client(tmp_path, monkeypatch) as client:
+        # Skip the live fetch by pre-populating the cache.
+        client.app.state.cssf_entity_type_options = [
+            EntityTypeOption(filter_id=502, label="AIFMs"),
+            EntityTypeOption(filter_id=486, label="UCITS"),
+            EntityTypeOption(filter_id=16, label="Specialised PFS"),
+        ]
+        client.app.state.cssf_entity_type_options_ok = True
+        r = client.get("/settings/entity-types")
+    assert r.status_code == 200
+    # The select is rendered with labels + IDs.
+    assert "AIFMs (ID 502)" in r.text
+    assert "UCITS (ID 486)" in r.text
+    assert "Specialised PFS (ID 16)" in r.text
+    # And the "None" fallback option is present.
+    assert "None — not crawlable from CSSF" in r.text
+    # The plain number input is gone.
+    assert 'name="cssf_entity_filter_id" type="number"' not in r.text
+
+
+def test_form_falls_back_to_number_input_when_fetch_fails(tmp_path, monkeypatch):
+    """If CSSF was unreachable, the form falls back to a number input
+    with an explanatory hint."""
+    with _client(tmp_path, monkeypatch) as client:
+        client.app.state.cssf_entity_type_options = []
+        client.app.state.cssf_entity_type_options_ok = False
+        r = client.get("/settings/entity-types")
+    assert r.status_code == 200
+    assert 'name="cssf_entity_filter_id" type="number"' in r.text
+    assert "Could not fetch CSSF list" in r.text
+
+
+def test_refresh_route_clears_cache(tmp_path, monkeypatch):
+    """POST /settings/entity-types/refresh-cssf-options clears the cache
+    so the next GET re-fetches (or fails again)."""
+    with _client(tmp_path, monkeypatch) as client:
+        client.app.state.cssf_entity_type_options = []
+        client.app.state.cssf_entity_type_options_ok = False
+        r = client.post(
+            "/settings/entity-types/refresh-cssf-options",
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+        assert r.headers["location"] == "/settings/entity-types"
+        assert client.app.state.cssf_entity_type_options is None
+        assert client.app.state.cssf_entity_type_options_ok is None
+
+
+def test_listing_page_has_refresh_button(tmp_path, monkeypatch):
+    with _client(tmp_path, monkeypatch) as client:
+        client.app.state.cssf_entity_type_options = []
+        client.app.state.cssf_entity_type_options_ok = True
+        r = client.get("/settings/entity-types")
+    assert r.status_code == 200
+    assert "/settings/entity-types/refresh-cssf-options" in r.text
+    assert "Refresh CSSF list" in r.text

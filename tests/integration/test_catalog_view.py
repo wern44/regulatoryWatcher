@@ -51,10 +51,12 @@ def test_catalog_lists_all(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_catalog_filters_by_aifm(tmp_path: Path, monkeypatch) -> None:
+    """Catalog filters by the global sidebar entity-type cookie."""
     client = _client(tmp_path, monkeypatch)
     _seed(tmp_path / "app.db")
 
-    r = client.get("/catalog?authorization=AIFM")
+    client.cookies.set("active_entity_type", "AIFM")
+    r = client.get("/catalog")
     assert r.status_code == 200
     # AIFM + BOTH should appear, MANCO-only should not.
     assert "CSSF 18/698" in r.text

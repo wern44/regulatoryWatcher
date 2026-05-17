@@ -19,13 +19,9 @@
     </div>
   </div>
 
+  {% include "partials/entity_type_pill.html" %}
+
   <form method="get" action="/catalog" class="flex gap-2 mb-4 text-sm">
-    <select name="authorization" class="border rounded px-2 py-1" onchange="this.form.submit()">
-      <option value="">Any authorisation</option>
-      {% for et in entity_types %}
-      <option value="{{ et.slug }}" {% if flt.authorization_type == et.slug %}selected{% endif %}>{{ et.label }}</option>
-      {% endfor %}
-    </select>
     <select name="lifecycle" class="border rounded px-2 py-1" onchange="this.form.submit()">
       <option value="IN_FORCE"              {% if effective_lifecycle == 'IN_FORCE' %}selected{% endif %}>In force</option>
       <option value="REPEALED"              {% if effective_lifecycle == 'REPEALED' %}selected{% endif %}>Repealed</option>

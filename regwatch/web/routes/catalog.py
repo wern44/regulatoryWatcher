@@ -34,7 +34,7 @@ from regwatch.services.upload import (
     index_uploaded_version,
     save_upload,
 )
-from regwatch.web.templates_context import render_page
+from regwatch.web.templates_context import active_entity_type, render_page
 
 router = APIRouter()
 
@@ -51,7 +51,6 @@ _CATALOG_COOKIE_MAX_AGE = 60 * 60 * 24 * 30  # 30 days
 @router.get("/catalog", response_class=HTMLResponse)
 def catalog(
     request: Request,
-    authorization: str | None = None,
     search: str | None = None,
     lifecycle: str | None = None,
     ict: str | None = None,
@@ -59,31 +58,22 @@ def catalog(
     reset: bool = False,
 ):
     # --- Filter persistence ---
-    # If the user asked to reset, clear the cookie and show defaults.
+    # The sidebar's `active_entity_type` cookie is the single source of truth
+    # for entity-type filtering. The per-page `catalog_filters` cookie restores
+    # the catalog's *other* filters (lifecycle / ICT / search / show_amendments)
+    # on bare /catalog visits — it intentionally does NOT carry entity type.
     if reset:
         resp = RedirectResponse(url="/catalog", status_code=303)
         resp.delete_cookie(_CATALOG_FILTER_COOKIE)
         return resp
 
-    # If the URL has no query string at all and a previous filter cookie
-    # exists, restore the saved filter by redirecting.
     raw_qs = str(request.url.query or "")
     if not raw_qs:
         saved = request.cookies.get(_CATALOG_FILTER_COOKIE)
         if saved:
             return RedirectResponse(url=f"/catalog?{saved}", status_code=303)
 
-    # Resolve the active entity type:
-    # 1. Explicit ?authorization=X wins (empty string = "All").
-    # 2. Otherwise, read the sidebar cookie.
-    # 3. Otherwise, no filter.
-    if authorization is not None:
-        auth_value: str | None = authorization or None
-        cookie_value_to_set: str | None = authorization
-    else:
-        cookie_value = request.cookies.get("active_entity_type", "")
-        auth_value = cookie_value or None
-        cookie_value_to_set = None  # don't rewrite the cookie on cookie-driven reads
+    auth_value = active_entity_type(request)
 
     # Default to IN_FORCE; "all" means no lifecycle filter; unknown values
     # quietly fall back to the default.
@@ -196,15 +186,6 @@ def catalog(
             max_age=_CATALOG_COOKIE_MAX_AGE,
             httponly=True, samesite="lax",
         )
-    # Sync the active-entity-type cookie with explicit per-page selections.
-    if cookie_value_to_set is not None:
-        if cookie_value_to_set:
-            response.set_cookie(
-                "active_entity_type", cookie_value_to_set,
-                max_age=60 * 60 * 24 * 30, httponly=True, samesite="lax",
-            )
-        else:
-            response.delete_cookie("active_entity_type")
     return response
 
 

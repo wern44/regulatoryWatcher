@@ -1,7 +1,0 @@
-#Review analyse process
-Can you please review the Pipeline process and implement the follwing changes, if they make sense.
-1. Please make shure the Pipeline process is efficient. When I understand correctly the Pipeline process should check for new regulations or Circulars. I don't think for that step the LLM is necessary as the function should only check if there are new regulations and Circulars, so a simple check against the rgulations and Circulars in the DB should be enough. Please correct me if I am wrong or if the Pipeline process doe some other checks that Need an LLM. So the Basic idea is to update the Pipeline process to not Need an LLM.
-2. Please make it possible to Abort the Pipeline process.
-
-
-

@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 
 from regwatch.services.deadlines import DeadlineKind, DeadlineService
 from regwatch.services.sidebar_badges import SidebarBadgeService
-from regwatch.web.templates_context import render_page
+from regwatch.web.templates_context import active_entity_type, render_page
 
 router = APIRouter()
 
@@ -20,7 +20,11 @@ def deadlines(
 ) -> HTMLResponse:
     with request.app.state.session_factory() as session:
         svc = DeadlineService(session)
-        items = svc.upcoming(window_days=730, show_completed=show_completed)
+        items = svc.upcoming(
+            window_days=730,
+            show_completed=show_completed,
+            authorization_type=active_entity_type(request),
+        )
         SidebarBadgeService(session).mark_visited("deadlines")
         session.commit()
     return render_page(
