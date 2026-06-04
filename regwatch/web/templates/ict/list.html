@@ -11,6 +11,7 @@
   </div>
 
   {% include "partials/entity_type_pill.html" %}
+  {% set new_ids_set = new_ids|default(none) %}
   <table class="w-full bg-white border rounded shadow-sm text-sm">
     <thead class="bg-slate-100 text-xs uppercase text-slate-600">
       <tr>
@@ -25,8 +26,15 @@
     </thead>
     <tbody>
       {% for r in regulations %}
-      <tr class="border-t {% if r.needs_review %}bg-amber-50{% endif %}">
-        <td class="p-2 font-mono">{{ r.reference_number }}</td>
+      {% set is_new = new_ids_set is not none and r.regulation_id in new_ids_set %}
+      <tr class="border-t {% if r.needs_review or is_new %}bg-amber-50{% endif %}">
+        <td class="p-2 font-mono">
+          {{ r.reference_number }}
+          {% if is_new %}
+            <span class="ml-2 px-1.5 py-0.5 bg-amber-100 text-amber-800 text-xs rounded font-semibold"
+                  title="Added since your last visit">NEW</span>
+          {% endif %}
+        </td>
         <td class="p-2">
           <a href="/regulations/{{ r.regulation_id }}" class="text-blue-700 hover:underline">{{ r.title }}</a>
         </td>

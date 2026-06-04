@@ -25,12 +25,18 @@ def ict(request: Request) -> HTMLResponse:
                 authorization_type=active_entity_type(request),
             )
         )
-        SidebarBadgeService(session).mark_visited("ict")
+        previous_cutoff = SidebarBadgeService(session).mark_visited("ict")
         session.commit()
+
+    new_ids: set[int] = (
+        {r.regulation_id for r in regs if r.created_at > previous_cutoff}
+        if previous_cutoff is not None else set()
+    )
+
     return render_page(
         request,
         "ict/list.html",
-        {"active": "ict", "regulations": regs},
+        {"active": "ict", "regulations": regs, "new_ids": new_ids},
     )
 
 
