@@ -291,3 +291,33 @@ def test_mark_visited_rejects_unknown_section(tmp_path):
     svc = SidebarBadgeService(session)
     with pytest.raises(ValueError, match="unknown section"):
         svc.mark_visited("nope")
+
+
+def test_mark_visited_returns_previous_timestamp(tmp_path):
+    """mark_visited() returns the prior last_visit_<section> value (or None)
+    and overwrites the stored value with `now`. The route uses the returned
+    value as the cutoff for highlighting `new` rows on this same render."""
+    session = _session(tmp_path)
+    svc = SidebarBadgeService(session)
+
+    # First call: no prior value -> returns None, stores now.
+    previous = svc.mark_visited("catalog")
+    session.commit()
+    assert previous is None
+    stored1 = datetime.fromisoformat(
+        session.get(Setting, "last_visit_catalog").value
+    )
+    if stored1.tzinfo is None:
+        stored1 = stored1.replace(tzinfo=UTC)
+
+    # Second call: returns the previously-stored timestamp, advances the value.
+    previous2 = svc.mark_visited("catalog")
+    session.commit()
+    assert previous2 is not None
+    assert previous2 == stored1
+    stored2 = datetime.fromisoformat(
+        session.get(Setting, "last_visit_catalog").value
+    )
+    if stored2.tzinfo is None:
+        stored2 = stored2.replace(tzinfo=UTC)
+    assert stored2 >= stored1

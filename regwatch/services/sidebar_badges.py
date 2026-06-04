@@ -57,8 +57,13 @@ class SidebarBadgeService:
             deadlines=self._count_deadlines(),
         )
 
-    def mark_visited(self, section: str) -> None:
-        """Upsert last_visit_<section> = now."""
+    def mark_visited(self, section: str) -> datetime | None:
+        """Upsert last_visit_<section> = now; return the previous value (or None).
+
+        The previous value is the cutoff the badge was just computed against,
+        so callers can use it to highlight rows that are 'new since last visit'
+        on the same render that clears the badge.
+        """
         if section not in SECTION_KEYS:
             raise ValueError(f"unknown section: {section!r}")
         key = SECTION_KEYS[section]
@@ -66,9 +71,13 @@ class SidebarBadgeService:
         existing = self._session.get(Setting, key)
         if existing is None:
             self._session.add(Setting(key=key, value=now.isoformat(), updated_at=now))
-        else:
-            existing.value = now.isoformat()
-            existing.updated_at = now
+            return None
+        previous = datetime.fromisoformat(existing.value)
+        if previous.tzinfo is None:
+            previous = previous.replace(tzinfo=UTC)
+        existing.value = now.isoformat()
+        existing.updated_at = now
+        return previous
 
     def _last_visit(self, section: str) -> datetime | None:
         row = self._session.get(Setting, SECTION_KEYS[section])
