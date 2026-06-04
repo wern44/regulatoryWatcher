@@ -147,8 +147,13 @@ def catalog(
             else:
                 status_by_reg[r.regulation_id] = "ok"
 
-        SidebarBadgeService(session).mark_visited("catalog")
+        previous_cutoff = SidebarBadgeService(session).mark_visited("catalog")
         session.commit()
+
+    new_ids: set[int] = (
+        {r.regulation_id for r in regs if r.created_at > previous_cutoff}
+        if previous_cutoff is not None else set()
+    )
 
     # Read and clear the one-shot flash cookie (set by analyse error redirects).
     flash_error = request.cookies.get("catalog_flash")
@@ -174,6 +179,7 @@ def catalog(
             "show_amendments": show_amendments,
             "amendment_counts": amendment_counts,
             "flash_message": flash_message,
+            "new_ids": new_ids,
         },
     )
     if flash_error:
