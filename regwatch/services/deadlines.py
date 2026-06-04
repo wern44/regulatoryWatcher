@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from sqlalchemy import or_
@@ -24,6 +24,7 @@ class DeadlineDTO:
     severity_band: str
     url: str
     done: bool
+    regulation_created_at: datetime
 
 
 class DeadlineService:
@@ -94,6 +95,7 @@ class DeadlineService:
                         severity_band=self.severity_band(days_until),
                         url=reg.url,
                         done=done_flag,
+                        regulation_created_at=reg.created_at,
                     )
                 )
         items.sort(key=lambda d: d.days_until)
