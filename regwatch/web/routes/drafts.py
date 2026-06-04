@@ -26,10 +26,20 @@ def drafts(request: Request) -> HTMLResponse:
                 ],
             )
         )
-        SidebarBadgeService(session).mark_visited("drafts")
+        previous_cutoff = SidebarBadgeService(session).mark_visited("drafts")
         session.commit()
+
+    new_ids: set[int] = (
+        {r.regulation_id for r in regs if r.created_at > previous_cutoff}
+        if previous_cutoff is not None else set()
+    )
+
     return render_page(
         request,
         "drafts/list.html",
-        {"active": "drafts", "regulations": regs},
+        {
+            "active": "drafts",
+            "regulations": regs,
+            "new_ids": new_ids,
+        },
     )

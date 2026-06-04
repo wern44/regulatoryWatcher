@@ -111,3 +111,28 @@ def test_catalog_no_highlight_when_no_prior_visit(
     assert resp.status_code == 200
     block = _row_block(resp.text, "ANYREG")
     assert ">NEW<" not in block
+
+
+def test_drafts_highlights_new_drafty_rows(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
+    cutoff = datetime.now(UTC) - timedelta(hours=1)
+    _set_last_visit(client, key="last_visit_drafts", ts=cutoff)
+    _seed_regulation(
+        client, ref="OLDDRAFT", lifecycle=LifecycleStage.PROPOSAL, is_ict=False,
+        created_at=cutoff - timedelta(days=1),
+    )
+    _seed_regulation(
+        client, ref="NEWDRAFT", lifecycle=LifecycleStage.CONSULTATION, is_ict=False,
+        created_at=datetime.now(UTC),
+    )
+
+    resp = client.get("/drafts")
+    assert resp.status_code == 200
+
+    new_block = _row_block(resp.text, "NEWDRAFT")
+    old_block = _row_block(resp.text, "OLDDRAFT")
+
+    assert "bg-amber-50" in new_block
+    assert ">NEW<" in new_block
+    assert "bg-amber-50" not in old_block
+    assert ">NEW<" not in old_block
