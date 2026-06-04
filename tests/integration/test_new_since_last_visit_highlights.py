@@ -160,3 +160,33 @@ def test_ict_highlights_new_in_force_ict_rows(tmp_path: Path, monkeypatch) -> No
     assert "bg-amber-50" in new_block
     assert ">NEW<" in new_block
     assert ">NEW<" not in old_block
+
+
+def test_deadlines_highlights_new_regulations_deadlines(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+    cutoff = datetime.now(UTC) - timedelta(hours=1)
+    _set_last_visit(client, key="last_visit_deadlines", ts=cutoff)
+
+    today = date.today()
+    in_window = today + timedelta(days=90)
+
+    _seed_regulation(
+        client, ref="OLDDL", lifecycle=LifecycleStage.IN_FORCE, is_ict=False,
+        created_at=cutoff - timedelta(days=1), deadline=in_window,
+    )
+    _seed_regulation(
+        client, ref="NEWDL", lifecycle=LifecycleStage.IN_FORCE, is_ict=False,
+        created_at=datetime.now(UTC), deadline=in_window,
+    )
+
+    resp = client.get("/deadlines")
+    assert resp.status_code == 200
+
+    new_block = _row_block(resp.text, "NEWDL")
+    old_block = _row_block(resp.text, "OLDDL")
+
+    assert "bg-amber-50" in new_block
+    assert ">NEW<" in new_block
+    assert ">NEW<" not in old_block

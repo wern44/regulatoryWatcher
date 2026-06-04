@@ -25,12 +25,23 @@ def deadlines(
             show_completed=show_completed,
             authorization_type=active_entity_type(request),
         )
-        SidebarBadgeService(session).mark_visited("deadlines")
+        previous_cutoff = SidebarBadgeService(session).mark_visited("deadlines")
         session.commit()
+
+    new_ids: set[int] = (
+        {d.regulation_id for d in items if d.regulation_created_at > previous_cutoff}
+        if previous_cutoff is not None else set()
+    )
+
     return render_page(
         request,
         "deadlines/list.html",
-        {"active": "deadlines", "deadlines": items, "show_completed": show_completed},
+        {
+            "active": "deadlines",
+            "deadlines": items,
+            "show_completed": show_completed,
+            "new_ids": new_ids,
+        },
     )
 
 
