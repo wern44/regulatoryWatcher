@@ -1,4 +1,6 @@
-<tr class="border-t">
+{% set new_ids_set = new_ids|default(none) %}
+{% set is_new = new_ids_set is not none and r.regulation_id in new_ids_set %}
+<tr class="border-t {% if is_new %}bg-amber-50{% endif %}">
   <td class="p-2">
     <input type="checkbox"
            name="regulation_ids"
@@ -8,6 +10,10 @@
   </td>
   <td class="p-2 font-mono">
     <a class="hover:underline" href="/regulations/{{ r.regulation_id }}">{{ r.reference_number }}</a>
+    {% if is_new %}
+      <span class="ml-2 px-1.5 py-0.5 bg-amber-100 text-amber-800 text-xs rounded font-semibold"
+            title="Added since your last visit">NEW</span>
+    {% endif %}
     {% if amendment_counts is defined %}
       {% set n = amendment_counts.get(r.regulation_id, 0) %}
       {% if n %}
