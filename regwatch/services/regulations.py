@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -38,6 +38,7 @@ class RegulationDTO:
     application_date: date | None
     needs_review: bool
     dora_pillar: str | None
+    created_at: datetime
 
 
 class RegulationService:
@@ -98,6 +99,7 @@ def _to_dto(r: Regulation) -> RegulationDTO:
         application_date=r.application_date,
         needs_review=r.needs_review,
         dora_pillar=r.dora_pillar.value if r.dora_pillar else None,
+        created_at=r.created_at,
     )
 
 
