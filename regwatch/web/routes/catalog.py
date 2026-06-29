@@ -28,6 +28,7 @@ from regwatch.services.regulations import (
     RegulationService,
     build_amendment_indexes,
 )
+from regwatch.services.runtime_limits import get_max_runtime_seconds
 from regwatch.services.sidebar_badges import SidebarBadgeService
 from regwatch.services.upload import (
     UploadRejectedError,
@@ -573,6 +574,8 @@ def refresh_catalog(request: Request) -> RedirectResponse:
     config = request.app.state.config
     sf = request.app.state.session_factory
     auth_types = [a.type for a in config.entity.authorizations]
+    with sf() as session:
+        max_runtime = get_max_runtime_seconds(session, config, "analysis")
 
     threading.Thread(
         target=run_catalog_refresh,
@@ -581,6 +584,7 @@ def refresh_catalog(request: Request) -> RedirectResponse:
             "llm": llm,
             "auth_types": auth_types,
             "progress": progress,
+            "max_runtime_seconds": max_runtime,
         },
         name="regwatch-catalog-refresh",
         daemon=True,

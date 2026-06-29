@@ -80,6 +80,10 @@
           <option value="{{ m }}" {% if m == current_chat_model %}selected{% endif %}>{{ m }}</option>
           {% endfor %}
         </select>
+        <p class="text-xs text-slate-500 mt-1">
+          Auto-selected from the models LM Studio serves — the largest one when several
+          are available — and re-selected automatically if your choice stops being served.
+        </p>
       </div>
       <div>
         <label class="block text-xs font-medium mb-1">Embedding Model</label>
@@ -91,6 +95,32 @@
       </div>
       <button type="submit" class="px-3 py-2 bg-slate-800 text-white rounded text-sm hover:bg-slate-700">
         Save model selection
+      </button>
+    </form>
+  </section>
+
+  <section class="bg-white p-4 rounded shadow-sm border mb-4">
+    <h2 class="text-lg font-semibold mb-2">LLM runtime limits</h2>
+    <p class="text-sm text-slate-600 mb-3">
+      Maximum wall-clock time before a long-running LLM process is aborted.
+      Use <strong>0</strong> for no limit. The abort is cooperative — it takes
+      effect at the next document/item boundary, so a run may overrun slightly.
+    </p>
+    <form method="post" action="/settings/save-runtime" class="space-y-3">
+      <div>
+        <label class="block text-xs font-medium mb-1">Pipeline run — max runtime (seconds)</label>
+        <input type="number" name="pipeline_max_runtime_seconds" min="0" step="1"
+               value="{{ pipeline_max_runtime }}"
+               class="w-full border rounded px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium mb-1">Catalog refresh / analysis — max runtime (seconds)</label>
+        <input type="number" name="analysis_max_runtime_seconds" min="0" step="1"
+               value="{{ analysis_max_runtime }}"
+               class="w-full border rounded px-3 py-2 text-sm" />
+      </div>
+      <button type="submit" class="px-3 py-2 bg-slate-800 text-white rounded text-sm hover:bg-slate-700">
+        Save runtime limits
       </button>
     </form>
   </section>

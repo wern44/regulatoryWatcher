@@ -79,6 +79,26 @@ def test_first_startup_redirect_does_not_fire_on_htmx_requests(
     assert htmx.text == ""
 
 
+def test_save_runtime_persists_limits(tmp_path, monkeypatch):
+    """POST /settings/save-runtime stores the max-runtime ceilings (seconds)."""
+    from regwatch.services.settings import SettingsService
+
+    client = _client(tmp_path, monkeypatch)
+    resp = client.post(
+        "/settings/save-runtime",
+        data={
+            "pipeline_max_runtime_seconds": "90",
+            "analysis_max_runtime_seconds": "0",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    with client.app.state.session_factory() as s:
+        svc = SettingsService(s)
+        assert svc.get("pipeline_max_runtime_seconds") == "90"
+        assert svc.get("analysis_max_runtime_seconds") == "0"
+
+
 def test_app_startup_seeds_entity_types(tmp_path, monkeypatch):
     """create_app() populates the entity_type table on first boot."""
     from sqlalchemy import select

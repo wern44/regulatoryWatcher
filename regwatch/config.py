@@ -61,6 +61,14 @@ class AnalysisConfig(BaseModel):
     llm_call_timeout_seconds: int = 120
     max_document_tokens: int = 24000
     max_upload_size_mb: int = 25
+    # Wall-clock ceilings for long-running LLM processes. 0 = unlimited. The
+    # abort is cooperative (it fires at the next document/phase boundary), so
+    # the effective overrun is bounded by one item plus llm_call_timeout_seconds.
+    # These are defaults; the user can override them from the Settings page,
+    # persisted as the `pipeline_max_runtime_seconds` / `analysis_max_runtime_seconds`
+    # keys in the Setting table.
+    max_pipeline_runtime_seconds: int = 0
+    max_analysis_runtime_seconds: int = 0
 
 
 class PublicationTypeConfig(BaseModel):

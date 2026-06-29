@@ -6,6 +6,7 @@ import logging
 from regwatch.pipeline.pipeline_factory import build_runner
 from regwatch.pipeline.progress import PipelineProgress
 from regwatch.pipeline.sources import build_enabled_sources
+from regwatch.services.runtime_limits import get_max_runtime_seconds, runtime_watchdog
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ def run_pipeline_background(
         return
 
     with session_factory() as session:
+        max_seconds = get_max_runtime_seconds(session, config, "pipeline")
         try:
             runner = build_runner(
                 session,
@@ -43,7 +45,8 @@ def run_pipeline_background(
                 llm_client=llm_client,
                 entity_type_prompt=entity_type_prompt,
             )
-            run_id = runner.run_once(progress=progress)
+            with runtime_watchdog(progress, max_seconds, label="Pipeline run") as watch:
+                run_id = runner.run_once(progress=progress)
             session.commit()
         except Exception as exc:  # noqa: BLE001
             session.rollback()
@@ -51,4 +54,11 @@ def run_pipeline_background(
             progress.finish(run_id=None, error=f"{type(exc).__name__}: {exc}")
             return
 
-    progress.finish(run_id=run_id, aborted=progress.is_cancel_requested)
+    if watch.timed_out:
+        progress.finish(
+            run_id=run_id,
+            aborted=True,
+            aborted_message=f"Aborted — exceeded the maximum runtime of {max_seconds}s.",
+        )
+    else:
+        progress.finish(run_id=run_id, aborted=progress.is_cancel_requested)

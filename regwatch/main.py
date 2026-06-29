@@ -193,11 +193,17 @@ def create_app() -> FastAPI:
                 return
             logger.info("Scheduled catalog refresh & analysis starting")
             auth_types = [a.type for a in config.entity.authorizations]
+            from regwatch.services.runtime_limits import (  # noqa: PLC0415
+                get_max_runtime_seconds,
+            )
+            with session_factory() as session:
+                max_runtime = get_max_runtime_seconds(session, config, "analysis")
             run_catalog_refresh(
                 session_factory=session_factory,
                 llm=app.state.llm_client,
                 auth_types=auth_types,
                 progress=app.state.analysis_progress,
+                max_runtime_seconds=max_runtime,
             )
             logger.info(
                 "Scheduled catalog refresh & analysis finished with status %s",
@@ -232,6 +238,15 @@ def create_app() -> FastAPI:
                 scheduler_manager.apply_schedule(job_id, freq, time_str)
                 if enabled != "true":
                     scheduler_manager.pause(job_id)
+
+        # Auto-select/repair the chat model against whatever the LLM server
+        # currently serves. Health-gated and network-guarded so it never
+        # blocks a real server boot when the LLM is unreachable.
+        from regwatch.llm.model_selection import refresh_chat_model  # noqa: PLC0415
+        try:
+            refresh_chat_model(app.state.llm_client, session_factory)
+        except Exception:  # noqa: BLE001
+            logger.exception("Chat-model auto-selection failed at startup")
 
         bg_scheduler.start()
         app.state.scheduler_manager = scheduler_manager

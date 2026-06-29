@@ -68,12 +68,15 @@ def _build_llm(cfg: AppConfig) -> LLMClient:
         svc = SettingsService(s)
         chat_model = svc.get("chat_model") or cfg.llm.chat_model or ""
         embedding_model = svc.get("embedding_model") or cfg.llm.embedding_model or ""
-    return LLMClient(
+    client = LLMClient(
         base_url=cfg.llm.base_url,
         chat_model=chat_model,
         embedding_model=embedding_model,
         timeout=float(cfg.analysis.llm_call_timeout_seconds),
     )
+    from regwatch.llm.model_selection import refresh_chat_model
+    refresh_chat_model(client, lambda: Session(engine))
+    return client
 
 
 @app.command("init-db")

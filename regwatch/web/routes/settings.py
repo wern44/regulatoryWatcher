@@ -9,12 +9,14 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from regwatch.db.models import DocumentVersion, ExtractionFieldType, PipelineRun
 from regwatch.llm.client import HealthStatus
+from regwatch.llm.model_selection import refresh_chat_model
 from regwatch.services.extraction_fields import (
     ExtractionFieldService,
     FieldNameConflictError,
     FieldNotFoundError,
     FieldProtectedError,
 )
+from regwatch.services.runtime_limits import get_max_runtime_seconds
 from regwatch.services.settings import SettingsService
 from regwatch.web.templates_context import render_page
 
@@ -33,10 +35,11 @@ def settings_view(
         llm_health = llm.health()
     except Exception:  # noqa: BLE001
         llm_health = HealthStatus(reachable=False)
-    try:
-        available_models = llm.list_models()
-    except Exception:  # noqa: BLE001
-        available_models = []
+    # Auto-repair the chat model if the saved one vanished from the server,
+    # and reuse the resulting model list to populate the dropdowns.
+    available_models = (
+        refresh_chat_model(llm, request.app.state.session_factory) or []
+    )
 
     with request.app.state.session_factory() as session:
         protected = (
@@ -52,6 +55,8 @@ def settings_view(
             .limit(10)
             .all()
         )
+        pipeline_max_runtime = get_max_runtime_seconds(session, config, "pipeline")
+        analysis_max_runtime = get_max_runtime_seconds(session, config, "analysis")
 
     return render_page(
         request,
@@ -65,6 +70,8 @@ def settings_view(
             "current_embedding_model": llm.embedding_model,
             "protected_versions": protected,
             "runs": runs,
+            "pipeline_max_runtime": pipeline_max_runtime,
+            "analysis_max_runtime": analysis_max_runtime,
             "db_action": db_action,
             "db_error": db_error,
         },
@@ -74,14 +81,11 @@ def settings_view(
 @router.get("/setup", response_class=HTMLResponse)
 def setup_view(request: Request) -> HTMLResponse:
     llm = request.app.state.llm_client
-    try:
-        models = llm.list_models()
-    except Exception:  # noqa: BLE001
-        models = []
+    models = refresh_chat_model(llm, request.app.state.session_factory) or []
     return render_page(
         request,
         "settings/setup.html",
-        {"models": models},
+        {"models": models, "current_chat_model": llm.chat_model},
     )
 
 
@@ -114,6 +118,24 @@ def save_models(
         session.commit()
     request.app.state.llm_client.chat_model = chat_model
     request.app.state.llm_client.embedding_model = embedding_model
+    return RedirectResponse(url="/settings", status_code=303)
+
+
+@router.post("/save-runtime")
+def save_runtime(
+    request: Request,
+    pipeline_max_runtime_seconds: int = Form(0),
+    analysis_max_runtime_seconds: int = Form(0),
+) -> RedirectResponse:
+    """Persist the max-runtime ceilings for the pipeline and analysis runs.
+
+    Stored in seconds; 0 means unlimited. Negative inputs are clamped to 0.
+    """
+    with request.app.state.session_factory() as session:
+        svc = SettingsService(session)
+        svc.set("pipeline_max_runtime_seconds", str(max(0, pipeline_max_runtime_seconds)))
+        svc.set("analysis_max_runtime_seconds", str(max(0, analysis_max_runtime_seconds)))
+        session.commit()
     return RedirectResponse(url="/settings", status_code=303)
 
 

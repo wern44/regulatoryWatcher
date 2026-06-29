@@ -109,7 +109,12 @@ class PipelineProgress:
         return self._cancel_event.is_set()
 
     def finish(
-        self, *, run_id: int | None, error: str | None = None, aborted: bool = False
+        self,
+        *,
+        run_id: int | None,
+        error: str | None = None,
+        aborted: bool = False,
+        aborted_message: str | None = None,
     ) -> None:
         with self._lock:
             self.finished_at = datetime.now(UTC)
@@ -119,7 +124,11 @@ class PipelineProgress:
             self.current_doc_title = None
             if aborted:
                 self.status = "aborted"
-                self.message = (
+                kept = (
+                    f" Kept {self.events_created} event(s), "
+                    f"{self.versions_created} version(s)."
+                )
+                self.message = (aborted_message + kept) if aborted_message else (
                     f"Aborted by user — kept {self.events_created} event(s), "
                     f"{self.versions_created} version(s)."
                 )

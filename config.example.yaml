@@ -57,6 +57,10 @@ analysis:
   llm_call_timeout_seconds: 120
   max_document_tokens: 24000
   max_upload_size_mb: 25
+  # Maximum wall-clock runtime (seconds) for long LLM processes; 0 = unlimited.
+  # Overridable from the Settings page. The abort is cooperative.
+  max_pipeline_runtime_seconds: 0
+  max_analysis_runtime_seconds: 0
 
 paths:
   db_file: "./data/app.db"
