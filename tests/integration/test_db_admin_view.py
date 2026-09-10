@@ -139,3 +139,79 @@ def test_settings_page_shows_db_section(tmp_path: Path, monkeypatch) -> None:
     assert "Download backup" in r.text
     assert "Restore from file" in r.text
     assert "Reset database" in r.text
+
+
+def _legacy_upload(tmp_path: Path, name: str = "legacy-upload.db") -> Path:
+    """A backup file whose schema predates `regulation.created_at`."""
+    path = tmp_path / name
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.execute(
+            """
+            CREATE TABLE regulation (
+                regulation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                type VARCHAR(50) NOT NULL,
+                reference_number VARCHAR(100) NOT NULL,
+                title TEXT NOT NULL,
+                issuing_authority VARCHAR(100) NOT NULL,
+                lifecycle_stage VARCHAR(40) NOT NULL,
+                is_ict BOOLEAN DEFAULT 0,
+                url VARCHAR(500) NOT NULL,
+                source_of_truth VARCHAR(20) NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO regulation
+                (type, reference_number, title, issuing_authority,
+                 lifecycle_stage, is_ict, url, source_of_truth)
+            VALUES
+                ('CSSF_CIRCULAR', 'LEGACY 1/1', 'Legacy', 'CSSF',
+                 'IN_FORCE', 0, 'https://example.com', 'SEED')
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return path
+
+
+def test_import_of_older_schema_backup_keeps_app_usable(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Regression: importing a backup from an older app version 500'd every
+    page afterwards (`no such column: regulation.created_at`) because the
+    import path copied the file without running the startup schema upgrade.
+    """
+    client = _client(tmp_path, monkeypatch)
+    _seed(tmp_path / "app.db", ref="ORIGINAL 1/1")
+
+    upload = _legacy_upload(tmp_path)
+    with open(upload, "rb") as f:
+        r = client.post(
+            "/settings/db/import",
+            files={"file": (upload.name, f, "application/x-sqlite3")},
+            follow_redirects=False,
+        )
+    assert r.status_code == 303
+    assert "db_action=imported" in r.headers["location"]
+
+    # The redirect target and the dashboard must both render, in the same
+    # process — no restart.
+    assert client.get("/settings?db_action=imported").status_code == 200
+    assert client.get("/").status_code == 200
+    assert client.get("/catalog").status_code == 200
+
+    # The imported payload replaced the original and survived the upgrade.
+    engine = create_app_engine(tmp_path / "app.db")
+    with Session(engine) as session:
+        refs = {
+            row[0]
+            for row in session.execute(
+                Regulation.__table__.select().with_only_columns(
+                    Regulation.reference_number
+                )
+            )
+        }
+    assert refs == {"LEGACY 1/1"}

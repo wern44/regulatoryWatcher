@@ -12,18 +12,16 @@ from sqlalchemy.orm import Session, sessionmaker
 from regwatch.analysis.runner import AnalysisRunner
 from regwatch.analysis.startup import sweep_stuck_runs
 from regwatch.config import AppConfig, load_config
+from regwatch.db.bootstrap import seed_defaults, upgrade_schema
 from regwatch.db.engine import create_app_engine
 from regwatch.db.models import (
-    Base,
     DiscoveryRun,
     DocumentChunk,
     PipelineRun,
     Regulation,
     RegulationOverride,
 )
-from regwatch.db.schema_sync import sync_schema
 from regwatch.db.seed import load_seed
-from regwatch.db.virtual_tables import create_virtual_tables
 from regwatch.llm.client import LLMClient
 from regwatch.services.analysis import AnalysisService
 from regwatch.services.cssf_discovery import CssfDiscoveryService
@@ -84,15 +82,8 @@ def init_db() -> None:
     """Create the database schema and virtual tables."""
     cfg = _get_config()
     engine = create_app_engine(cfg.paths.db_file)
-    Base.metadata.create_all(engine)
-    sync_schema(engine, Base.metadata)
-    create_virtual_tables(engine, embedding_dim=cfg.llm.embedding_dim)
-    from regwatch.db.migrations import migrate_discovery_run_item_columns
-    migrate_discovery_run_item_columns(engine)
-    from regwatch.db.extraction_field_seed import seed_core_fields
-    with Session(engine) as session:
-        seed_core_fields(session)
-        session.commit()
+    upgrade_schema(engine, embedding_dim=cfg.llm.embedding_dim)
+    seed_defaults(engine)
     with Session(engine) as session:
         sweep_stuck_runs(session)
         session.commit()
@@ -152,7 +143,12 @@ def db_import(
         )
 
     engine = create_app_engine(cfg.paths.db_file)
-    restore_database(engine, uploaded_file=file, db_path=Path(cfg.paths.db_file))
+    restore_database(
+        engine,
+        uploaded_file=file,
+        db_path=Path(cfg.paths.db_file),
+        embedding_dim=cfg.llm.embedding_dim,
+    )
     typer.echo(f"Database restored from {file}")
 
 

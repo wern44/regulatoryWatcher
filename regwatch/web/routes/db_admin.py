@@ -69,6 +69,7 @@ async def import_database(
                 engine,
                 uploaded_file=upload_path,
                 db_path=Path(config.paths.db_file),
+                embedding_dim=config.llm.embedding_dim,
             )
         except ValueError as exc:
             logger.warning("Database import rejected: %s", exc)

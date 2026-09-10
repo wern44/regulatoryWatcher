@@ -105,7 +105,9 @@ def test_restore_replaces_target_database(tmp_path: Path) -> None:
     src_engine.dispose()
 
     target_engine = create_app_engine(target)
-    restore_database(target_engine, uploaded_file=source, db_path=target)
+    restore_database(
+        target_engine, uploaded_file=source, db_path=target, embedding_dim=4
+    )
 
     # Re-create the engine because dispose was called.
     target_engine = create_app_engine(target)
@@ -188,3 +190,99 @@ def test_reset_without_seed_file_leaves_catalog_empty(tmp_path: Path) -> None:
             Regulation.__table__.select()
         ).all()
     assert count == []
+
+
+def _legacy_db(tmp_path: Path, name: str = "legacy.db") -> Path:
+    """Build a backup file with an *older* schema than the current models.
+
+    Mirrors what the user actually uploads: a .db exported by a previous
+    version of the app. `regulation` has no `created_at`, and the whole
+    `entity_type` table is missing.
+    """
+    db_path = tmp_path / name
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(
+            """
+            CREATE TABLE regulation (
+                regulation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                type VARCHAR(50) NOT NULL,
+                reference_number VARCHAR(100) NOT NULL,
+                title TEXT NOT NULL,
+                issuing_authority VARCHAR(100) NOT NULL,
+                lifecycle_stage VARCHAR(40) NOT NULL,
+                is_ict BOOLEAN DEFAULT 0,
+                url VARCHAR(500) NOT NULL,
+                source_of_truth VARCHAR(20) NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO regulation
+                (type, reference_number, title, issuing_authority,
+                 lifecycle_stage, is_ict, url, source_of_truth)
+            VALUES
+                ('CSSF_CIRCULAR', 'LEGACY 1/1', 'Legacy', 'CSSF',
+                 'IN_FORCE', 0, 'https://example.com', 'SEED')
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return db_path
+
+
+def test_restore_upgrades_an_older_schema_backup(tmp_path: Path) -> None:
+    """Regression: importing a backup taken from an older app version left the
+    live DB on that old schema, so every subsequent request 500'd with
+    `no such column: regulation.created_at` / `no such table: entity_type`
+    until the process was restarted. Restore must run the same schema upgrade
+    the app runs at startup.
+    """
+    target = _seeded_db(tmp_path, "target.db")
+    legacy = _legacy_db(tmp_path)
+
+    target_engine = create_app_engine(target)
+    restore_database(
+        target_engine,
+        uploaded_file=legacy,
+        db_path=target,
+        embedding_dim=4,
+    )
+
+    conn = sqlite3.connect(str(target))
+    try:
+        cols = [
+            r[1] for r in conn.execute("PRAGMA table_info(regulation)")
+        ]
+        assert "created_at" in cols
+        # The migration backfills rather than leaving NULLs behind.
+        assert conn.execute(
+            "SELECT COUNT(*) FROM regulation WHERE created_at IS NULL"
+        ).fetchone()[0] == 0
+        # The imported payload survived the upgrade.
+        assert conn.execute(
+            "SELECT reference_number FROM regulation"
+        ).fetchall() == [("LEGACY 1/1",)]
+        # Tables added since the backup was taken now exist...
+        tables = {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        assert "entity_type" in tables
+        assert "document_chunk_fts" in tables
+        assert "document_chunk_vec" in tables
+    finally:
+        conn.close()
+
+    # ...and the idempotent startup seeds have populated them, so the app is
+    # usable without a restart.
+    engine = create_app_engine(target)
+    with Session(engine) as session:
+        from regwatch.db.models import EntityType, ExtractionField
+
+        assert session.query(EntityType).count() > 0
+        assert session.query(ExtractionField).count() > 0

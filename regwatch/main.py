@@ -17,10 +17,8 @@ from starlette.responses import RedirectResponse as StarletteRedirect
 from starlette.responses import Response
 
 from regwatch.config import load_config
+from regwatch.db.bootstrap import seed_defaults, upgrade_schema
 from regwatch.db.engine import create_app_engine
-from regwatch.db.models import Base
-from regwatch.db.schema_sync import sync_schema
-from regwatch.db.virtual_tables import create_virtual_tables
 from regwatch.llm.client import LLMClient
 from regwatch.pipeline.progress import PipelineProgress
 from regwatch.scheduler.jobs import SchedulerManager
@@ -56,30 +54,9 @@ def create_app() -> FastAPI:
     config = load_config(config_path)
 
     engine = create_app_engine(config.paths.db_file)
-    Base.metadata.create_all(engine)
-    # Run column-adding migrations BEFORE sync_schema. sync_schema generates
-    # NOT NULL ADD COLUMN statements with no DEFAULT for DateTime types,
-    # which SQLite rejects on populated tables; the migration adds the
-    # column as nullable and backfills, after which sync_schema is a no-op
-    # for that column.
-    from regwatch.db.migrations import (
-        migrate_authorization_type_drop_check,
-        migrate_discovery_run_item_columns,
-        migrate_regulation_created_at,
-    )
-    migrate_authorization_type_drop_check(engine)
-    migrate_regulation_created_at(engine)
-    sync_schema(engine, Base.metadata)
-    create_virtual_tables(engine, embedding_dim=config.llm.embedding_dim)
-    migrate_discovery_run_item_columns(engine)
+    upgrade_schema(engine, embedding_dim=config.llm.embedding_dim)
+    seed_defaults(engine)
     session_factory = sessionmaker(engine, expire_on_commit=False)
-
-    from regwatch.db.entity_type_seed import seed_default_entity_types
-    from regwatch.db.extraction_field_seed import seed_core_fields
-    with session_factory() as session:
-        seed_default_entity_types(session)
-        seed_core_fields(session)
-        session.commit()
 
     # Build the entity-type LLM prompt segment once at startup; the pipeline
     # matcher has no DB session at call time, and per-document DB hits would

@@ -8,9 +8,9 @@ from pathlib import Path
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
+from regwatch.db.bootstrap import seed_defaults, upgrade_schema
 from regwatch.db.models import Base
 from regwatch.db.seed import load_seed
-from regwatch.db.virtual_tables import create_virtual_tables
 
 
 def backup_database(db_path: Path | str, dest_path: Path | str) -> Path:
@@ -67,12 +67,20 @@ def restore_database(
     engine: Engine,
     uploaded_file: Path | str,
     db_path: Path | str,
+    *,
+    embedding_dim: int,
 ) -> None:
     """Replace the app database file with `uploaded_file`.
 
     Validates the upload, disposes the engine's pool so the file is not held
     open, then overwrites the target file in place. Subsequent sessions
     against the same engine URL will read the new content.
+
+    The uploaded backup may have been exported by an older version of the app,
+    so the restored file is put through the same schema upgrade and default
+    seeding the app runs at startup. Without that, every request after an
+    import fails (`no such column: regulation.created_at`) until the process
+    is restarted.
     """
     uploaded_file = Path(uploaded_file)
     db_path = Path(db_path)
@@ -93,6 +101,10 @@ def restore_database(
         if sidecar.exists():
             sidecar.unlink()
 
+    # The restored file is now the live database — upgrade it in place.
+    upgrade_schema(engine, embedding_dim=embedding_dim)
+    seed_defaults(engine)
+
 
 def reset_database(
     engine: Engine,
@@ -109,8 +121,8 @@ def reset_database(
             conn.execute(text(f"DROP TABLE IF EXISTS {t}"))
 
     Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
-    create_virtual_tables(engine, embedding_dim=embedding_dim)
+    upgrade_schema(engine, embedding_dim=embedding_dim)
+    seed_defaults(engine)
 
     if seed_file is not None:
         seed_path = Path(seed_file)

@@ -26,3 +26,4 @@ config.yaml
 
 # Ad-hoc crawl artefacts
 retire_candidates.tsv
+backups/
