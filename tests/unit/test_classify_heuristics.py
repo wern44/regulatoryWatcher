@@ -66,3 +66,30 @@ def test_ict_keyword_does_not_match_inside_words(text: str) -> None:
 )
 def test_ict_keywords_still_match_whole_words(text: str) -> None:
     assert is_ict_document(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Loi portant mise en œuvre du règlement sur la résilience opérationnelle numérique",
+        "Gestion du risque lié aux TIC",
+        "Exigences en matière de cybersécurité",
+        "Accords de sous-traitance",
+    ],
+)
+def test_french_ict_keywords_match(text: str) -> None:
+    """Legilux texts are French; without French keywords every one of them
+    went to the LLM fallback, which over-flags."""
+    assert is_ict_document(text) is True
+
+
+def test_llm_fallback_asks_whether_ict_is_the_main_subject() -> None:
+    from unittest.mock import MagicMock
+
+    llm = MagicMock()
+    llm.chat.return_value = "false"
+
+    assert is_ict_document("Règlement sur les coussins de fonds propres", llm=llm) is False
+    prompt = llm.chat.call_args.kwargs["user"]
+    assert "MAIN SUBJECT" in prompt
+    assert "only mentioned in passing" in prompt

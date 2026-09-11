@@ -11,10 +11,13 @@ from regwatch.llm.client import LLMClient
 logger = logging.getLogger(__name__)
 
 # Whole words only: "ict" used to match inside "conflicts", "restrictions"
-# and "jurisdictions". "cyber" is a prefix ("cybersecurity", "cyber-risk").
+# and "jurisdictions". "cyber" is a prefix ("cybersecurity", "cybersécurité").
+# French terms cover Legilux / CSSF texts ("TIC" = ICT, "sous-traitance" =
+# outsourcing).
 _ICT_KEYWORDS_RE = re.compile(
     r"\b(?:dora|ict|tlpt|outsourcing|operational resilience|incident reporting"
-    r"|third[- ]party providers?)\b|\bcyber",
+    r"|third[- ]party providers?|tic|sous-traitance|résilience opérationnelle)\b"
+    r"|\bcyber",
     re.IGNORECASE,
 )
 
@@ -27,9 +30,13 @@ def is_ict_document(text: str, *, llm: LLMClient | None = None) -> bool:
     try:
         reply = llm.chat(
             system='You classify regulatory documents. Respond with ONLY "true" or "false".',
+            # "related to" made the model flag any financial law touching
+            # IT in passing (e.g. covered bonds); ask for the main subject.
             user=(
-                "Is this document related to ICT, cybersecurity, digital operational resilience, "
-                "IT outsourcing, or similar technology risk topics?\n\n"
+                "Is the MAIN SUBJECT of this document ICT risk, cybersecurity, digital "
+                "operational resilience (DORA), ICT incident reporting or ICT/IT "
+                "outsourcing? Answer false if these topics are absent or only "
+                "mentioned in passing, e.g. in a list of amended laws.\n\n"
                 f"Text (first 2000 chars): {text[:2000]}"
             ),
         )
