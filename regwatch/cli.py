@@ -327,6 +327,30 @@ def prune_versions_cmd(
         typer.echo("Run again with --apply to delete them.")
 
 
+@app.command("dedupe-events")
+def dedupe_events_cmd(
+    apply: Annotated[
+        bool, typer.Option("--apply", help="Delete (default: only report)")
+    ] = False,
+) -> None:
+    """Remove Inbox events stored twice for the same feed item.
+
+    Keeps the earliest copy (and any review status of the removed ones).
+    Back up the database first.
+    """
+    from regwatch.services.event_dedupe import remove_duplicate_events
+
+    cfg = _get_config()
+    engine = create_app_engine(cfg.paths.db_file)
+    with Session(engine) as session:
+        count = remove_duplicate_events(session, apply=apply)
+        if apply:
+            session.commit()
+    typer.echo(f"{'Removed' if apply else 'Would remove'} {count} duplicate event(s).")
+    if not apply and count:
+        typer.echo("Run again with --apply to delete them.")
+
+
 @app.command("discover-cssf")
 def discover_cssf(
     full: Annotated[
