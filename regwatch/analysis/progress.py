@@ -9,6 +9,9 @@ from threading import Event, RLock
 @dataclass
 class AnalysisProgress:
     status: str = "idle"
+    # What is running on this progress object: "Analysis", "Catalog refresh"
+    # or "ICT refresh". Shown in the status bar and in refusals.
+    task: str = "Analysis"
     run_id: int | None = None
     total: int = 0
     done: int = 0
@@ -20,9 +23,10 @@ class AnalysisProgress:
     _lock: RLock = field(default_factory=RLock, repr=False, compare=False)
     _cancel_event: Event = field(default_factory=Event, repr=False, compare=False)
 
-    def start(self, run_id: int, total: int) -> None:
+    def start(self, run_id: int, total: int, task: str = "Analysis") -> None:
         with self._lock:
             self.status = "running"
+            self.task = task
             self.run_id = run_id
             self.total = total
             self.done = 0

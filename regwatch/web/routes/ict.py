@@ -7,9 +7,10 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from regwatch.db.models import Regulation, RegulationOverride
-from regwatch.services.discovery import DiscoveryService
 from regwatch.services.regulations import RegulationFilter, RegulationService
 from regwatch.services.sidebar_badges import SidebarBadgeService
+from regwatch.web.routes.catalog import start_catalog_refresh
+from regwatch.web.task_guard import refuse
 from regwatch.web.templates_context import active_entity_type, render_page
 
 router = APIRouter()
@@ -59,12 +60,10 @@ def unset_ict(request: Request, regulation_id: int) -> RedirectResponse:
 
 @router.post("/ict/refresh")
 def refresh_ict(request: Request) -> RedirectResponse:
-    llm = request.app.state.llm_client
-    config = request.app.state.config
-    auth_types = [a.type for a in config.entity.authorizations]
-    with request.app.state.session_factory() as session:
-        svc = DiscoveryService(session, llm=llm)
-        svc.classify_catalog()
-        svc.discover_missing(auth_types)
-        session.commit()
-    return RedirectResponse(url="/ict", status_code=303)
+    """Re-classify the catalog in the background (same job as the Catalog
+    refresh). It used to run inside this request, holding the database
+    write lock for hours and showing nothing in the status bar."""
+    busy = start_catalog_refresh(request, task="ICT refresh")
+    if busy is not None:
+        return refuse(request, "/ict", busy)
+    return RedirectResponse(url="/ict?refresh=started", status_code=303)

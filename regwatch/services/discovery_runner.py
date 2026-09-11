@@ -34,6 +34,7 @@ def run_catalog_refresh(
     auth_types: Sequence[str],
     progress: AnalysisProgress,
     max_runtime_seconds: int = 0,
+    task: str = "Catalog refresh",
 ) -> None:
     """Run classify_catalog + discover_missing under a single AnalysisProgress.
 
@@ -48,12 +49,10 @@ def run_catalog_refresh(
     try:
         with session_factory() as session:
             total = session.query(Regulation).count() + 1
-        progress.start(run_id=0, total=total)
-        progress.tick(0, total, "Starting catalog refresh…")
+        progress.start(run_id=0, total=total, task=task)
+        progress.tick(0, total, f"Starting {task.lower()}…")
 
-        with runtime_watchdog(
-            progress, max_runtime_seconds, label="Catalog refresh"
-        ) as watch:
+        with runtime_watchdog(progress, max_runtime_seconds, label=task) as watch:
             with session_factory() as session:
                 svc = DiscoveryService(session, llm=llm)
                 svc.classify_catalog(progress=progress)
@@ -73,5 +72,5 @@ def run_catalog_refresh(
         logger.exception("Catalog refresh failed")
         # `progress.start` may not have been called yet if session_factory raised.
         if progress.status != "running":
-            progress.start(run_id=0, total=0)
+            progress.start(run_id=0, total=0, task=task)
         progress.finish("FAILED", error=str(e))

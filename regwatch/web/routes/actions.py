@@ -10,6 +10,12 @@ from fastapi.responses import HTMLResponse
 from regwatch.pipeline.progress import PipelineProgress
 from regwatch.pipeline.run_helpers import run_pipeline_background
 from regwatch.pipeline.sources import SOURCE_GROUPS
+from regwatch.web.task_guard import (
+    BUSY_COOKIE,
+    busy_message,
+    refused_message,
+    try_start,
+)
 
 router = APIRouter()
 
@@ -39,28 +45,30 @@ def run_pipeline(
             {"progress": snapshot},
         )
 
-    # Block if CSSF reconciliation is writing to the DB.
-    discovery_progress = getattr(request.app.state, "cssf_discovery_progress", None)
-    if discovery_progress and getattr(discovery_progress, "status", None) == "running":
-        progress.message = "Cannot start — CSSF reconciliation is running"
-        progress.status = "failed"
-        progress.error = "Wait for CSSF reconciliation to finish before running the pipeline."
+    def _mark_running() -> None:
+        # Reset eagerly so the immediate response shows "running" instead of
+        # whatever the previous run left behind. The background thread will
+        # call reset_for_run again with the source count.
+        progress.reset_for_run(total_sources=0)
+        progress.message = "Initialising pipeline..."
+        progress.started_at = datetime.now(UTC)
+
+    busy = try_start(request.app.state, _mark_running)
+    if busy is not None:
+        # Render the refusal without touching the shared progress object.
+        refused = {
+            **snapshot,
+            "status": "failed",
+            "message": f"Not started — {busy_message(busy)}",
+            "error": None,
+        }
         return templates.TemplateResponse(
-            request,
-            "partials/pipeline_progress.html",
-            {"progress": progress.snapshot()},
+            request, "partials/pipeline_progress.html", {"progress": refused}
         )
 
     source_names: list[str] | None = None
     if group and group in SOURCE_GROUPS:
         source_names = SOURCE_GROUPS[group]
-
-    # Reset eagerly so the immediate response shows "running" instead of
-    # whatever the previous run left behind. The background thread will call
-    # reset_for_run again with the source count.
-    progress.reset_for_run(total_sources=0)
-    progress.message = "Initialising pipeline..."
-    progress.started_at = datetime.now(UTC)
 
     thread = threading.Thread(
         target=run_pipeline_background,
@@ -156,8 +164,9 @@ def status_bar(request: Request) -> HTMLResponse:
         if analysis_running
         else False
     )
+    refused = refused_message(request)
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "partials/status_bar.html",
         {
@@ -167,10 +176,15 @@ def status_bar(request: Request) -> HTMLResponse:
             "reconciliation_running": reconciliation_running,
             "recon_reference": recon_reference,
             "analysis_running": analysis_running,
+            "analysis_task": getattr(analysis_progress, "task", "Analysis"),
             "analysis_label": analysis_label,
             "analysis_cancel_requested": analysis_cancel_requested,
+            "refused_message": refused,
         },
     )
+    if refused:
+        response.delete_cookie(BUSY_COOKIE)
+    return response
 
 
 @router.post("/analysis/abort", response_class=HTMLResponse)

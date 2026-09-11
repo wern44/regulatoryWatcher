@@ -1,3 +1,9 @@
+{% if refused_message %}
+<div class="flex items-center gap-2 px-4 py-2 text-sm bg-amber-50 border-b border-amber-200 text-amber-800"
+     role="alert">
+  <span class="font-medium">Not started:</span> <span>{{ refused_message }}</span>
+</div>
+{% endif %}
 {% if pipeline_running or reconciliation_running or analysis_running %}
 <div id="global-status-bar"
      hx-get="/status-bar"
@@ -30,7 +36,7 @@
   {% if analysis_running %}
     {% if pipeline_running %}<span class="mx-1">|</span>{% endif %}
     <span class="font-medium">
-      {% if analysis_cancel_requested %}Catalog refresh aborting…{% else %}Catalog refresh running{% endif %}
+      {% if analysis_cancel_requested %}{{ analysis_task }} aborting…{% else %}{{ analysis_task }} running{% endif %}
     </span>
     {% if analysis_label %}<span class="text-violet-600">— {{ analysis_label }}</span>{% endif %}
     {% if not analysis_cancel_requested %}
@@ -49,6 +55,7 @@
     <span class="font-medium">CSSF Reconciliation running</span>
     {% if recon_reference %}<span class="text-emerald-600">— {{ recon_reference }}</span>{% endif %}
   {% endif %}
+  <span class="basis-full text-xs opacity-80">New runs are blocked until it finishes.</span>
 </div>
 {% else %}
 <div id="global-status-bar"

@@ -16,6 +16,7 @@ from regwatch.db.admin import (
     restore_database,
 )
 from regwatch.db.engine import create_app_engine
+from regwatch.web.task_guard import refuse, running_task
 
 router = APIRouter(prefix="/settings/db", tags=["db-admin"])
 
@@ -52,6 +53,9 @@ async def import_database(
     request: Request, file: UploadFile
 ) -> RedirectResponse:
     """Replace the current database with the uploaded backup file."""
+    busy = running_task(request.app.state)
+    if busy is not None:
+        return refuse(request, "/settings", busy)
     config = request.app.state.config
 
     tmp_dir = Path(tempfile.mkdtemp(prefix="regwatch-import-"))
@@ -90,6 +94,9 @@ async def import_database(
 @router.post("/reset")
 def reset_database_route(request: Request) -> RedirectResponse:
     """Drop every table and recreate the schema, then re-seed the catalog."""
+    busy = running_task(request.app.state)
+    if busy is not None:
+        return refuse(request, "/settings", busy)
     config = request.app.state.config
 
     engine = create_app_engine(config.paths.db_file)

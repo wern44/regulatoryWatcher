@@ -6,6 +6,7 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -84,30 +85,21 @@ def create_app() -> FastAPI:
         from regwatch.pipeline.run_helpers import run_pipeline_background  # noqa: PLC0415
         from regwatch.services.cssf_discovery import CssfDiscoveryService  # noqa: PLC0415
         from regwatch.services.discovery_runner import run_catalog_refresh  # noqa: PLC0415
+        from regwatch.web.task_guard import try_start  # noqa: PLC0415
 
         bg_scheduler = BackgroundScheduler(timezone=config.ui.timezone)
         pipeline_progress = PipelineProgress()
-
-        def _any_process_running() -> bool:
-            if pipeline_progress.snapshot()["status"] == "running":
-                return True
-            dp = getattr(app.state, "cssf_discovery_progress", None)
-            if dp and getattr(dp, "status", "idle") == "running":
-                return True
-            ap = getattr(app.state, "analysis_progress", None)
-            if ap and getattr(ap, "status", "idle") == "running":
-                return True
-            return False
+        app.state.pipeline_progress = pipeline_progress
 
         def _scheduled_pipeline() -> None:
-            if _any_process_running():
-                logger.info("Scheduled pipeline skipped — another process running")
+            def _mark_running() -> None:
+                pipeline_progress.reset_for_run(total_sources=0)
+                pipeline_progress.message = "Scheduled pipeline run starting..."
+
+            busy = try_start(app.state, _mark_running)
+            if busy is not None:
+                logger.info("Scheduled pipeline skipped — %s is running", busy)
                 return
-            from datetime import UTC  # noqa: PLC0415
-            from datetime import datetime as dt
-            pipeline_progress.reset_for_run(total_sources=0)
-            pipeline_progress.message = "Scheduled pipeline run starting..."
-            pipeline_progress.started_at = dt.now(UTC)
             run_pipeline_background(
                 session_factory=session_factory,
                 config=config,
@@ -118,55 +110,48 @@ def create_app() -> FastAPI:
                 ),
             )
 
-        def _scheduled_discovery() -> None:
-            if _any_process_running():
-                logger.info("Scheduled discovery skipped — another process running")
+        def _scheduled_cssf_run(mode: Literal["full", "incremental"]) -> None:
+            progress = app.state.cssf_discovery_progress
+            busy = try_start(app.state, lambda: progress.start(0))
+            if busy is not None:
+                logger.info("Scheduled CSSF %s run skipped — %s is running", mode, busy)
                 return
-            logger.info("Scheduled CSSF discovery (incremental) starting")
+            logger.info("Scheduled CSSF discovery (%s) starting", mode)
+            status = "FAILED"
             try:
-                auth_slugs: list[str] = [
-                    a.type for a in config.entity.authorizations
-                ]
                 service = CssfDiscoveryService(
                     session_factory=session_factory,
                     config=config.cssf_discovery,
+                    on_progress=lambda **kw: progress.tick(**{
+                        k: v for k, v in kw.items()
+                        if k in ("total_scraped", "entity_type", "reference")
+                    }),
                 )
                 service.run(
-                    entity_types=auth_slugs,
-                    mode="incremental",
+                    entity_types=[a.type for a in config.entity.authorizations],
+                    mode=mode,
                     triggered_by="SCHEDULER",
                 )
-                logger.info("Scheduled CSSF discovery completed")
+                status = "SUCCESS"
+                logger.info("Scheduled CSSF discovery (%s) completed", mode)
             except Exception:  # noqa: BLE001
-                logger.exception("Scheduled CSSF discovery failed")
+                logger.exception("Scheduled CSSF discovery (%s) failed", mode)
+            finally:
+                progress.finish(status)
+
+        def _scheduled_discovery() -> None:
+            _scheduled_cssf_run("incremental")
 
         def _scheduled_reconciliation() -> None:
-            if _any_process_running():
-                logger.info(
-                    "Scheduled reconciliation skipped — another process running"
-                )
-                return
-            logger.info("Scheduled CSSF reconciliation (full) starting")
-            try:
-                auth_slugs: list[str] = [
-                    a.type for a in config.entity.authorizations
-                ]
-                service = CssfDiscoveryService(
-                    session_factory=session_factory,
-                    config=config.cssf_discovery,
-                )
-                service.run(
-                    entity_types=auth_slugs,
-                    mode="full",
-                    triggered_by="SCHEDULER",
-                )
-                logger.info("Scheduled CSSF reconciliation completed")
-            except Exception:  # noqa: BLE001
-                logger.exception("Scheduled CSSF reconciliation failed")
+            _scheduled_cssf_run("full")
 
         def _scheduled_analysis() -> None:
-            if _any_process_running():
-                logger.info("Scheduled analysis skipped — another process running")
+            progress = app.state.analysis_progress
+            busy = try_start(
+                app.state, lambda: progress.start(0, 0, task="Catalog refresh")
+            )
+            if busy is not None:
+                logger.info("Scheduled catalog refresh skipped — %s is running", busy)
                 return
             logger.info("Scheduled catalog refresh & analysis starting")
             auth_types = [a.type for a in config.entity.authorizations]
@@ -227,7 +212,6 @@ def create_app() -> FastAPI:
 
         bg_scheduler.start()
         app.state.scheduler_manager = scheduler_manager
-        app.state.pipeline_progress = pipeline_progress
         yield
         if bg_scheduler.running:
             bg_scheduler.shutdown(wait=False)

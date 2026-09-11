@@ -35,6 +35,7 @@ from regwatch.services.upload import (
     index_uploaded_version,
     save_upload,
 )
+from regwatch.web.task_guard import refuse, try_start
 from regwatch.web.templates_context import active_entity_type, render_page
 
 router = APIRouter()
@@ -318,24 +319,34 @@ def catalog_analyse(
     # Estimate total work items: existing versions + regulations to fetch.
     total_items = len(resolved_version_ids) + len(needs_fetch_ids)
 
+    busy = try_start(
+        request.app.state, lambda: progress.start(0, total_items, task="Analysis")
+    )
+    if busy is not None:
+        return refuse(request, "/catalog", busy)
+
     # Create the AnalysisRun row synchronously so we can redirect to its page.
     llm_model = getattr(llm, "chat_model", "") or ""
-    with sf() as s:
-        run = AnalysisRun(
-            status=AnalysisRunStatus.RUNNING,
-            queued_version_ids=resolved_version_ids,
-            started_at=datetime.now(UTC),
-            llm_model=llm_model,
-            triggered_by="USER_UI",
-        )
-        s.add(run)
-        s.commit()
-        run_id = run.run_id
+    try:
+        with sf() as s:
+            run = AnalysisRun(
+                status=AnalysisRunStatus.RUNNING,
+                queued_version_ids=resolved_version_ids,
+                started_at=datetime.now(UTC),
+                llm_model=llm_model,
+                triggered_by="USER_UI",
+            )
+            s.add(run)
+            s.commit()
+            run_id = run.run_id
+    except Exception as e:
+        progress.finish("FAILED", error=str(e))
+        raise
 
     def _worker() -> None:
         from regwatch.services.document_fetch import FetchError, fetch_and_create_version
 
-        progress.start(run_id, total_items)
+        progress.start(run_id, total_items, task="Analysis")
         fetch_errors: list[str] = []
         all_version_ids = list(resolved_version_ids)
 
@@ -485,14 +496,6 @@ def catalog_discover_cssf(
     cfg = request.app.state.config
     progress = request.app.state.cssf_discovery_progress
 
-    # Prevent concurrent DB writes with the pipeline.
-    pipeline_progress = request.app.state.pipeline_progress
-    if pipeline_progress.snapshot()["status"] == "running":
-        return RedirectResponse(
-            "/settings?db_error=Cannot+start+reconciliation+while+pipeline+is+running",
-            status_code=303,
-        )
-
     if entity_types:
         auth_slugs: list[str] = list(entity_types)
     else:
@@ -504,18 +507,26 @@ def catalog_discover_cssf(
     if mode not in ("incremental", "full"):
         mode = "incremental"
 
+    busy = try_start(request.app.state, lambda: progress.start(0))
+    if busy is not None:
+        return refuse(request, "/catalog", busy)
+
     # Create the DiscoveryRun row synchronously so the redirect target exists.
-    with sf() as s:
-        run = DiscoveryRun(
-            status="RUNNING",
-            started_at=datetime.now(UTC),
-            triggered_by="USER_UI",
-            entity_types=list(auth_slugs),
-            mode=mode,
-        )
-        s.add(run)
-        s.commit()
-        run_id = run.run_id
+    try:
+        with sf() as s:
+            run = DiscoveryRun(
+                status="RUNNING",
+                started_at=datetime.now(UTC),
+                triggered_by="USER_UI",
+                entity_types=list(auth_slugs),
+                mode=mode,
+            )
+            s.add(run)
+            s.commit()
+            run_id = run.run_id
+    except Exception as e:
+        progress.finish("FAILED", error=str(e))
+        raise
 
     def _progress(**kw: object) -> None:
         progress.tick(
@@ -558,23 +569,19 @@ def catalog_discover_cssf(
     return RedirectResponse(f"/discovery/runs/{run_id}", status_code=303)
 
 
-@router.post("/catalog/refresh")
-def refresh_catalog(request: Request) -> RedirectResponse:
-    """Spawn a background worker that runs DiscoveryService against the LLM.
+def start_catalog_refresh(request: Request, *, task: str) -> str | None:
+    """Run classify + discover-missing in a background thread.
 
-    The worker drives `app.state.analysis_progress` so the run is visible in
-    the global status bar with a working Abort button. Re-entry is guarded:
-    if an analysis or refresh is already running, we just redirect back to
-    the catalog and let the existing run continue.
+    Returns None once started, or the name of the task already running.
+    Shared by the Catalog and ICT "Refresh" buttons.
     """
     progress = request.app.state.analysis_progress
-    if getattr(progress, "status", "idle") == "running":
-        return RedirectResponse(url="/catalog?refresh=already-running", status_code=303)
+    busy = try_start(request.app.state, lambda: progress.start(0, 0, task=task))
+    if busy is not None:
+        return busy
 
-    llm = request.app.state.llm_client
     config = request.app.state.config
     sf = request.app.state.session_factory
-    auth_types = [a.type for a in config.entity.authorizations]
     with sf() as session:
         max_runtime = get_max_runtime_seconds(session, config, "analysis")
 
@@ -582,12 +589,27 @@ def refresh_catalog(request: Request) -> RedirectResponse:
         target=run_catalog_refresh,
         kwargs={
             "session_factory": sf,
-            "llm": llm,
-            "auth_types": auth_types,
+            "llm": request.app.state.llm_client,
+            "auth_types": [a.type for a in config.entity.authorizations],
             "progress": progress,
             "max_runtime_seconds": max_runtime,
+            "task": task,
         },
         name="regwatch-catalog-refresh",
         daemon=True,
     ).start()
+    return None
+
+
+@router.post("/catalog/refresh")
+def refresh_catalog(request: Request) -> RedirectResponse:
+    """Spawn a background worker that runs DiscoveryService against the LLM.
+
+    The worker drives `app.state.analysis_progress` so the run is visible in
+    the global status bar with a working Abort button. Refused while any
+    other long-running task is in progress.
+    """
+    busy = start_catalog_refresh(request, task="Catalog refresh")
+    if busy is not None:
+        return refuse(request, "/catalog", busy)
     return RedirectResponse(url="/catalog?refresh=started", status_code=303)
