@@ -64,3 +64,46 @@ def test_extract_html_downloads_the_document_url_when_given(httpx_mock) -> None:
     )
 
     assert "real text" in (extract_html(raw) or "")
+
+
+def test_extract_html_retries_a_timeout_once(httpx_mock, monkeypatch) -> None:
+    import httpx
+    from datetime import UTC, datetime
+
+    from regwatch.domain.types import RawDocument
+    from regwatch.pipeline.extract import html as html_module
+
+    monkeypatch.setattr(html_module.time, "sleep", lambda s: None)
+    httpx_mock.add_exception(httpx.ReadTimeout("timed out"), url="https://example.com/slow")
+    httpx_mock.add_response(
+        url="https://example.com/slow",
+        html="<html><body><article><p>Recovered text of the page, long enough to be "
+             "kept as the main content by the extractor.</p></article></body></html>",
+    )
+    raw = RawDocument(
+        source="s", source_url="https://example.com/slow", title="t",
+        published_at=datetime.now(UTC), raw_payload={}, fetched_at=datetime.now(UTC),
+    )
+
+    assert "Recovered text" in (html_module.extract_html(raw) or "")
+
+
+def test_extract_html_retries_a_server_error_once(httpx_mock, monkeypatch) -> None:
+    from datetime import UTC, datetime
+
+    from regwatch.domain.types import RawDocument
+    from regwatch.pipeline.extract import html as html_module
+
+    monkeypatch.setattr(html_module.time, "sleep", lambda s: None)
+    httpx_mock.add_response(url="https://example.com/busy", status_code=500)
+    httpx_mock.add_response(
+        url="https://example.com/busy",
+        html="<html><body><article><p>Second attempt worked and returned the page "
+             "text, long enough to be kept as main content.</p></article></body></html>",
+    )
+    raw = RawDocument(
+        source="s", source_url="https://example.com/busy", title="t",
+        published_at=datetime.now(UTC), raw_payload={}, fetched_at=datetime.now(UTC),
+    )
+
+    assert "Second attempt worked" in (html_module.extract_html(raw) or "")
