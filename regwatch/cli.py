@@ -195,22 +195,28 @@ def run_pipeline(
     source: Annotated[
         str | None, typer.Option("--source", "-s", help="Only run this source")
     ] = None,
+    since: Annotated[
+        str | None,
+        typer.Option(
+            "--since",
+            help="Fetch items published since YYYY-MM-DD instead of since each "
+            "source's last successful run (e.g. to backfill a widened source)",
+        ),
+    ] = None,
 ) -> None:
     """Fetch, extract, match, persist — one pass across enabled sources."""
+    from datetime import UTC, datetime  # noqa: PLC0415
+
     cfg = _get_config()
-    from regwatch.llm.client import LLMClient
     from regwatch.pipeline.pipeline_factory import build_runner
     from regwatch.pipeline.sources import build_enabled_sources
     from regwatch.rag.indexing import index_pending_versions
 
-    source_instances = build_enabled_sources(cfg, only=source)
-
-    llm = LLMClient(
-        base_url=cfg.llm.base_url,
-        chat_model=cfg.llm.chat_model or "",
-        embedding_model=cfg.llm.embedding_model or "",
-        timeout=float(cfg.analysis.llm_call_timeout_seconds),
+    since_dt = (
+        datetime.fromisoformat(since).replace(tzinfo=UTC) if since else None
     )
+    source_instances = build_enabled_sources(cfg, only=source)
+    llm = _build_llm(cfg)
 
     engine = create_app_engine(cfg.paths.db_file)
     with Session(engine) as session:
@@ -220,7 +226,7 @@ def run_pipeline(
             archive_root=cfg.paths.pdf_archive,
             llm_client=llm,
         )
-        run_id = runner.run_once()
+        run_id = runner.run_once(since_dt)
         session.commit()
         indexed = index_pending_versions(
             session,

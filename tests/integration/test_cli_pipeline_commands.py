@@ -68,7 +68,10 @@ class _FakeCssfRssSource:
     def __init__(self, keywords: list[str]) -> None:
         self.keywords = keywords
 
+    seen_since: list[datetime] = []
+
     def fetch(self, since: datetime) -> Iterator[RawDocument]:
+        self.seen_since.append(since)
         now = datetime.now(timezone.utc)
         yield RawDocument(
             source="cssf_rss",
@@ -107,6 +110,7 @@ def test_run_pipeline_command_produces_events(
     fake_instance.embed.return_value = [0.0, 0.0, 0.0, 0.0]
     fake_client_cls.return_value = fake_instance
     monkeypatch.setattr(llm_module, "LLMClient", fake_client_cls)
+    monkeypatch.setattr("regwatch.cli._build_llm", lambda cfg: fake_instance)
 
     # init-db first
     result = runner.invoke(app, ["--config", str(config_file), "init-db"])
@@ -163,3 +167,32 @@ def test_dump_pipeline_runs_command(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "COMPLETED" in result.output
     assert "3" in result.output
+
+
+def test_run_pipeline_since_option_overrides_the_fetch_window(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Backfill after widening a source's query: the incremental window
+    (last successful run minus 14 days) would never reach older items."""
+    from unittest.mock import MagicMock
+
+    import regwatch.pipeline.fetch.cssf_rss  # noqa: F401 — ensures register
+
+    config_file = _minimal_config(tmp_path)
+    monkeypatch.setitem(REGISTRY, "cssf_rss", _FakeCssfRssSource)
+    fake = MagicMock()
+    fake.chat.return_value = "[]"
+    built: list[object] = []
+    monkeypatch.setattr(
+        "regwatch.cli._build_llm", lambda cfg: built.append(cfg) or fake
+    )
+    _FakeCssfRssSource.seen_since.clear()
+
+    assert runner.invoke(app, ["--config", str(config_file), "init-db"]).exit_code == 0
+    result = runner.invoke(
+        app, ["--config", str(config_file), "run-pipeline", "--since", "2024-01-01"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert _FakeCssfRssSource.seen_since == [datetime.fromisoformat("2024-01-01T00:00+00:00")]
+    assert built, "run-pipeline must use the models saved in Settings"
