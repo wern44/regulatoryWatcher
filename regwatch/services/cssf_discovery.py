@@ -102,6 +102,14 @@ def _compose_title(detail: CircularDetail, listing: CircularListingRow) -> str:
     bare = (detail.clean_title or "").strip()
     ref = (detail.reference_number or "").strip()
     listing_raw = (listing.raw_title or "").strip()
+    subtitle = (detail.description or "").strip()
+
+    # Annexes and numberless circulars have generic titles ("Reporting
+    # template", "Circular letter"); only the subtitle tells them apart.
+    label = listing.publication_type_label
+    generic = label == "Annex to a CSSF circular" or (label == "CSSF circular" and not ref)
+    if generic and bare and subtitle:
+        return f"{bare} – {subtitle}"
 
     bare_is_just_ref = False
     if ref:
@@ -113,7 +121,6 @@ def _compose_title(detail: CircularDetail, listing: CircularListingRow) -> str:
     if bare and not bare_is_just_ref:
         return bare
 
-    subtitle = (detail.description or "").strip()
     if ref and subtitle:
         return f"Circular {ref} {subtitle}".strip()
     # No reference number available: fall back to the listing title without
@@ -358,28 +365,10 @@ class CssfDiscoveryService:
             )
             return "FAILED"
 
-        # The detail page may not have a CSSF/IML ref (e.g. laws, regulations).
-        # Use the listing row's (synthesized) ref as the canonical key in that case.
-        canonical_ref = detail.reference_number or listing.reference_number
-
-        # Re-check the override using the canonical reference, which
-        # may differ from the listing row's ref (e.g. when the listing title
-        # and detail page disagree, or when redirects consolidate refs).
-        if canonical_ref and canonical_ref != listing.reference_number:
-            with self._sf() as s:
-                override2 = s.scalar(
-                    select(RegulationOverride).where(
-                        RegulationOverride.reference_number == canonical_ref,
-                        RegulationOverride.action == "EXCLUDE",
-                    )
-                )
-                if override2 is not None:
-                    self._write_item(
-                        run_id, None, canonical_ref, "UNCHANGED",
-                        listing.detail_url, slug, pub.label,
-                        note="excluded by RegulationOverride",
-                    )
-                    return "UNCHANGED"
+        # The listing row's ref is the identity. The detail page's title may
+        # name a different document (an annex titled "Annex to Circular CSSF
+        # 22/822" must not overwrite circular 22/822).
+        canonical_ref = listing.reference_number
 
         outcome: str
         reg_id: int | None = None
@@ -529,7 +518,7 @@ class CssfDiscoveryService:
         pub: PublicationTypeConfig,
     ) -> Regulation:
         composed_title = _compose_title(detail, listing)
-        canonical_ref = detail.reference_number or listing.reference_number
+        canonical_ref = listing.reference_number
         override = self._ict_override(s, canonical_ref)
         if override == "SET_ICT":
             is_ict = True
@@ -628,7 +617,7 @@ class CssfDiscoveryService:
         for ref in detail.amended_by_refs:
             to_reg = s.scalar(select(Regulation).where(Regulation.reference_number == ref))
             if to_reg is not None and to_reg.regulation_id != reg.regulation_id:
-                _ensure_link(to_reg.regulation_id, detail.reference_number, "AMENDS")
+                _ensure_link(to_reg.regulation_id, reg.reference_number, "AMENDS")
         for ref in detail.amends_refs:
             _ensure_link(reg.regulation_id, ref, "AMENDS")
         for ref in detail.supersedes_refs:

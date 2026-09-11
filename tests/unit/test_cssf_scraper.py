@@ -390,11 +390,146 @@ def test_cssf_circular_listing_still_uses_ref_regex() -> None:
     assert rows
     for r in rows:
         assert r.publication_type_label == "CSSF circular"
-        # Canonical CSSF/IML ref shape enforced
+        # Canonical CSSF/IML ref shape enforced; circular letters carry no
+        # number and fall back to their URL slug.
         assert re.match(
             r"^(CSSF(-[A-Z]+)?|IML|BCL)\s\d{2,4}/\d{1,4}$",
             r.reference_number,
-        ), f"not a canonical ref: {r.reference_number!r}"
+        ) or r.reference_number.startswith("circular-letter-"), (
+            f"not a canonical ref: {r.reference_number!r}"
+        )
+
+
+def test_circular_letters_are_kept_with_slug_reference() -> None:
+    """Circular letters have the bare title "Circular letter" -- no number.
+    They used to be dropped silently; they must now yield a stable ref."""
+    html = (FIXTURES / "listing_aifms_page1.html").read_text(encoding="utf-8")
+    rows, _ = _parse_listing_page(html, publication_type_label="CSSF circular")
+    refs = {r.reference_number for r in rows}
+    assert {
+        "circular-letter-2026-03-18",
+        "circular-letter-2026-03-11",
+        "circular-letter-2026-02-12",
+    } <= refs
+
+
+def test_rows_of_another_publication_type_are_skipped() -> None:
+    """The unfiltered page 1 fixture mixes types. An annex whose title names
+    its circular ("Annex to Circular CSSF 22/822") must not be yielded as
+    circular CSSF 22/822 when crawling the circular column."""
+    html = (FIXTURES / "listing_aifms_page1.html").read_text(encoding="utf-8")
+    rows, _ = _parse_listing_page(html, publication_type_label="CSSF circular")
+    urls = {r.detail_url for r in rows}
+    assert not any("annex-of-circular-cssf-22-822" in u for u in urls)
+    assert not any("council-implementing-regulation" in u for u in urls)
+
+
+def test_cssf_regulation_listing_yields_regulation_numbers() -> None:
+    html = (FIXTURES / "listing_aifms_cssf-regulation.html").read_text(
+        encoding="utf-8"
+    )
+    rows, raw_count = _parse_listing_page(
+        html, publication_type_label="CSSF regulation"
+    )
+    assert raw_count == 4
+    assert [r.reference_number for r in rows] == [
+        "CSSF Regulation 20-05",
+        "CSSF Regulation 16-07",
+        "CSSF Regulation 15-03",
+        "CSSF Regulation 12-02",
+    ]
+
+
+def test_annex_listing_never_takes_the_parent_circular_ref() -> None:
+    html = (FIXTURES / "listing_aifms_annex-to-a-cssf-circular.html").read_text(
+        encoding="utf-8"
+    )
+    rows, raw_count = _parse_listing_page(
+        html, publication_type_label="Annex to a CSSF circular"
+    )
+    assert raw_count == 2
+    assert [r.reference_number for r in rows] == [
+        "annex-reporting-template",
+        "annex-interpretative-note",
+    ]
+    page1 = (FIXTURES / "listing_aifms_page1.html").read_text(encoding="utf-8")
+    rows, _ = _parse_listing_page(
+        page1, publication_type_label="Annex to a CSSF circular"
+    )
+    refs = {r.reference_number for r in rows}
+    assert "annex-of-circular-cssf-22-822-11" in refs
+    assert "CSSF 22/822" not in refs
+
+
+def test_parse_detail_cssf_regulation_ref_and_amended_regulation() -> None:
+    html = (FIXTURES / "detail_cssf-regulation_sample.html").read_text(
+        encoding="utf-8"
+    )
+    d = _parse_detail_html(html, source_url="https://example/")
+    assert d.reference_number == "CSSF Regulation 20-05"
+    # Subtitle: "of 14 August 2020 amending CSSF Regulation No 12-02 ..."
+    assert d.amends_refs == ["CSSF Regulation 12-02"]
+
+
+def test_parse_detail_related_documents_are_not_amendments_by_default() -> None:
+    """22/805 is merely *related* to 22/806 (it published it). Only related
+    documents whose title says "(as amended by ... 22/806)" are amended by
+    22/806."""
+    html = (FIXTURES / "detail_22_806.html").read_text(encoding="utf-8")
+    d = _parse_detail_html(html, source_url="https://example/")
+    assert d.amends_refs == [
+        "CSSF 20/758",
+        "CSSF 04/155",
+        "IML 98/143",  # "(as amended by Circulars CSSF 04/155 and 22/806)"
+        "IML 96/126",
+        "IML 95/120",
+    ]
+    assert "CSSF 22/805" not in d.amends_refs
+    assert d.amended_by_refs == ["CSSF 25/883"]
+
+
+def test_find_references_expands_bare_numbers_in_a_list() -> None:
+    from regwatch.discovery.cssf_scraper import find_references
+
+    assert find_references(
+        "as amended by Circulars CSSF 08/338, 09/403,11/506 and 13/568"
+    ) == ["CSSF 08/338", "CSSF 09/403", "CSSF 11/506", "CSSF 13/568"]
+    assert find_references("Changes to circulars IML 97/136 and CSSF 07/310") == [
+        "IML 97/136", "CSSF 07/310",
+    ]
+    assert find_references("CSSF Regulation No 12-02 and Circular CSSF 20/758") == [
+        "CSSF Regulation 12-02", "CSSF 20/758",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Circular CSSF 25/900 amending Circular CSSF 22/811.", ["CSSF 22/811"]),
+        (
+            "Update of Circular CSSF 24/853 on the Long Form Report "
+            "(as amended by Circular CSSF 25/870) - Practical rules",
+            ["CSSF 24/853"],
+        ),
+        (
+            "Update of Circular CSSF 01/27 and Circular CSSF 07/325 following "
+            "amendments to CSSF Regulation No 12-02",
+            ["CSSF 01/27", "CSSF 07/325"],
+        ),
+        ("Amendment to Circular CSSF 13/555", ["CSSF 13/555"]),
+        ("Changes to circulars IML 97/136 and CSSF 07/310", ["IML 97/136", "CSSF 07/310"]),
+        (
+            "Details regarding the scope of the long form report pursuant to "
+            "Circular CSSF 03/113",
+            [],
+        ),
+        ("Publication of Circular CSSF 22/806 on outsourcing arrangements", []),
+    ],
+)
+def test_amended_refs_from_own_text(text: str, expected: list[str]) -> None:
+    from regwatch.discovery.cssf_scraper import _amended_refs_from_text
+
+    assert _amended_refs_from_text(text) == expected
 
 
 def test_list_circulars_uses_numeric_url_params(httpx_mock) -> None:

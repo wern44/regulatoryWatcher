@@ -86,6 +86,35 @@ _REF_RE = re.compile(
     re.IGNORECASE,
 )
 
+# CSSF regulations are numbered "YY-NN" and written "CSSF Regulation No 20-05"
+# or "CSSF Regulation N12-02"; canonical form is "CSSF Regulation 20-05".
+_REG_RE = re.compile(
+    r"\bCSSF\s+Regulation\s+(?:N(?:o\.?|°|º)?\s*)?(\d{2})\s*[-/]\s*(\d{2})\b",
+    re.IGNORECASE,
+)
+
+# A bare number continuing a list after a prefixed ref:
+# "Circulars CSSF 08/338, 09/403,11/506 and 13/568".
+_LIST_CONTINUATION_RE = re.compile(
+    r"\s*(?:,\s*(?:and\s+)?|\s+and\s+|\s*&\s*)(\d{2,4})/(\d{1,4})\b", re.IGNORECASE
+)
+
+# Wording in a document's own title/subtitle that says it amends the refs
+# that immediately follow ("amending Circular CSSF 22/811",
+# "Update of Circular CSSF 24/853", "Changes to circulars IML 97/136 and ...").
+_AMEND_PHRASE_RE = re.compile(
+    r"\b(?:amending|amendments?\s+(?:of|to)|updat(?:e|ing)\s+of|updating"
+    r"|modifying|modifications?\s+(?:of|to)|changes?\s+to"
+    r"|complement(?:ing|\s+(?:of|to))|supplementing)"
+    r"(?:\s+certain\s+provisions\s+of)?",
+    re.IGNORECASE,
+)
+_FIRST_REF_GAP_RE = re.compile(r"\s*(?:the\s+)?(?:circulars?\s+)?", re.IGNORECASE)
+_NEXT_REF_GAP_RE = re.compile(
+    r"\s*(?:,\s*|\s+and\s+|\s*&\s*)(?:and\s+)?(?:(?:the\s+)?circulars?\s+)?",
+    re.IGNORECASE,
+)
+
 
 # ---------------------------------------------------------------------------
 # Listing page
@@ -220,11 +249,12 @@ def _build_listing_url(page: int) -> str:
 
 
 # Publication-type labels that carry CSSF/IML/BCL reference numbers
-# parseable by _REF_RE. All other labels fall back to URL-slug synthesis.
+# parseable by find_references. All other labels fall back to URL-slug
+# synthesis. Annexes are deliberately absent: their titles name the parent
+# circular ("Annex to Circular CSSF 22/822"), which is not their identity.
 _LABELS_WITH_REF: set[str] = {
     "CSSF circular",
     "CSSF regulation",
-    "Annex to a CSSF circular",
 }
 
 
@@ -286,14 +316,28 @@ def _row_from_library_element(
         return None
     detail_url = urljoin(_BASE_URL, href)
 
+    type_el = item.select_one(".library-element__type")
+    row_type = type_el.get_text(" ", strip=True) if type_el else ""
+    same_type = row_type.lower() == publication_type_label.lower()
+    if publication_type_label and row_type and not same_type:
+        # Mixed page: the row belongs to another publication-type column.
+        return None
+
     if publication_type_label in _LABELS_WITH_REF or not publication_type_label:
-        # CSSF-style ref expected; fall back to the legacy behaviour
-        # (accept only _REF_RE matches) when the caller doesn't pass a
-        # label (keeps older callers/tests working).
-        ref_match = _REF_RE.search(raw_title)
-        if ref_match is None:
+        # CSSF-style ref expected; without a label, accept only rows with a
+        # parseable ref (keeps older callers/tests working).
+        refs = find_references(raw_title)
+        if refs:
+            reference_number = refs[0]
+        elif publication_type_label and same_type:
+            # Numberless document of this type, e.g. "Circular letter".
+            reference_number = _synthesize_ref_from_slug(
+                detail_url, publication_type_label
+            )
+            if not reference_number:
+                return None
+        else:
             return None
-        reference_number = _normalize_ref(ref_match.group(0))
     else:
         reference_number = _synthesize_ref_from_slug(detail_url, publication_type_label)
         if not reference_number:
@@ -344,8 +388,8 @@ def _label_prefix(label: str) -> str:
         "Ministerial regulation": "ministerial",
         "Professional standard": "prof-std",
         "CSSF regulation": "cssf-reg",
-        "Annex to a CSSF circular": "cssf-annex",
-        "CSSF circular": "cssf-circ",
+        "Annex to a CSSF circular": "annex",
+        "CSSF circular": "circular",
     }
     return mapping.get(label, "")
 
@@ -409,8 +453,8 @@ def _parse_detail_html(html: str, *, source_url: str) -> CircularDetail:
     clean_title, amended_by_refs = _split_amendment_parenthetical(raw_title)
 
     # Reference number from the cleaned title (falls back to full raw title).
-    ref_match = _REF_RE.search(clean_title) or _REF_RE.search(raw_title)
-    reference_number = _normalize_ref(ref_match.group(0)) if ref_match else ""
+    title_refs = find_references(clean_title) or find_references(raw_title)
+    reference_number = title_refs[0] if title_refs else ""
 
     # --- Dates ------------------------------------------------------------
     published_at, updated_at = _parse_header_dates(soup)
@@ -427,28 +471,37 @@ def _parse_detail_html(html: str, *, source_url: str) -> CircularDetail:
     # --- PDFs (English / French) -----------------------------------------
     pdf_url_en, pdf_url_fr = _extract_main_pdfs(soup)
 
-    # --- Related documents: amends / supersedes refs ---------------------
-    amends_refs, supersedes_refs = _extract_related_refs(soup, reference_number)
-
     # --- Description: prefer the dedicated subtitle block, else fall back
     # to the first substantive paragraph of the body content.
     description = ""
     subtitle_el = soup.select_one(".single-news__subtitle")
+    subtitle = ""
     if subtitle_el is not None:
         p = subtitle_el.find("p")
-        description = (
+        subtitle = (
             p.get_text(" ", strip=True) if p is not None
             else subtitle_el.get_text(" ", strip=True)
         )
+        description = subtitle
     if not description:
         description = _extract_description(soup)
+
+    # --- Amendment graph --------------------------------------------------
+    amends_refs, amended_by_from_related = _extract_related_refs(
+        soup, reference_number
+    )
+    for ref in _amended_refs_from_text(clean_title) + _amended_refs_from_text(subtitle):
+        if ref != reference_number and ref not in amends_refs:
+            amends_refs.append(ref)
+    for ref in amended_by_from_related:
+        if ref not in amended_by_refs:
+            amended_by_refs.append(ref)
 
     return CircularDetail(
         reference_number=reference_number,
         clean_title=clean_title,
         amended_by_refs=amended_by_refs,
         amends_refs=amends_refs,
-        supersedes_refs=supersedes_refs,
         applicable_entities=applicable_entities,
         pdf_url_en=pdf_url_en,
         pdf_url_fr=pdf_url_fr,
@@ -461,6 +514,71 @@ def _parse_detail_html(html: str, *, source_url: str) -> CircularDetail:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _reference_spans(text: str) -> list[tuple[int, int, str]]:
+    """Every reference in ``text`` as ``(start, end, canonical_ref)``, in order.
+
+    Bare numbers continuing a list inherit the preceding prefix, so
+    "Circulars CSSF 04/155 and 22/806" yields both CSSF refs.
+    """
+    spans: list[tuple[int, int, str]] = [
+        (m.start(), m.end(), f"CSSF Regulation {m.group(1)}-{m.group(2)}")
+        for m in _REG_RE.finditer(text)
+    ]
+    for m in _REF_RE.finditer(text):
+        if not any(s <= m.start() < e for s, e, _ in spans):
+            spans.append((m.start(), m.end(), _normalize_ref(m.group(0))))
+    spans.sort()
+
+    out: list[tuple[int, int, str]] = []
+    for i, (start, end, ref) in enumerate(spans):
+        out.append((start, end, ref))
+        if "/" not in ref:
+            continue
+        prefix = ref.rsplit(" ", 1)[0]
+        limit = spans[i + 1][0] if i + 1 < len(spans) else len(text)
+        pos = end
+        while (cont := _LIST_CONTINUATION_RE.match(text, pos, limit)) is not None:
+            out.append(
+                (cont.start(1), cont.end(), f"{prefix} {cont.group(1)}/{cont.group(2)}")
+            )
+            pos = cont.end()
+    return out
+
+
+def find_references(text: str) -> list[str]:
+    """Canonical CSSF/IML/BCL references in ``text``, deduplicated, in order."""
+    return list(dict.fromkeys(ref for _, _, ref in _reference_spans(text)))
+
+
+def _amended_refs_from_text(text: str) -> list[str]:
+    """Refs a document says it amends in its own title or subtitle.
+
+    Only the reference list *immediately* following an amendment phrase
+    counts, so "Update of Circular CSSF 24/853 on ... (as amended by
+    Circular CSSF 25/870)" yields 24/853 alone. "following amendments to"
+    describes a cause, not what the document itself changes.
+    """
+    spans = _reference_spans(text)
+    found: list[str] = []
+    for phrase in _AMEND_PHRASE_RE.finditer(text):
+        if text[max(0, phrase.start() - 12) : phrase.start()].lower().rstrip().endswith(
+            "following"
+        ):
+            continue
+        pos = phrase.end()
+        gap_re = _FIRST_REF_GAP_RE
+        for start, end, ref in spans:
+            if start < pos:
+                continue
+            if gap_re.fullmatch(text, pos, start) is None:
+                break
+            if ref not in found:
+                found.append(ref)
+            pos = end
+            gap_re = _NEXT_REF_GAP_RE
+    return found
 
 
 def _normalize_ref(raw: str) -> str:
@@ -532,18 +650,9 @@ def _split_amendment_parenthetical(raw_title: str) -> tuple[str, list[str]]:
     m = re.search(r"\(\s*as amended by\s+([^)]+)\)", raw_title, flags=re.IGNORECASE)
     if not m:
         return raw_title.strip(), []
-    inner = m.group(1)
-    refs = [_normalize_ref(r) for r in _REF_RE.findall(inner)]
-    # Deduplicate, preserve order
-    dedup: list[str] = []
-    seen: set[str] = set()
-    for r in refs:
-        if r not in seen:
-            dedup.append(r)
-            seen.add(r)
     clean = (raw_title[: m.start()] + raw_title[m.end() :]).strip()
     clean = re.sub(r"\s+", " ", clean).strip()
-    return clean, dedup
+    return clean, find_references(m.group(1))
 
 
 def _extract_main_pdfs(soup: BeautifulSoup) -> tuple[str | None, str | None]:
@@ -579,25 +688,22 @@ def _extract_main_pdfs(soup: BeautifulSoup) -> tuple[str | None, str | None]:
 def _extract_related_refs(
     soup: BeautifulSoup, self_ref: str
 ) -> tuple[list[str], list[str]]:
-    """Collect references to other circulars from the Related documents block.
+    """Classify the Related documents block into ``(amends, amended_by)``.
 
-    Heuristic classification (the CSSF DOM does not tag these explicitly):
+    The CSSF lists every connected document there -- FAQs, templates, the
+    circular that published this one, etc. -- without tagging the relation,
+    so only explicit wording counts:
 
-      * If the related document's excerpt contains "amending ..." / "amends ...",
-        then the *current* document is amended by it -- skip (we already
-        captured those from the title parenthetical).
-      * If the related document's title is itself "(as amended by ... SELF ...)",
-        then ``self`` amends it -> add to ``amends_refs``.
-      * Everything else with a CSSF/IML reference number that isn't self gets
-        appended to ``amends_refs`` as a weak link (best-effort; the downstream
-        service should re-assess using the detail pages of each related doc).
+      * related title "(as amended by ... SELF ...)" -> self amends it;
+      * related title or excerpt saying it amends SELF ("amending Circular
+        CSSF 22/806", "Update of Circular ...") -> it amends self.
 
-    ``supersedes_refs`` is left empty: the site does not surface an explicit
-    "supersedes" relationship in the markup.
+    Anything else is merely related and yields nothing.
     """
     amends: list[str] = []
-    supersedes: list[str] = []
-    seen: set[str] = set()
+    amended_by: list[str] = []
+    if not self_ref:
+        return amends, amended_by
     for item in soup.select(
         ".related-documents-container li.related-document:not(.no-heading)"
     ):
@@ -607,32 +713,22 @@ def _extract_related_refs(
         title_text = h4.get_text(" ", strip=True)
         excerpt_el = item.select_one(".related-document-excerpt")
         excerpt = excerpt_el.get_text(" ", strip=True) if excerpt_el else ""
-        refs_in_title = [_normalize_ref(r) for r in _REF_RE.findall(title_text)]
-        if not refs_in_title:
+        refs_in_title = find_references(title_text)
+        if not refs_in_title or refs_in_title[0] == self_ref:
             continue
         primary = refs_in_title[0]
-        if primary == self_ref:
-            continue
 
-        excerpt_lc = excerpt.lower()
-        title_lc = title_text.lower()
-        # "amending Circular CSSF 22/806" -> this related doc amends us. Skip.
-        if "amending" in excerpt_lc or "amend circular" in excerpt_lc:
-            continue
-        # "(as amended by ... CSSF 22/806 ...)" in the title means we
-        # amend them.
-        if "amended by" in title_lc and self_ref.lower() in title_lc:
-            if primary not in seen:
+        _, their_amenders = _split_amendment_parenthetical(title_text)
+        if self_ref in their_amenders:
+            if primary not in amends:
                 amends.append(primary)
-                seen.add(primary)
-            continue
-        # Otherwise add as a best-effort "related" link under amends,
-        # unless we've already captured it.
-        if primary not in seen:
-            amends.append(primary)
-            seen.add(primary)
+        elif self_ref in (
+            _amended_refs_from_text(title_text) + _amended_refs_from_text(excerpt)
+        ):
+            if primary not in amended_by:
+                amended_by.append(primary)
 
-    return amends, supersedes
+    return amends, amended_by
 
 
 def _extract_description(soup: BeautifulSoup) -> str:
