@@ -137,6 +137,11 @@ class PipelineRunner:
                     except Exception:  # noqa: BLE001
                         self._session.rollback()
                         logger.exception("Per-document failure in %s", source.name)
+                        # Not a clean run for this source: the next run must
+                        # look back far enough to retry the document.
+                        if source.name not in run.sources_failed:
+                            run.sources_failed = [*run.sources_failed, source.name]
+                            self._session.commit()
                 if aborted:
                     break
             except Exception:  # noqa: BLE001

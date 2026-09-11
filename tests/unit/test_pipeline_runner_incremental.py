@@ -153,5 +153,32 @@ def test_failed_document_does_not_poison_the_rest_of_the_run(tmp_path: Path) -> 
         urls = session.scalars(select(UpdateEvent.source_url)).all()
         run = session.get(PipelineRun, run_id)
         assert urls == ["https://x/2"]
-        assert run.status == "COMPLETED"
+        # The failed document marks the source as failed so it is retried.
+        assert run.status == "COMPLETED_WITH_ERRORS"
         assert run.events_created == 1
+
+
+def test_source_with_a_failed_document_is_not_counted_as_clean(tmp_path: Path) -> None:
+    """A document that failed (e.g. a page timing out) must be retried by the
+    next run; counting the source as successful moved its fetch window past
+    the document for good."""
+    engine = _engine(tmp_path)
+
+    def _flaky_extract(raw: RawDocument) -> ExtractedDocument:
+        if raw.source_url.endswith("/2"):
+            raise TimeoutError("read timed out")
+        return _extract(raw)
+
+    with Session(engine) as session:
+        run_id = PipelineRunner(
+            session, sources=[_Source([_raw("https://x/1"), _raw("https://x/2")])],
+            extract=_flaky_extract, match=_match,
+        ).run_once()
+        run = session.get(PipelineRun, run_id)
+        assert run.sources_failed == ["src"]
+        assert run.status == "COMPLETED_WITH_ERRORS"
+
+        retry = _Source([_raw("https://x/1"), _raw("https://x/2")])
+        PipelineRunner(session, sources=[retry], extract=_extract, match=_match).run_once()
+        assert retry.since == datetime(2000, 1, 1, tzinfo=UTC)
+        assert session.query(UpdateEvent).count() == 2
