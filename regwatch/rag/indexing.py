@@ -1,15 +1,20 @@
 """Chunk a DocumentVersion's text and write embeddings + FTS index rows."""
 from __future__ import annotations
 
+import logging
 import struct
+from collections.abc import Callable
 
 from langdetect import detect
+from sqlalchemy import select
 from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
 from regwatch.db.models import DocumentChunk, DocumentVersion
 from regwatch.llm.client import LLMClient
 from regwatch.rag.chunker import chunk_text
+
+logger = logging.getLogger(__name__)
 
 
 def index_version(
@@ -21,9 +26,10 @@ def index_version(
     overlap_tokens: int,
     authorization_types: list[str],
 ) -> int:
-    """Chunk the given version and write chunk rows, vector rows, and FTS rows.
+    """Chunk the given version and write chunk rows and vector rows.
 
-    Returns the number of chunks created.
+    FTS rows are written by the ``document_chunk`` triggers
+    (``regwatch/db/virtual_tables.py``). Returns the number of chunks created.
     """
     body = version.pdf_extracted_text or version.html_text or ""
     reg = version.regulation
@@ -78,14 +84,54 @@ def index_version(
             ),
             {"id": row.chunk_id, "vec": packed},
         )
-        session.execute(
-            sa_text(
-                "INSERT INTO document_chunk_fts(rowid, text) VALUES (:id, :text)"
-            ),
-            {"id": row.chunk_id, "text": c.text},
-        )
 
     return len(chunk_rows)
+
+
+def index_pending_versions(
+    session: Session,
+    *,
+    ollama: LLMClient,
+    chunk_size_tokens: int,
+    overlap_tokens: int,
+    authorization_types: list[str],
+    should_stop: Callable[[], bool] = lambda: False,
+) -> int:
+    """Index every document version that has text but no chunks yet.
+
+    Commits after each version. Stops at the first failure (typically the
+    embedding model being unavailable); the next call picks up where this one
+    stopped. Returns the number of versions indexed.
+    """
+    indexed_ids = select(DocumentChunk.version_id)
+    pending = session.scalars(
+        select(DocumentVersion)
+        .where(DocumentVersion.version_id.not_in(indexed_ids))
+        .order_by(DocumentVersion.version_id)
+    ).all()
+    done = 0
+    for version in pending:
+        if should_stop():
+            break
+        if not (version.pdf_extracted_text or version.html_text):
+            continue
+        try:
+            index_version(
+                session, version, ollama=ollama,
+                chunk_size_tokens=chunk_size_tokens,
+                overlap_tokens=overlap_tokens,
+                authorization_types=authorization_types,
+            )
+            session.commit()
+        except Exception:  # noqa: BLE001
+            session.rollback()
+            logger.exception(
+                "Indexing version %s failed; leaving the rest for the next run",
+                version.version_id,
+            )
+            break
+        done += 1
+    return done
 
 
 def _pack_f32(vec: list[float]) -> bytes:

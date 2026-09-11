@@ -6,6 +6,7 @@ import logging
 from regwatch.pipeline.pipeline_factory import build_runner
 from regwatch.pipeline.progress import PipelineProgress
 from regwatch.pipeline.sources import build_enabled_sources
+from regwatch.rag.indexing import index_pending_versions
 from regwatch.services.runtime_limits import get_max_runtime_seconds, runtime_watchdog
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,17 @@ def run_pipeline_background(
             )
             with runtime_watchdog(progress, max_seconds, label="Pipeline run") as watch:
                 run_id = runner.run_once(progress=progress)
-            session.commit()
+                session.commit()
+                if llm_client is not None and not progress.is_cancel_requested:
+                    progress.begin_indexing()
+                    index_pending_versions(
+                        session,
+                        ollama=llm_client,
+                        chunk_size_tokens=config.rag.chunk_size_tokens,
+                        overlap_tokens=config.rag.chunk_overlap_tokens,
+                        authorization_types=[a.type for a in config.entity.authorizations],
+                        should_stop=lambda: progress.is_cancel_requested,
+                    )
         except Exception as exc:  # noqa: BLE001
             session.rollback()
             logger.exception("Pipeline run failed")

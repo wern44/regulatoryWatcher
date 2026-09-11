@@ -129,3 +129,54 @@ def test_max_runtime_aborts_a_slow_run():
     snap = progress.snapshot()
     assert snap["status"] == "aborted"
     assert "maximum runtime" in snap["message"]
+
+
+def _cm(session):  # type: ignore[no-untyped-def]
+    return MagicMock(return_value=MagicMock(
+        __enter__=MagicMock(return_value=session),
+        __exit__=MagicMock(return_value=False),
+    ))
+
+
+def test_finished_run_indexes_new_versions_for_qa():
+    """New document versions used to be stored but never indexed, so the Q&A
+    search knew 1 chunk for 530 versions."""
+    progress = PipelineProgress()
+    session = MagicMock()
+    llm = MagicMock()
+    config = MagicMock()
+    config.rag.chunk_size_tokens = 400
+    config.rag.chunk_overlap_tokens = 40
+    config.entity.authorizations = [SimpleNamespace(type="AIFM")]
+
+    with patch(
+        "regwatch.pipeline.run_helpers.build_enabled_sources", return_value=[],
+    ), patch("regwatch.pipeline.run_helpers.build_runner") as runner, patch(
+        "regwatch.pipeline.run_helpers.index_pending_versions", return_value=2,
+    ) as index:
+        runner.return_value.run_once.return_value = 5
+        run_pipeline_background(
+            session_factory=_cm(session), config=config, llm_client=llm, progress=progress,
+        )
+
+    index.assert_called_once()
+    assert index.call_args.args == (session,)
+    assert index.call_args.kwargs["ollama"] is llm
+    assert index.call_args.kwargs["authorization_types"] == ["AIFM"]
+    assert progress.snapshot()["status"] == "completed"
+
+
+def test_aborted_run_skips_indexing():
+    progress = PipelineProgress()
+    progress.request_cancel()
+    with patch(
+        "regwatch.pipeline.run_helpers.build_enabled_sources", return_value=[],
+    ), patch("regwatch.pipeline.run_helpers.build_runner") as runner, patch(
+        "regwatch.pipeline.run_helpers.index_pending_versions",
+    ) as index:
+        runner.return_value.run_once.return_value = 5
+        run_pipeline_background(
+            session_factory=_cm(MagicMock()), config=MagicMock(),
+            llm_client=MagicMock(), progress=progress,
+        )
+    index.assert_not_called()

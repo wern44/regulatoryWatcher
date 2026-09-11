@@ -89,6 +89,12 @@ class PipelineProgress:
         with self._lock:
             self.current_phase = phase
 
+    def begin_indexing(self) -> None:
+        with self._lock:
+            self.current_phase = "INDEX"
+            self.current_doc_title = None
+            self.message = "Indexing new documents for Q&A search…"
+
     def add_persist_result(self, events: int, versions: int) -> None:
         with self._lock:
             self.events_created += events
