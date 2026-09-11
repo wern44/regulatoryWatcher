@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from regwatch.db.models import DiscoveryRun, PipelineRun
-from regwatch.scheduler.jobs import FREQUENCY_OPTIONS, SchedulerManager
+from regwatch.scheduler.jobs import FREQUENCY_OPTIONS, SchedulerManager, schedule_error
 from regwatch.services.settings import SettingsService
 from regwatch.web.templates_context import render_page
 
@@ -60,7 +61,7 @@ JOB_META: list[dict[str, str]] = [
 
 
 @router.get("/schedules", response_class=HTMLResponse)
-def schedules_page(request: Request) -> HTMLResponse:
+def schedules_page(request: Request, error: str | None = None) -> HTMLResponse:
     config = request.app.state.config
     scheduler_manager = getattr(request.app.state, "scheduler_manager", None)
 
@@ -146,6 +147,7 @@ def schedules_page(request: Request) -> HTMLResponse:
             "frequency_options": FREQUENCY_OPTIONS,
             "server_time": server_time,
             "server_timezone": config.ui.timezone,
+            "error": error,
         },
     )
 
@@ -160,6 +162,14 @@ def save_schedule(
 ) -> RedirectResponse:
     if job not in _JOB_MAP:
         return RedirectResponse(url="/settings/schedules", status_code=303)
+    error = schedule_error(frequency, time)
+    if error is not None:
+        # Never store it: the app builds every trigger from the saved values
+        # at startup, and an invalid one stopped it from starting.
+        return RedirectResponse(
+            url="/settings/schedules?" + urlencode({"error": f"Invalid schedule: {error}"}),
+            status_code=303,
+        )
 
     prefix, job_id = _JOB_MAP[job]
     is_enabled = enabled is not None

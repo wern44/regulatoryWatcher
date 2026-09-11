@@ -106,3 +106,13 @@ def test_is_running_false_after_pause(manager):
     manager.apply_schedule(SchedulerManager.PIPELINE_JOB_ID, "daily", "06:00")
     manager.pause(SchedulerManager.PIPELINE_JOB_ID)
     assert manager.is_running(SchedulerManager.PIPELINE_JOB_ID) is False
+
+
+def test_schedule_error_validates_frequency_and_time() -> None:
+    from regwatch.scheduler.jobs import schedule_error
+
+    assert schedule_error("daily", "07:30") is None
+    assert schedule_error("4h", "00:00") is None
+    assert "frequency" in (schedule_error("hourly", "07:30") or "")
+    for bad in ("24:00", "7:30", "07:60", "", "7am"):
+        assert "HH:MM" in (schedule_error("daily", bad) or ""), bad

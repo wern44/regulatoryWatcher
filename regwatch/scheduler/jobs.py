@@ -7,6 +7,7 @@ are derived from user-chosen frequency strings.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from datetime import datetime
 
@@ -23,6 +24,18 @@ FREQUENCY_OPTIONS: dict[str, str] = {
     "weekly": "Weekly",
     "monthly": "Monthly",
 }
+
+
+_TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+
+
+def schedule_error(frequency: str, time_str: str) -> str | None:
+    """Why a frequency / HH:MM pair can't be scheduled, or None if it can."""
+    if frequency not in FREQUENCY_OPTIONS:
+        return f"unknown frequency {frequency!r}"
+    if not _TIME_RE.match(time_str):
+        return f"time must be HH:MM between 00:00 and 23:59, got {time_str!r}"
+    return None
 
 
 def _build_trigger(

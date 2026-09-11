@@ -22,7 +22,7 @@ from regwatch.db.bootstrap import seed_defaults, upgrade_schema
 from regwatch.db.engine import create_app_engine
 from regwatch.llm.client import LLMClient
 from regwatch.pipeline.progress import PipelineProgress
-from regwatch.scheduler.jobs import SchedulerManager
+from regwatch.scheduler.jobs import SchedulerManager, schedule_error
 from regwatch.services.settings import SettingsService
 
 logger = logging.getLogger(__name__)
@@ -197,6 +197,13 @@ def create_app() -> FastAPI:
                 enabled = svc.get(f"{prefix}enabled", def_en) or def_en
                 freq = svc.get(f"{prefix}frequency", def_fr) or def_fr
                 time_str = svc.get(f"{prefix}time", def_ti) or def_ti
+                error = schedule_error(freq, time_str)
+                if error is not None:
+                    logger.warning(
+                        "Stored schedule for %s is invalid (%s); using %s at %s",
+                        job_id, error, def_fr, def_ti,
+                    )
+                    freq, time_str = def_fr, def_ti
                 scheduler_manager.apply_schedule(job_id, freq, time_str)
                 if enabled != "true":
                     scheduler_manager.pause(job_id)
