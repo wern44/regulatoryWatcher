@@ -112,3 +112,41 @@ def test_sync_schema_first_would_fail(tmp_path):
 
     with pytest.raises(OperationalError, match="NOT NULL"):
         sync_schema(engine, Base.metadata)
+
+
+def test_created_at_is_stored_in_sqlalchemys_format(tmp_path):
+    """The backfill wrote ISO strings ('2026-09-10T15:32:43+00:00') while
+    SQLAlchemy writes '2026-09-10 15:32:43.000000'. SQLite compares them as
+    text and 'T' sorts after ' ', so every backfilled row counted as "new
+    since last visit" against any cutoff on the same day."""
+    import re
+
+    from regwatch.db.migrations import migrate_regulation_created_at
+
+    engine = _engine_with_old_regulation_table(tmp_path)
+    migrate_regulation_created_at(engine)
+    with engine.connect() as conn:
+        values = [v for (v,) in conn.execute(text("SELECT created_at FROM regulation"))]
+    assert all(re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{6}", v) for v in values)
+
+
+def test_iso_values_from_the_old_backfill_are_repaired(tmp_path):
+    from regwatch.db.migrations import migrate_regulation_created_at
+
+    engine = _engine_with_old_regulation_table(tmp_path)
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE regulation ADD COLUMN created_at DATETIME"))
+        conn.execute(text(
+            "UPDATE regulation SET created_at = CASE regulation_id "
+            "WHEN 1 THEN '2026-09-10T15:32:43.465949+00:00' "
+            "ELSE '2026-09-10T17:32:43+02:00' END"
+        ))
+
+    migrate_regulation_created_at(engine)
+    migrate_regulation_created_at(engine)  # idempotent
+
+    with engine.connect() as conn:
+        values = [v for (v,) in conn.execute(
+            text("SELECT created_at FROM regulation ORDER BY regulation_id")
+        )]
+    assert values == ["2026-09-10 15:32:43.465949", "2026-09-10 15:32:43.000000"]

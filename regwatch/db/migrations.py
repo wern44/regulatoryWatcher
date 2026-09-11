@@ -68,27 +68,47 @@ def migrate_regulation_created_at(engine: Engine) -> None:
 
     Backfilling to NOW() at migration time means existing regulations
     will not count as 'new' once the user has visited each section once.
-    Idempotent: returns cleanly if the column already exists or the
-    table doesn't exist yet.
+    Values are written in SQLAlchemy's SQLite format (UTC,
+    'YYYY-MM-DD HH:MM:SS.ffffff'): SQLite compares datetimes as text, and an
+    earlier version of this backfill wrote ISO strings ('...T...+00:00')
+    that sorted after every same-day cutoff. Those are rewritten here.
+    Idempotent; a no-op when the table doesn't exist yet.
     """
     from datetime import UTC, datetime  # noqa: PLC0415
+
+    def _stored(ts: datetime) -> str:
+        return ts.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")
 
     with engine.begin() as conn:
         cols = [r[1] for r in conn.execute(text("PRAGMA table_info(regulation)"))]
         if not cols:
             return  # fresh DB; create_all handles it
-        if "created_at" in cols:
-            return  # already migrated
+        if "created_at" not in cols:
+            conn.execute(text("ALTER TABLE regulation ADD COLUMN created_at DATETIME"))
+            result = conn.execute(
+                text("UPDATE regulation SET created_at = :ts WHERE created_at IS NULL"),
+                {"ts": _stored(datetime.now(UTC))},
+            )
+            logger.info(
+                "Backfilled regulation.created_at on %d existing rows", result.rowcount
+            )
 
-        now_iso = datetime.now(UTC).isoformat()
-        conn.execute(text("ALTER TABLE regulation ADD COLUMN created_at DATETIME"))
-        result = conn.execute(
-            text("UPDATE regulation SET created_at = :ts WHERE created_at IS NULL"),
-            {"ts": now_iso},
-        )
-        logger.info(
-            "Backfilled regulation.created_at on %d existing rows", result.rowcount
-        )
+        iso_rows = conn.execute(
+            text(
+                "SELECT regulation_id, created_at FROM regulation "
+                "WHERE created_at LIKE '____-__-__T%'"
+            )
+        ).all()
+        for regulation_id, value in iso_rows:
+            parsed = datetime.fromisoformat(value)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            conn.execute(
+                text("UPDATE regulation SET created_at = :ts WHERE regulation_id = :id"),
+                {"ts": _stored(parsed), "id": regulation_id},
+            )
+        if iso_rows:
+            logger.info("Normalised created_at on %d regulations", len(iso_rows))
 
 
 def migrate_authorization_type_drop_check(engine: Engine) -> None:
