@@ -1,13 +1,90 @@
 {
-  "head": {"vars": ["dossier", "title", "date", "number"]},
-  "results": {
-    "bindings": [
-      {
-        "dossier": {"type": "uri", "value": "http://data.legilux.public.lu/eli/etat/projet-de-loi/2025/10/08/a1/jo"},
-        "title": {"type": "literal", "value": "Projet de loi 8628 portant modification de la loi financière"},
-        "date": {"type": "literal", "value": "2025-10-08"},
-        "number": {"type": "literal", "value": "8628"}
-      }
-    ]
-  }
+ "head": {
+  "link": [],
+  "vars": [
+   "draft",
+   "date",
+   "number",
+   "url",
+   "title"
+  ]
+ },
+ "results": {
+  "distinct": false,
+  "ordered": true,
+  "bindings": [
+   {
+    "draft": {
+     "type": "uri",
+     "value": "http://data.legilux.public.lu/eli/dl/pl/2026/210"
+    },
+    "date": {
+     "type": "typed-literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#date",
+     "value": "2026-07-24"
+    },
+    "number": {
+     "type": "literal",
+     "value": "8806"
+    },
+    "url": {
+     "type": "typed-literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#anyURI",
+     "value": "https://www.chd.lu/fr/dossier/8806"
+    },
+    "title": {
+     "type": "literal",
+     "value": "<p>Projet de loi modifiant la loi modifiée du 30 juillet 2002 déterminant différentes mesures fiscales destinées à encourager la mise sur le marché et l’acquisition de terrains à bâtir et d’immeubles d’habitation.</p>"
+    }
+   },
+   {
+    "draft": {
+     "type": "uri",
+     "value": "http://data.legilux.public.lu/eli/dl/pl/2026/211"
+    },
+    "date": {
+     "type": "typed-literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#date",
+     "value": "2026-07-24"
+    },
+    "number": {
+     "type": "literal",
+     "value": "8807"
+    },
+    "url": {
+     "type": "typed-literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#anyURI",
+     "value": "https://www.chd.lu/fr/dossier/8807"
+    },
+    "title": {
+     "type": "literal",
+     "value": "<p style=\"text-align:justify;\">Projet de loi portant mise en œuvre d’une exonération temporaire des droits d’enregistrement et de transcription pour les constructions existantes dans le cadre de ventes en l’état futur d’achèvement.</p>"
+    }
+   },
+   {
+    "draft": {
+     "type": "uri",
+     "value": "http://data.legilux.public.lu/eli/dl/pl/2026/224"
+    },
+    "date": {
+     "type": "typed-literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#date",
+     "value": "2026-07-17"
+    },
+    "number": {
+     "type": "literal",
+     "value": "8813"
+    },
+    "url": {
+     "type": "typed-literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#anyURI",
+     "value": "https://www.chd.lu/fr/dossier/8813"
+    },
+    "title": {
+     "type": "literal",
+     "value": "<p>Projet de loi sur la protection des conventions de sous-participation en trésorerie.</p>"
+    }
+   }
+  ]
+ }
 }

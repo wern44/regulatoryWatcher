@@ -1,13 +1,61 @@
 {
-  "head": {"vars": ["work", "title", "date", "eli"]},
-  "results": {
-    "bindings": [
-      {
-        "work": {"type": "uri", "value": "http://data.legilux.public.lu/eli/etat/leg/loi/2013/07/12/n6/jo"},
-        "title": {"type": "literal", "value": "Loi du 12 juillet 2013 relative aux gestionnaires de fonds d'investissement alternatifs"},
-        "date": {"type": "literal", "value": "2013-07-12"},
-        "eli": {"type": "uri", "value": "http://data.legilux.public.lu/eli/etat/leg/loi/2013/07/12/n6/jo"}
-      }
-    ]
-  }
+ "head": {
+  "link": [],
+  "vars": [
+   "act",
+   "date",
+   "title"
+  ]
+ },
+ "results": {
+  "distinct": false,
+  "ordered": true,
+  "bindings": [
+   {
+    "act": {
+     "type": "uri",
+     "value": "http://data.legilux.public.lu/eli/etat/leg/loi/2026/07/16/a371/jo"
+    },
+    "date": {
+     "type": "typed-literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#date",
+     "value": "2026-07-16"
+    },
+    "title": {
+     "type": "literal",
+     "value": "Loi du 16 juillet 2026 portant modification de la loi modifiée du 12 novembre 2004 relative à la lutte contre le blanchiment et contre le financement du terrorisme."
+    }
+   },
+   {
+    "act": {
+     "type": "uri",
+     "value": "http://data.legilux.public.lu/eli/etat/leg/rcsf/2026/06/30/a311/jo"
+    },
+    "date": {
+     "type": "typed-literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#date",
+     "value": "2026-06-30"
+    },
+    "title": {
+     "type": "literal",
+     "value": "Règlement CSSF N° 26-02 du 30 juin 2026 sur la fixation du taux de coussin contracyclique pour le troisième trimestre 2026."
+    }
+   },
+   {
+    "act": {
+     "type": "uri",
+     "value": "http://data.legilux.public.lu/eli/etat/leg/loi/2026/05/05/a227/jo"
+    },
+    "date": {
+     "type": "typed-literal",
+     "datatype": "http://www.w3.org/2001/XMLSchema#date",
+     "value": "2026-05-05"
+    },
+    "title": {
+     "type": "literal",
+     "value": "Loi du 5 mai 2026 portant :\\n1° modification :\\na) de la loi modifiée du 5 avril 1993 relative au secteur financier ;\\nb) de la loi modifiée du 17 décembre 2010 concernant les organismes de placement collectif ;\\nc) de la loi modifiée du 18 décembre 2015 relative à la défaillance des établissements de crédit et de certaines entreprises d’investissement ;\\nd) de la loi modifiée du 15 mars 2016 relative aux produits dérivés de gré à gré, aux contreparties centrales et aux référentiels centraux et modifiant différentes lois relatives aux services financiers ;\\n2° transposition :\\na) de la directive (UE) 2024/1619 du Parlement européen et du Conseil du 31 mai 2024 modifiant la directive 2013/36/UE en ce qui concerne les pouvoirs de surveillance, les sanctions, les succursales de pays tiers et les risques environnementaux, sociaux et de gouvernance ;\\nb) de la directive (UE) 2024/2994 du Parlement européen et du Conseil du 27 novembre 2024 modifiant les directives 2009/65/CE, 2013/36/UE et (UE) 2019/2034 en ce qui concerne le traitement du risque de concentration découlant d’expositions sur des contreparties centrales et du risque de contrepartie des transactions sur instruments dérivés faisant l’objet d’une compensation centrale ;\\n3° mise en œuvre du règlement (UE) 2024/2987 du Parlement européen et du Conseil du 27 novembre 2024 modifiant les règlements (UE) n° 648/2012, (UE) n° 575/2013 et (UE) 2017/1131 par des mesures visant à atténuer les expositions excessives aux contreparties centrales de pays tiers et à améliorer l’efficacité des marchés de la compensation de l’Union.\\n"
+    }
+   }
+  ]
+ }
 }

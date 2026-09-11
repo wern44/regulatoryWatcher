@@ -1,22 +1,35 @@
-"""Legilux parliamentary dossiers (draft bills).
-
-Tries the Legilux SPARQL endpoint for dossiers first. If no SPARQL schema is
-exposed for parliamentary dossiers, fall back to HTML scraping of the
-parliamentary dossier listing page at
-https://wdocs-pub.chd.lu/docs/exped/ (flagged by the spec's open question).
-"""
+"""Legilux SPARQL source: draft bills from the Ministry of Finance."""
 from __future__ import annotations
 
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any
 
+from bs4 import BeautifulSoup
 from SPARQLWrapper import JSON, SPARQLWrapper
 
 from regwatch.domain.types import RawDocument
 from regwatch.pipeline.fetch.base import USER_AGENT, register_source
+from regwatch.pipeline.fetch.legilux_sparql import ENDPOINT
 
-ENDPOINT = "http://data.legilux.public.lu/sparql"
+# Bills ("projets de loi") the Ministry of Finance (MFI) is in charge of,
+# dated by the Government Council's approval. Titles are HTML fragments.
+_QUERY = """
+PREFIX jolux: <http://data.legilux.public.lu/resource/ontology/jolux#>
+PREFIX li: <http://data.legilux.public.lu/resource/authority/legal-institution/>
+SELECT ?draft ?date ?number ?url (SAMPLE(?t) AS ?title) WHERE {{
+  ?draft a jolux:InitialDraft ;
+         jolux:institutionInChargeOfTheDraft li:MFI ;
+         jolux:titleDraft ?t ;
+         jolux:parliamentDraftId ?number ;
+         jolux:parliamentDraftUrl ?url ;
+         jolux:acceptanceCGDate ?date .
+  FILTER (?date >= "{since}"^^xsd:date)
+}}
+GROUP BY ?draft ?date ?number ?url
+ORDER BY DESC(?date)
+LIMIT 500
+"""
 
 
 @register_source
@@ -27,45 +40,39 @@ class LegiluxParliamentarySource:
         results = self._run_query(self._build_query(since))
         now = datetime.now(UTC)
         for binding in results.get("results", {}).get("bindings", []):
-            dossier_uri = binding.get("dossier", {}).get("value", "")
-            title = binding.get("title", {}).get("value", "")
+            url = binding.get("url", {}).get("value", "")
             date_str = binding.get("date", {}).get("value", "")
-            number = binding.get("number", {}).get("value", "")
+            if not url or not date_str:
+                continue
             published_at = _parse_date(date_str)
             if published_at < since:
                 continue
+            title_html = binding.get("title", {}).get("value", "")
+            number = binding.get("number", {}).get("value", "")
             yield RawDocument(
                 source=self.name,
-                source_url=dossier_uri,
-                title=title,
+                source_url=url,
+                title=BeautifulSoup(title_html, "html.parser").get_text(" ", strip=True),
                 published_at=published_at,
-                raw_payload={"number": number, "date": date_str, "dossier": dossier_uri},
+                raw_payload={
+                    "number": number,
+                    "date": date_str,
+                    "draft": binding.get("draft", {}).get("value", ""),
+                },
                 fetched_at=now,
             )
 
     def _build_query(self, since: datetime) -> str:
-        since_iso = since.date().isoformat()
-        return f"""
-        PREFIX jolux: <http://data.legilux.public.lu/resource/ontology/jolux#>
-        SELECT ?dossier ?title ?date ?number WHERE {{
-          ?dossier a jolux:Draft ;
-                   jolux:dateDocument ?date ;
-                   jolux:title ?title ;
-                   jolux:billNumber ?number .
-          FILTER (?date >= "{since_iso}"^^xsd:date)
-        }}
-        ORDER BY DESC(?date)
-        LIMIT 200
-        """
+        return _QUERY.format(since=since.date().isoformat())
 
     def _run_query(self, query: str) -> dict[str, Any]:
         wrapper = SPARQLWrapper(ENDPOINT)
         wrapper.addCustomHttpHeader("User-Agent", USER_AGENT)
-        wrapper.setTimeout(30)
+        wrapper.setTimeout(60)
         wrapper.setQuery(query)
         wrapper.setReturnFormat(JSON)
         return wrapper.queryAndConvert()  # type: ignore[return-value]
 
 
 def _parse_date(s: str) -> datetime:
-    return datetime.fromisoformat(s).replace(tzinfo=UTC)
+    return datetime.fromisoformat(s[:10]).replace(tzinfo=UTC)
