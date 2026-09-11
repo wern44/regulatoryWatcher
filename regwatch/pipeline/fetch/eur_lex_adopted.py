@@ -41,25 +41,33 @@ class EurLexAdoptedSource:
             )
 
     def _build_query(self, since: datetime) -> str:
-        filter_clause = " || ".join(
-            f'STR(?celex) = "{prefix}"' for prefix in self._celex_prefixes
-        ) or "true"
+        """The tracked acts plus every adopted act (CELEX sector 3) that
+        amends them or is based on them (delegated / implementing acts,
+        RTS / ITS)."""
+        tracked = " ".join(f'"{celex}"' for celex in self._celex_prefixes)
         since_iso = since.date().isoformat()
         english = (
             "<http://publications.europa.eu/resource/authority/language/ENG>"
         )
         return f"""
         PREFIX cdm: <http://publications.europa.eu/ontology/cdm#>
-        SELECT ?work ?celex ?title ?date
+        SELECT ?work ?celex ?date (SAMPLE(?t) AS ?title)
         WHERE {{
-          ?work cdm:resource_legal_id_celex ?celex .
-          ?work cdm:work_date_document ?date .
-          ?expression cdm:expression_belongs_to_work ?work ;
-                      cdm:expression_title ?title ;
-                      cdm:expression_uses_language {english} .
-          FILTER ({filter_clause})
+          VALUES ?tracked {{ {tracked} }}
+          ?base cdm:resource_legal_id_celex ?baseCelex .
+          FILTER (STR(?baseCelex) = ?tracked)
+          {{ BIND (?base AS ?work) }}
+          UNION {{ ?work cdm:resource_legal_amends_resource_legal ?base }}
+          UNION {{ ?work cdm:resource_legal_based_on_resource_legal ?base }}
+          ?work cdm:resource_legal_id_celex ?celex ;
+                cdm:work_date_document ?date .
+          FILTER (STRSTARTS(STR(?celex), "3"))
           FILTER (?date >= "{since_iso}"^^xsd:date)
+          ?expression cdm:expression_belongs_to_work ?work ;
+                      cdm:expression_title ?t ;
+                      cdm:expression_uses_language {english} .
         }}
+        GROUP BY ?work ?celex ?date
         ORDER BY DESC(?date)
         LIMIT 500
         """
@@ -67,7 +75,7 @@ class EurLexAdoptedSource:
     def _run_query(self, query: str) -> dict[str, Any]:
         wrapper = SPARQLWrapper(ENDPOINT)
         wrapper.addCustomHttpHeader("User-Agent", USER_AGENT)
-        wrapper.setTimeout(30)
+        wrapper.setTimeout(120)
         wrapper.setQuery(query)
         wrapper.setReturnFormat(JSON)
         return wrapper.queryAndConvert()  # type: ignore[return-value]

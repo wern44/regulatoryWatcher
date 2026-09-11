@@ -18,6 +18,8 @@ sources:
   eur_lex_adopted:
     enabled: true
     interval_hours: 6
+    # CELEX ids of the acts to follow; acts amending them or based on them
+    # (delegated / implementing acts) are fetched too.
     celex_prefixes: ["32011L0061", "32009L0065", "32022R2554", "32019R2088", "32020R0852", "32024L0927"]
   eur_lex_proposal:
     enabled: true

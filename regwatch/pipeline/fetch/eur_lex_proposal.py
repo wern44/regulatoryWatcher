@@ -45,14 +45,19 @@ class EurLexProposalSource:
         )
         return f"""
         PREFIX cdm: <http://publications.europa.eu/ontology/cdm#>
-        SELECT ?work ?celex ?title ?date
+        SELECT DISTINCT ?work ?celex ?title ?date
         WHERE {{
           ?work cdm:resource_legal_id_celex ?celex .
           ?work cdm:work_date_document ?date .
           ?expression cdm:expression_belongs_to_work ?work ;
                       cdm:expression_title ?title ;
                       cdm:expression_uses_language {english} .
-          FILTER (STRSTARTS(STR(?celex), "5"))
+          ?work cdm:resource_legal_is_about_concept_directory-code ?dirCode .
+          # Legislative proposals (COM ... PC) filed under financial
+          # services (EUR-Lex directory 06.20.20).
+          FILTER (REGEX(STR(?celex), "^5[0-9]{{4}}PC"))
+          FILTER (STRSTARTS(STR(?dirCode),
+                  "http://publications.europa.eu/resource/authority/dir-eu-legal-act/062020"))
           FILTER (?date >= "{since_iso}"^^xsd:date)
         }}
         ORDER BY DESC(?date)
@@ -62,7 +67,7 @@ class EurLexProposalSource:
     def _run_query(self, query: str) -> dict[str, Any]:
         wrapper = SPARQLWrapper(ENDPOINT)
         wrapper.addCustomHttpHeader("User-Agent", USER_AGENT)
-        wrapper.setTimeout(30)
+        wrapper.setTimeout(120)
         wrapper.setQuery(query)
         wrapper.setReturnFormat(JSON)
         return wrapper.queryAndConvert()  # type: ignore[return-value]
