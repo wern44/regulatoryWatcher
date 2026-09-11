@@ -431,3 +431,48 @@ def test_classify_regulation_uses_current_entity_type_registry(tmp_path: Path) -
     sent_system = llm.chat.call_args.kwargs["system"]
     assert "PSF_SPECIALISED" in sent_system
     assert "AIFM" in sent_system
+
+
+def test_classify_skips_null_is_ict_instead_of_crashing(tmp_path: Path) -> None:
+    """The LLM sometimes answers ``"is_ict": null``. Writing None into the
+    NOT NULL column used to abort the whole refresh at flush time."""
+    session = _session(tmp_path)
+    _add_regulation(session, "CSSF 99/001", is_ict=True)
+    _add_regulation(session, "CSSF 99/002")
+    session.commit()
+
+    llm = MagicMock()
+    llm.chat.side_effect = [
+        json.dumps({"is_ict": None, "dora_pillar": None, "confidence": 0.9}),
+        json.dumps({"is_ict": True, "dora_pillar": "ICT_RISK_MGMT", "confidence": 0.9}),
+    ]
+    updated = DiscoveryService(session, llm=llm).classify_catalog()
+
+    assert updated == 1
+    regs = {r.reference_number: r for r in session.query(Regulation).all()}
+    assert regs["CSSF 99/001"].is_ict is True  # unchanged
+    assert regs["CSSF 99/002"].is_ict is True
+
+
+def test_classify_saves_after_each_regulation(tmp_path: Path) -> None:
+    """Work done before an abort (or crash) must survive, and the SQLite
+    write lock must not be held for the whole multi-hour refresh."""
+    session = _session(tmp_path)
+    _add_regulation(session, "CSSF 99/001")
+    _add_regulation(session, "CSSF 99/002")
+    session.commit()
+
+    progress = AnalysisProgress()
+    progress.start(run_id=0, total=2)
+
+    def _reply(**_: object) -> str:
+        progress.request_cancel()  # abort after the first regulation
+        return json.dumps({"is_ict": True, "dora_pillar": None, "confidence": 0.9})
+
+    llm = MagicMock()
+    llm.chat.side_effect = _reply
+    DiscoveryService(session, llm=llm).classify_catalog(progress=progress)
+
+    other = sessionmaker(session.get_bind())()
+    saved = {r.reference_number: r.is_ict for r in other.query(Regulation).all()}
+    assert saved == {"CSSF 99/001": True, "CSSF 99/002": False}

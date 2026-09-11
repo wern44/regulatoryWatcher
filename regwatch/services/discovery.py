@@ -54,6 +54,11 @@ class DiscoveryService:
     ) -> int:
         """Classify all regulations in the catalog. Returns count of updated regulations.
 
+        Commits after each regulation: a refresh takes hours of LLM calls, and
+        holding one transaction open for all of it kept SQLite's write lock
+        (every other writer failed with "database is locked") and lost all
+        work on any error.
+
         If `progress` is provided, ticks once per regulation and stops early when
         `progress.is_cancel_requested` becomes True.
         """
@@ -79,6 +84,7 @@ class DiscoveryService:
                 elif ict_override.action == "UNSET_ICT":
                     reg.is_ict = False
                     reg.needs_review = False
+                self._session.commit()
                 updated += 1
                 continue
 
@@ -94,7 +100,14 @@ class DiscoveryService:
             if result is None:
                 continue
 
-            reg.is_ict = result.get("is_ict", False)
+            is_ict = result.get("is_ict", False)
+            if not isinstance(is_ict, bool):
+                logger.warning(
+                    "LLM gave no usable is_ict for %s: %r", ref, is_ict
+                )
+                continue
+
+            reg.is_ict = is_ict
             pillar = result.get("dora_pillar")
             if pillar and reg.is_ict:
                 try:
@@ -110,9 +123,9 @@ class DiscoveryService:
             else:
                 reg.needs_review = True
 
+            self._session.commit()
             updated += 1
 
-        self._session.flush()
         return updated
 
     def discover_missing(
