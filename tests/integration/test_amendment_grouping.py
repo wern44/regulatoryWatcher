@@ -369,3 +369,28 @@ def test_catalog_and_ict_highlight_recent_changes(tmp_path: Path, monkeypatch) -
         assert body.count(">Recent</span>") == 1
         assert "via CSSF 26/915" in body
 
+
+def test_dashboard_lists_latest_ict_changes(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
+    _seed_db(tmp_path / "app.db")
+    recent = date.today() - timedelta(days=10)
+
+    with client.app.state.session_factory() as session:
+        a = _make_reg(session, "CSSF 22/811", is_ict=True, published=date(2022, 5, 16))
+        b = _make_reg(session, "CSSF 25/900", is_ict=False, published=recent)
+        _amends(session, b, a)
+        _make_reg(session, "CSSF 26/914", is_ict=False, published=recent)
+        session.commit()
+        b_id = b.regulation_id
+
+    body = client.get("/").text
+    assert "Latest ICT / DORA changes" in body
+    assert "1 change to ICT circulars and laws in the last 3 months" in body
+    assert f'href="/regulations/{b_id}"' in body
+    assert "Amendment" in body
+    assert "Amends" in body and "Title of CSSF 22/811" in body
+    assert "CSSF 26/914" not in body  # not ICT
+    # 22/811 tops the list up under "Earlier"; neither has an analysis yet.
+    assert "Earlier" in body
+    assert "Summarise 2 with AI" in body
+    assert f'name="regulation_ids" value="{b_id}"' in body

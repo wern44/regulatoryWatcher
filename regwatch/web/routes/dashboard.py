@@ -1,10 +1,13 @@
-"""Dashboard route: KPIs + upcoming deadlines widget."""
+"""Dashboard route: KPIs, latest ICT changes, upcoming deadlines."""
 from __future__ import annotations
+
+from datetime import date
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from regwatch.services.deadlines import DeadlineService
+from regwatch.services.ict_changes import IctChangesService
 from regwatch.services.inbox import InboxService
 from regwatch.services.regulations import RegulationFilter, RegulationService
 from regwatch.web.templates_context import active_entity_type, render_page
@@ -35,6 +38,9 @@ def dashboard(request: Request) -> HTMLResponse:
         )
         upcoming = deadline_svc.upcoming(window_days=730, authorization_type=auth)
         inbox_count = inbox_svc.count_new()
+        ict_changes = IctChangesService(session).latest(
+            today=date.today(), authorization_type=auth
+        )
 
     return render_page(
         request,
@@ -48,7 +54,10 @@ def dashboard(request: Request) -> HTMLResponse:
                 "inbox": inbox_count,
                 "drafts": len(drafts),
                 "ict": len(ict_regs),
+                "ict_recent": sum(c.is_recent for c in ict_changes),
             },
+            "ict_changes": ict_changes,
+            "unsummarised_ids": [c.regulation_id for c in ict_changes if not c.summary],
             "upcoming": upcoming[:5],
             "progress": request.app.state.pipeline_progress.snapshot(),
         },

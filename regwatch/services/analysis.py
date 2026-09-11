@@ -42,9 +42,13 @@ class DocumentAnalysisDTO:
     @property
     def main_points_display(self) -> str | None:
         """Format main_points for display, converting list representations to bullet points."""
-        if not self.main_points:
-            return None
-        text = self.main_points.strip()
+        return self.format_main_points(self.main_points) or None
+
+    @staticmethod
+    def format_main_points(main_points: str | None) -> str:
+        if not main_points:
+            return ""
+        text = main_points.strip()
         # LLM sometimes returns a Python/JSON list as a string: ['point1', 'point2']
         if text.startswith("[") and text.endswith("]"):
             try:
