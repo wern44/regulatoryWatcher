@@ -226,3 +226,15 @@ def test_mark_all_seen_returns_zero_when_inbox_empty(tmp_path: Path) -> None:
     session.commit()
 
     assert count == 0
+
+
+def test_every_registered_source_has_a_display_name() -> None:
+    """The EUR-Lex entries used names no source has ("eurlex_cellar"), so
+    the Inbox's EUR-Lex filter always showed nothing."""
+    from regwatch.pipeline.fetch.base import REGISTRY
+    from regwatch.pipeline.sources import import_all_sources
+    from regwatch.services.inbox import SOURCE_DISPLAY_NAMES
+
+    import_all_sources()
+    assert set(REGISTRY) <= set(SOURCE_DISPLAY_NAMES)
+    assert SOURCE_DISPLAY_NAMES["eur_lex_adopted"] == "EUR-Lex"

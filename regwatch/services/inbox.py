@@ -19,8 +19,8 @@ _SEVERITY_ORDER = {
 SOURCE_DISPLAY_NAMES: dict[str, str] = {
     "cssf_rss": "CSSF",
     "cssf_consultation": "CSSF",
-    "eurlex_cellar": "EUR-Lex",
-    "eurlex_proposal": "EUR-Lex",
+    "eur_lex_adopted": "EUR-Lex",
+    "eur_lex_proposal": "EUR-Lex",
     "legilux_sparql": "Legilux",
     "legilux_parliamentary": "Legilux",
     "esma_rss": "ESMA",
