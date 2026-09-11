@@ -219,9 +219,10 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Regulatory Watcher", lifespan=lifespan)
     templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
-    # Register a Jinja filter to render LLM markdown as HTML.
+    # Register a Jinja filter to render LLM markdown as HTML. Raw HTML is
+    # escaped: the output is marked |safe, and answers quote fetched documents.
     from markdown_it import MarkdownIt
-    _md = MarkdownIt()
+    _md = MarkdownIt("commonmark", {"html": False})
 
     def _render_markdown(text: str) -> str:
         if not text:

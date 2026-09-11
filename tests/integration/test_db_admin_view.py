@@ -215,3 +215,26 @@ def test_import_of_older_schema_backup_keeps_app_usable(
             )
         }
     assert refs == {"LEGACY 1/1"}
+
+
+def test_import_ignores_path_in_uploaded_filename(tmp_path: Path, monkeypatch) -> None:
+    """The client-supplied filename used to become part of the temp path:
+    "../../victim.txt" was overwritten with the upload and then deleted."""
+    import tempfile
+
+    client = _client(tmp_path, monkeypatch)
+    _seed(tmp_path / "app.db")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(scratch))
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep me")
+
+    r = client.post(
+        "/settings/db/import",
+        files={"file": ("../../victim.txt", b"not a database", "application/x-sqlite3")},
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 303
+    assert victim.read_text() == "keep me"

@@ -59,7 +59,8 @@ async def import_database(
     config = request.app.state.config
 
     tmp_dir = Path(tempfile.mkdtemp(prefix="regwatch-import-"))
-    upload_path = tmp_dir / (file.filename or "upload.db")
+    # Never build a path from the client's filename ("../../x" escapes tmp_dir).
+    upload_path = tmp_dir / "upload.db"
     try:
         data = await file.read()
         upload_path.write_bytes(data)

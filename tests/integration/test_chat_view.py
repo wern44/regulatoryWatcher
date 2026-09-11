@@ -42,3 +42,16 @@ def test_chat_create_and_ask_flow(tmp_path: Path, monkeypatch) -> None:
     # With no indexed content the generator returns the no-results message.
     assert "could not find" in r3.text.lower()
     assert "What is DORA" in r3.text
+
+
+def test_markdown_filter_escapes_raw_html(tmp_path: Path, monkeypatch) -> None:
+    """Chat answers are rendered with ``| markdown | safe``; raw HTML in an
+    LLM answer (or in a quoted source document) must not reach the page."""
+    client = _client(tmp_path, monkeypatch)
+    render = client.app.state.templates.env.filters["markdown"]
+
+    html = render('**bold** <script>alert(1)</script> <img src=x onerror="alert(2)">')
+
+    assert "<strong>bold</strong>" in html
+    assert "<script>" not in html
+    assert "<img" not in html
