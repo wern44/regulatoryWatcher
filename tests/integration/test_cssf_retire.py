@@ -234,3 +234,71 @@ def test_retire_count_populates_discovery_run(sf):
         run = s.get(DiscoveryRun, run_id)
         assert run.status == "SUCCESS"
         assert run.retired_count == 2
+
+
+def _applies(s: Session, reg_id: int, *slugs: str) -> None:
+    from regwatch.db.models import RegulationApplicability
+
+    for slug in slugs:
+        s.add(RegulationApplicability(regulation_id=reg_id, authorization_type=slug))
+    s.commit()
+
+
+def test_retire_keeps_regulations_of_entity_types_not_crawled(sf):
+    """`discover-cssf --full --entity AIFM` must not retire ManCo circulars."""
+    with sf() as s:
+        run_id = _mk_run(s)  # crawled AIFM only
+        manco = _mk_reg(s, "CSSF 99/M")
+        _applies(s, manco, "CHAPTER15_MANCO")
+        both = _mk_reg(s, "CSSF 99/B")
+        _applies(s, both, "AIFM", "CHAPTER15_MANCO")
+        legacy_both = _mk_reg(s, "CSSF 99/L")
+        _applies(s, legacy_both, "BOTH")
+        aifm = _mk_reg(s, "CSSF 99/A")
+        _applies(s, aifm, "AIFM")
+
+    count = CssfDiscoveryService(session_factory=sf, config=_stub_cfg()).retire_missing(run_id)
+
+    assert count == 1
+    with sf() as s:
+        got = {r.reference_number: r.lifecycle_stage for r in s.scalars(select(Regulation)).all()}
+    assert got["CSSF 99/A"] == LifecycleStage.REPEALED
+    assert got["CSSF 99/M"] == LifecycleStage.IN_FORCE
+    assert got["CSSF 99/B"] == LifecycleStage.IN_FORCE
+    assert got["CSSF 99/L"] == LifecycleStage.IN_FORCE
+
+
+def test_retire_keeps_amending_circular_of_a_listed_circular(sf):
+    """CSSF-CPDI 23/35 has no listing row of its own; the CSSF lists it as
+    "Circular CSSF-CPDI 16/02 (as amended by Circular CSSF-CPDI 23/35)"."""
+    with sf() as s:
+        run_id = _mk_run(s, status="RUNNING")
+        base = _mk_reg(s, "CSSF-CPDI 16/02")
+        _mk_source(s, base, run_id)
+        _mk_reg(s, "CSSF-CPDI 23/35")
+
+    svc = CssfDiscoveryService(session_factory=sf, config=_stub_cfg())
+    svc._link_claims = {("CSSF-CPDI 23/35", "CSSF-CPDI 16/02", "AMENDS")}
+
+    assert svc.retire_missing(run_id) == 0
+
+
+def test_finalize_never_retires_after_an_incremental_run(sf):
+    """Incremental runs stop at the first known row, so 'not seen' proves
+    nothing -- they used to retire everything once they scraped 10 rows."""
+    with sf() as s:
+        run = DiscoveryRun(
+            status="RUNNING", started_at=datetime.now(UTC),
+            triggered_by="TEST", entity_types=["AIFM"], mode="incremental",
+        )
+        s.add(run)
+        s.commit()
+        reg_id = _mk_reg(s, "CSSF 99/001")
+
+    CssfDiscoveryService(session_factory=sf, config=_stub_cfg())._finalize_run(
+        run.run_id, error=None
+    )
+
+    with sf() as s:
+        assert s.get(Regulation, reg_id).lifecycle_stage == LifecycleStage.IN_FORCE
+        assert s.get(DiscoveryRun, run.run_id).retired_count == 0

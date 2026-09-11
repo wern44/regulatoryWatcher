@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from regwatch.config import CssfDiscoveryConfig, PublicationTypeConfig
@@ -41,6 +42,9 @@ from regwatch.discovery.cssf_scraper import (
 from regwatch.discovery.heuristics import is_ict_by_heuristic
 
 logger = logging.getLogger(__name__)
+
+# Seeded applicability rows use "BOTH" for the two original entity types.
+_LEGACY_SLUGS = {"BOTH": {"AIFM", "CHAPTER15_MANCO"}}
 
 
 @dataclass
@@ -399,6 +403,10 @@ class CssfDiscoveryService:
                 reg_id = reg.regulation_id
             else:
                 self._ensure_applicability(s, existing, slug)
+                promoted = existing.source_of_truth == "CSSF_STUB"
+                if promoted:
+                    self._promote_stub(s, existing, detail, listing, pub)
+                    note = "promoted from placeholder"
 
                 # Reactivation: a previously-retired row is back in the matrix.
                 if (
@@ -417,7 +425,7 @@ class CssfDiscoveryService:
                     self._refresh_metadata(existing, detail, listing)
                     outcome = "AMENDED"
                     note = f"new amendments: {sorted(amended)}"
-                elif self._refresh_metadata(existing, detail, listing):
+                elif self._refresh_metadata(existing, detail, listing) or promoted:
                     outcome = "UPDATED_METADATA"
                 else:
                     outcome = "UNCHANGED"
@@ -490,9 +498,13 @@ class CssfDiscoveryService:
                 s.commit()
 
     def _reference_exists(self, ref: str) -> bool:
+        """True when a full catalog entry exists (placeholders don't count)."""
         with self._sf() as s:
             return s.scalar(
-                select(Regulation.regulation_id).where(Regulation.reference_number == ref)
+                select(Regulation.regulation_id).where(
+                    Regulation.reference_number == ref,
+                    Regulation.source_of_truth != "CSSF_STUB",
+                )
             ) is not None
 
     def _handle_withdrawal(
@@ -558,6 +570,28 @@ class CssfDiscoveryService:
         s.flush()
         self._ensure_applicability(s, reg, slug)
         return reg
+
+    def _promote_stub(
+        self,
+        s: Session,
+        reg: Regulation,
+        detail: CircularDetail,
+        listing: CircularListingRow,
+        pub: PublicationTypeConfig,
+    ) -> None:
+        """Turn a placeholder into a full entry now that it is listed itself.
+
+        Title and URL follow through ``_refresh_metadata``.
+        """
+        reg.source_of_truth = "CSSF_WEB"
+        reg.type = RegulationType(pub.type)
+        reg.publication_date = detail.published_at or listing.publication_date
+        override = self._ict_override(s, reg.reference_number)
+        if override is None:
+            reg.is_ict = is_ict_by_heuristic(
+                title=_compose_title(detail, listing), description=detail.description
+            )
+            reg.needs_review = not reg.is_ict
 
     def _ict_override(self, s: Session, ref: str) -> str | None:
         return s.scalar(
@@ -796,33 +830,15 @@ class CssfDiscoveryService:
         FAILED run must not retire. The in-place callers (see
         _finalize_run) do this gating.
 
-        Returns the number retired. Honours RegulationOverride
-        (action="KEEP_ACTIVE"). Never touches SEED / DISCOVERED / CSSF_STUB
-        rows. Writes one DiscoveryRunItem per retired regulation with
-        outcome="RETIRED".
+        Returns the number retired. Writes one DiscoveryRunItem per retired
+        regulation with outcome="RETIRED". See ``_retire_candidates`` for
+        which regulations qualify.
         """
-        retired_count = 0
         with self._sf() as s:
             seen_subq = select(RegulationDiscoverySource.regulation_id).where(
                 RegulationDiscoverySource.last_seen_run_id == run_id
             )
-            keep_active_refs = list(
-                s.scalars(
-                    select(RegulationOverride.reference_number).where(
-                        RegulationOverride.action == "KEEP_ACTIVE"
-                    )
-                ).all()
-            )
-
-            query = select(Regulation).where(
-                Regulation.source_of_truth == "CSSF_WEB",
-                Regulation.lifecycle_stage != LifecycleStage.REPEALED,
-                Regulation.regulation_id.not_in(seen_subq),
-            )
-            if keep_active_refs:
-                query = query.where(Regulation.reference_number.not_in(keep_active_refs))
-
-            stale = list(s.scalars(query).all())
+            stale = self._retire_candidates(s, run_id, seen_subq)
             for reg in stale:
                 reg.lifecycle_stage = LifecycleStage.REPEALED
                 s.add(DiscoveryRunItem(
@@ -835,16 +851,14 @@ class CssfDiscoveryService:
                     content_type="",
                     note="absent from all filter-matrix cells",
                 ))
-                retired_count += 1
             s.commit()
-        return retired_count
+        return len(stale)
 
     def preview_retire_candidates(self, run_id: int) -> RetirePreview:
         """Return refs that WOULD be retired + whether the tripwire would fire.
 
         Does NOT modify the DB. Used by --dry-run to show the user what
-        a real run would retire. Applies the same filter as retire_missing
-        (exclude KEEP_ACTIVE, exclude non-CSSF_WEB, exclude already-REPEALED).
+        a real run would retire, with the same rules as retire_missing.
         """
         with self._sf() as s:
             run = s.get(DiscoveryRun, run_id)
@@ -858,19 +872,10 @@ class CssfDiscoveryService:
                 DiscoveryRunItem.outcome.in_(observed_outcomes),
                 DiscoveryRunItem.regulation_id.is_not(None),
             )
-            keep_active_refs = list(s.scalars(
-                select(RegulationOverride.reference_number).where(
-                    RegulationOverride.action == "KEEP_ACTIVE"
-                )
-            ).all())
-            query = select(Regulation.reference_number).where(
-                Regulation.source_of_truth == "CSSF_WEB",
-                Regulation.lifecycle_stage != LifecycleStage.REPEALED,
-                Regulation.regulation_id.not_in(seen_subq),
+            candidates = sorted(
+                r.reference_number
+                for r in self._retire_candidates(s, run_id, seen_subq)
             )
-            if keep_active_refs:
-                query = query.where(Regulation.reference_number.not_in(keep_active_refs))
-            candidates = sorted(s.scalars(query).all())
 
         floor = self._config.retire_min_scraped
         would_retire = floor <= 0 or total_scraped >= floor
@@ -884,6 +889,60 @@ class CssfDiscoveryService:
             tripwire_reason=tripwire_reason,
             total_scraped=total_scraped,
         )
+
+    def _retire_candidates(
+        self, s: Session, run_id: int, seen_subq: Select[Any]
+    ) -> list[Regulation]:
+        """In-force CSSF_WEB regulations the run could have seen but didn't.
+
+        Honours RegulationOverride (action="KEEP_ACTIVE"); never returns
+        SEED / DISCOVERED / CSSF_STUB rows. A regulation that also applies to
+        an entity type the run didn't crawl may still be listed there, so it
+        is kept. So is an amending document of a regulation seen in this run:
+        the CSSF lists it only inside that regulation's title.
+        """
+        run = s.get(DiscoveryRun, run_id)
+        crawled = set(run.entity_types or []) if run is not None else set()
+        keep_active_refs = list(s.scalars(
+            select(RegulationOverride.reference_number).where(
+                RegulationOverride.action == "KEEP_ACTIVE"
+            )
+        ).all())
+        query = select(Regulation).where(
+            Regulation.source_of_truth == "CSSF_WEB",
+            Regulation.lifecycle_stage != LifecycleStage.REPEALED,
+            Regulation.regulation_id.not_in(seen_subq),
+        )
+        if keep_active_refs:
+            query = query.where(Regulation.reference_number.not_in(keep_active_refs))
+        stale = list(s.scalars(query).all())
+
+        applies_to: dict[int, set[str]] = defaultdict(set)
+        for reg_id, slug in s.execute(
+            select(
+                RegulationApplicability.regulation_id,
+                RegulationApplicability.authorization_type,
+            ).where(
+                RegulationApplicability.regulation_id.in_(
+                    [r.regulation_id for r in stale]
+                )
+            )
+        ).all():
+            applies_to[reg_id].update(_LEGACY_SLUGS.get(slug, {slug}))
+        seen_refs = set(s.scalars(
+            select(Regulation.reference_number).where(
+                Regulation.regulation_id.in_(seen_subq)
+            )
+        ).all())
+        amends_seen = {
+            from_ref for from_ref, to_ref, rel in self._link_claims
+            if rel == "AMENDS" and to_ref in seen_refs
+        }
+        return [
+            reg for reg in stale
+            if not applies_to[reg.regulation_id] - crawled
+            and reg.reference_number not in amends_seen
+        ]
 
     def _write_item(
         self, run_id: int, regulation_id: int | None,
@@ -944,7 +1003,13 @@ class CssfDiscoveryService:
             # A PARTIAL/FAILED run must never wipe the catalog.
             # A dry-run or single-column restriction also skips retire: we
             # can't prove global absence from an incomplete crawl.
-            skip_retire = self._dry_run or self._restrict_pub_slug is not None
+            # Incremental runs stop at the first known row, so an unseen row
+            # proves nothing.
+            skip_retire = (
+                self._dry_run
+                or self._restrict_pub_slug is not None
+                or run.mode != "full"
+            )
 
             # Tripwire: a run that scraped nothing meaningful may indicate a DOM
             # change breaking the parser silently. Refuse to retire on suspicion.
@@ -970,7 +1035,7 @@ class CssfDiscoveryService:
 
             s.commit()
 
-            if run.status == "SUCCESS" and not skip_retire and run.mode == "full":
+            if run.status == "SUCCESS" and not skip_retire:
                 removed = self._reconcile_links()
                 logger.info("Amendment graph: removed %d unsupported links", removed)
 

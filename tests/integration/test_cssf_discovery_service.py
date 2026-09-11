@@ -520,3 +520,37 @@ def test_circular_letter_is_created_with_its_subtitle_in_the_title(tmp_path):
         assert reg.title == (
             "Circular letter – Latest update on the AML/CFT standardised data collection"
         )
+
+
+def test_placeholder_row_is_promoted_when_its_listing_row_appears(tmp_path):
+    """A stub created for an amending circular becomes a full entry once the
+    circular itself is listed -- and doesn't stop an incremental crawl."""
+    sf = _setup_db(tmp_path)
+    _seed_default_entity_types(sf)
+    with sf() as s:
+        s.add(Regulation(
+            type=RegulationType.CSSF_CIRCULAR, reference_number="circular-letter-2026-03-18",
+            title="circular-letter-2026-03-18", issuing_authority="CSSF",
+            lifecycle_stage=LifecycleStage.IN_FORCE, is_ict=False, needs_review=True,
+            url="", source_of_truth="CSSF_STUB",
+        ))
+        s.commit()
+    transport = _single_row_transport(
+        row_type="CSSF circular",
+        title="Circular letter",
+        slug="circular-letter-2026-03-18",
+        detail_h1="Circular letter",
+        subtitle="Latest update on the AML/CFT standardised data collection",
+    )
+    pub = PublicationTypeConfig(label="CSSF circular", filter_id=567, type="CSSF_CIRCULAR")
+    _svc_for(sf, pub, transport).run(
+        entity_types=["AIFM"], mode="incremental", triggered_by="USER_CLI",
+    )
+    with sf() as s:
+        reg = s.query(Regulation).filter_by(
+            reference_number="circular-letter-2026-03-18"
+        ).one()
+        assert reg.source_of_truth == "CSSF_WEB"
+        assert reg.title.startswith("Circular letter – ")
+        assert reg.publication_date is not None
+        assert [a.authorization_type for a in reg.applicabilities] == ["AIFM"]
