@@ -220,3 +220,11 @@ def test_set_done_invalid_regulation(tmp_path: Path) -> None:
         assert False, "Should have raised ValueError"
     except ValueError as exc:
         assert "99999" in str(exc)
+
+
+def test_upcoming_entity_filter_keeps_untagged_regulations(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    _add_reg(session, "NIS2", transposition_deadline=date.today() + timedelta(days=30))
+    session.commit()
+    items = DeadlineService(session).upcoming(window_days=365, authorization_type="AIFM")
+    assert [i.reference_number for i in items] == ["NIS2"]

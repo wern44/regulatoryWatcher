@@ -111,8 +111,9 @@ def catalog(
 
         effective_parent_id, children_by_parent_id = build_amendment_indexes(session)
 
-        if not show_amendments:
-            # Drop any reg whose effective parent isn't itself
+        if not show_amendments and not search:
+            # Drop any reg whose effective parent isn't itself. A search is an
+            # explicit lookup, so it also finds amendments.
             regs = [
                 r for r in regs
                 if effective_parent_id.get(r.regulation_id) == r.regulation_id

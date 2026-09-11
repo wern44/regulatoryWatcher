@@ -8,7 +8,8 @@ from typing import Literal
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from regwatch.db.models import Regulation, RegulationApplicability
+from regwatch.db.models import Regulation
+from regwatch.services.regulations import applies_to
 
 DeadlineKind = Literal["TRANSPOSITION", "APPLICATION"]
 
@@ -63,12 +64,7 @@ class DeadlineService:
             )
         )
         if authorization_type:
-            query = query.join(RegulationApplicability).filter(
-                or_(
-                    RegulationApplicability.authorization_type == authorization_type,
-                    RegulationApplicability.authorization_type == "BOTH",
-                )
-            )
+            query = query.filter(applies_to(authorization_type))
         rows = query.all()
         today = date.today()
         items: list[DeadlineDTO] = []

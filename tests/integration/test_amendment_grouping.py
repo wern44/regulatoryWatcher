@@ -241,3 +241,20 @@ def test_chained_amendments_flatten_to_ancestor(tmp_path: Path, monkeypatch) -> 
     assert "Amendments (2)" in body2
     assert "CSSF 21/002" in body2
     assert "CSSF 22/003" in body2
+
+
+def test_catalog_search_finds_amendments(tmp_path: Path, monkeypatch) -> None:
+    """Searching for an amending circular's number must find it even though
+    the default view rolls it up under the circular it amends."""
+    client = _client(tmp_path, monkeypatch)
+    _seed_db(tmp_path / "app.db")
+
+    with client.app.state.session_factory() as session:
+        a = _make_reg(session, "CSSF 22/811")
+        b = _make_reg(session, "CSSF 25/900")
+        _amends(session, b, a)
+        session.commit()
+
+    resp = client.get("/catalog?search=25/900")
+    assert resp.status_code == 200
+    assert "CSSF 25/900" in resp.text

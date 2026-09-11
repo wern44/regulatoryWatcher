@@ -5,7 +5,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.orm import Session
 
 from regwatch.db.models import (
@@ -41,6 +41,21 @@ class RegulationDTO:
     created_at: datetime
 
 
+def applies_to(authorization_type: str) -> ColumnElement[bool]:
+    """Filter: the regulation applies to ``authorization_type``.
+
+    Untagged regulations (GDPR, NIS2, ...) apply to every entity type.
+    """
+    tagged = select(RegulationApplicability.regulation_id)
+    matching = tagged.where(
+        RegulationApplicability.authorization_type.in_([authorization_type, "BOTH"])
+    )
+    return or_(
+        Regulation.regulation_id.in_(matching),
+        Regulation.regulation_id.not_in(tagged),
+    )
+
+
 class RegulationService:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -49,13 +64,7 @@ class RegulationService:
         query = self._session.query(Regulation)
 
         if flt.authorization_type:
-            query = query.join(RegulationApplicability).filter(
-                or_(
-                    RegulationApplicability.authorization_type
-                    == flt.authorization_type,
-                    RegulationApplicability.authorization_type == "BOTH",
-                )
-            )
+            query = query.filter(applies_to(flt.authorization_type))
         if flt.is_ict is not None:
             query = query.filter(Regulation.is_ict == flt.is_ict)
         if flt.lifecycle_stages:

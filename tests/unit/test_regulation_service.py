@@ -78,3 +78,23 @@ def test_get_by_reference(tmp_path: Path) -> None:
     reg = svc.get_by_reference("CSSF 18/698")
     assert reg is not None
     assert reg.title == "CSSF 18/698"
+
+
+def test_entity_filter_keeps_regulations_without_applicability(tmp_path: Path) -> None:
+    """GDPR / NIS2 carry no entity tags; they apply to every entity type and
+    must not vanish when the sidebar selects one."""
+    session = _session(tmp_path)
+    _seed(session)
+    session.add(Regulation(
+        type=RegulationType.EU_REGULATION, reference_number="Regulation (EU) 2016/679",
+        title="GDPR", issuing_authority="EU", lifecycle_stage=LifecycleStage.IN_FORCE,
+        is_ict=False, source_of_truth="DISCOVERED", url="https://example.com",
+    ))
+    session.commit()
+    refs = [
+        r.reference_number
+        for r in RegulationService(session).list(RegulationFilter(authorization_type="AIFM"))
+    ]
+    assert "Regulation (EU) 2016/679" in refs
+    assert "CSSF 11/512" not in refs
+    assert len(refs) == len(set(refs))
