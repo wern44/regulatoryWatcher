@@ -1,6 +1,7 @@
 """Regulation catalog queries exposed to the UI layer."""
 from __future__ import annotations
 
+import calendar
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -51,6 +52,16 @@ class AmendmentSummary:
     last_change: date | None
     # The amendment that set last_change; None when it is the regulation's own.
     last_change_reference: str | None
+    # last_change falls within the recent-changes window.
+    is_recent: bool = False
+
+
+def recent_changes_since(today: date) -> date:
+    """Start of the "recent changes" window highlighted in the UI: 3 months."""
+    year, month = (today.year, today.month - 3) if today.month > 3 else (
+        today.year - 1, today.month + 9
+    )
+    return date(year, month, min(today.day, calendar.monthrange(year, month)[1]))
 
 
 def applies_to(authorization_type: str) -> ColumnElement[bool]:
@@ -160,7 +171,9 @@ class AmendmentIndex:
                 kept.append(r)
         return kept
 
-    def summaries(self, regs: list[RegulationDTO]) -> dict[int, AmendmentSummary]:
+    def summaries(
+        self, regs: list[RegulationDTO], *, recent_since: date
+    ) -> dict[int, AmendmentSummary]:
         result: dict[int, AmendmentSummary] = {}
         for r in regs:
             child_ids = self._children.get(r.regulation_id, [])
@@ -180,6 +193,7 @@ class AmendmentIndex:
                 count=len(child_ids),
                 last_change=last_change,
                 last_change_reference=by,
+                is_recent=last_change is not None and last_change >= recent_since,
             )
         return result
 

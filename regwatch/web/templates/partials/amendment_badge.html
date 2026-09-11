@@ -2,7 +2,7 @@
 {% set n = s.count if s else 0 %}
 {% if n %}
   <a href="/regulations/{{ r.regulation_id }}#amendments"
-     class="ml-2 px-1.5 py-0.5 bg-amber-100 text-amber-800 text-xs rounded hover:bg-amber-200"
+     class="ml-2 inline-block whitespace-nowrap px-1.5 py-0.5 bg-amber-100 text-amber-800 text-xs rounded hover:bg-amber-200"
      title="View {{ n }} amendment(s) on this regulation's detail page">
     +{{ n }} amendments
   </a>

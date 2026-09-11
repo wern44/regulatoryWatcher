@@ -1,14 +1,16 @@
 {% set new_ids_set = new_ids|default(none) %}
 {% set is_new = new_ids_set is not none and r.regulation_id in new_ids_set %}
-<tr class="border-t {% if is_new %}bg-amber-50{% endif %}">
-  <td class="p-2">
+{% set summary = amendment_summaries.get(r.regulation_id) if amendment_summaries is defined else none %}
+{% set is_recent = summary is not none and summary.is_recent %}
+<tr class="border-t {% if is_new %}bg-amber-50{% elif is_recent %}bg-sky-50{% endif %}">
+  <td class="p-2 {% if is_recent %}shadow-[inset_3px_0_0_0_#0284c7]{% endif %}">
     <input type="checkbox"
            name="regulation_ids"
            value="{{ r.regulation_id }}"
            onchange="updateActionBar()"
            aria-label="Select {{ r.reference_number }}">
   </td>
-  <td class="p-2 font-mono">
+  <td class="p-2 font-mono" data-sort-value="{{ r.reference_number }}">
     <a class="hover:underline" href="/regulations/{{ r.regulation_id }}">{{ r.reference_number }}</a>
     {% if is_new %}
       <span class="ml-2 px-1.5 py-0.5 bg-amber-100 text-amber-800 text-xs rounded font-semibold"

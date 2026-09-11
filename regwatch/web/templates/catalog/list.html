@@ -70,19 +70,20 @@
               class="ml-2 px-3 py-1 border border-slate-400 rounded">Clear</button>
     </div>
 
-    <table class="w-full bg-white border rounded shadow-sm text-sm">
+    {% include "partials/recent_legend.html" %}
+    <table class="w-full bg-white border rounded shadow-sm text-sm" data-sortable="catalog">
       <thead class="bg-slate-100 text-xs uppercase text-slate-600">
         <tr>
           <th class="w-8 p-2">
             <input type="checkbox" onchange="toggleAll(this)" aria-label="Select all">
           </th>
-          <th class="text-left p-2">Reference</th>
-          <th class="text-left p-2">Title</th>
-          <th class="text-left p-2">Authority</th>
-          <th class="text-left p-2">Lifecycle</th>
-          <th class="text-left p-2" title="Publication date of the newest amendment (or of the regulation itself when it has none)">Last change</th>
-          <th class="text-left p-2">ICT</th>
-          <th class="text-left p-2">Analysis</th>
+          <th class="text-left p-2" data-sort="text">Reference</th>
+          <th class="text-left p-2" data-sort="text">Title</th>
+          <th class="text-left p-2" data-sort="text">Authority</th>
+          <th class="text-left p-2" data-sort="text">Lifecycle</th>
+          <th class="text-left p-2" data-sort="date" title="Publication date of the newest amendment (or of the regulation itself when it has none)">Last change</th>
+          <th class="text-left p-2" data-sort="text">ICT</th>
+          <th class="text-left p-2" data-sort="text">Analysis</th>
         </tr>
       </thead>
       <tbody>

@@ -16,6 +16,7 @@ from regwatch.services.regulations import (
     AmendmentIndex,
     RegulationFilter,
     RegulationService,
+    recent_changes_since,
 )
 
 
@@ -95,7 +96,7 @@ def test_summary_gives_count_and_newest_amendment_date(tmp_path: Path) -> None:
 
     regs = RegulationService(session).list(RegulationFilter())
     index = AmendmentIndex(session)
-    summary = index.summaries(index.fold(regs))[parent.regulation_id]
+    summary = index.summaries(index.fold(regs), recent_since=date(2026, 1, 1))[parent.regulation_id]
 
     assert summary.count == 3
     assert summary.last_change == date(2024, 3, 1)
@@ -108,8 +109,31 @@ def test_summary_without_amendments_uses_own_publication_date(tmp_path: Path) ->
     session.commit()
 
     regs = RegulationService(session).list(RegulationFilter())
-    summary = AmendmentIndex(session).summaries(regs)[reg.regulation_id]
+    summaries = AmendmentIndex(session).summaries(regs, recent_since=date(2026, 1, 1))
+    summary = summaries[reg.regulation_id]
 
     assert summary.count == 0
     assert summary.last_change == date(2018, 8, 23)
     assert summary.last_change_reference is None
+
+
+def test_summary_flags_changes_in_the_recent_window(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    parent = _add(session, "CSSF 20/750", date(2020, 8, 31))
+    child = _add(session, "CSSF 26/915", date(2026, 8, 27))
+    old = _add(session, "CSSF 18/698", date(2018, 8, 23))
+    _amends(session, child, parent)
+    session.commit()
+
+    regs = RegulationService(session).list(RegulationFilter())
+    index = AmendmentIndex(session)
+    summaries = index.summaries(index.fold(regs), recent_since=date(2026, 6, 11))
+
+    assert summaries[parent.regulation_id].is_recent
+    assert not summaries[old.regulation_id].is_recent
+
+
+def test_recent_window_is_three_calendar_months() -> None:
+    assert recent_changes_since(date(2026, 9, 11)) == date(2026, 6, 11)
+    assert recent_changes_since(date(2026, 2, 15)) == date(2025, 11, 15)
+    assert recent_changes_since(date(2026, 5, 31)) == date(2026, 2, 28)

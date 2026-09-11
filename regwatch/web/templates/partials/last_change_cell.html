@@ -1,11 +1,17 @@
 {% set s = amendment_summaries.get(r.regulation_id) %}
-<td class="p-2 text-xs whitespace-nowrap">
+<td class="p-2 text-xs whitespace-nowrap"
+    data-sort-value="{{ s.last_change.isoformat() if s and s.last_change else '' }}">
   {% if s and s.last_change %}
+    <span class="{% if s.is_recent %}font-semibold text-sky-800{% endif %}"
+          title="{% if s.last_change_reference %}Publication date of the newest amendment{% else %}Publication date — no dated amendments{% endif %}">
+      {{- s.last_change.strftime('%Y-%m-%d') -}}
+    </span>
+    {% if s.is_recent %}
+      <span class="ml-1 px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-800 text-[10px] font-semibold uppercase tracking-wide"
+            title="Changed in the last 3 months">Recent</span>
+    {% endif %}
     {% if s.last_change_reference %}
-      <span title="Publication date of the newest amendment">{{ s.last_change.strftime('%Y-%m-%d') }}</span>
       <div class="text-slate-500">via {{ s.last_change_reference }}</div>
-    {% else %}
-      <span title="Publication date — no dated amendments">{{ s.last_change.strftime('%Y-%m-%d') }}</span>
     {% endif %}
   {% else %}
     <span class="text-slate-400">&mdash;</span>

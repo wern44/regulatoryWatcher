@@ -1,7 +1,7 @@
 """Integration tests for amendment grouping on the catalog and detail pages."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -342,3 +342,30 @@ def test_ict_keeps_amendment_of_non_ict_circular(tmp_path: Path, monkeypatch) ->
     body = client.get("/ict").text
     assert "CSSF 22/811" in body
     assert "CSSF 18/698" not in body
+
+
+# ---------------------------------------------------------------------------
+# Recent changes (last 3 months) and sortable tables
+# ---------------------------------------------------------------------------
+
+def test_catalog_and_ict_highlight_recent_changes(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
+    _seed_db(tmp_path / "app.db")
+    recent = date.today() - timedelta(days=10)
+
+    with client.app.state.session_factory() as session:
+        a = _make_reg(session, "CSSF 20/750", is_ict=True, published=date(2020, 8, 31))
+        b = _make_reg(session, "CSSF 26/915", is_ict=True, published=recent)
+        _amends(session, b, a)
+        _make_reg(session, "CSSF 18/698", is_ict=True, published=date(2018, 8, 23))
+        session.commit()
+
+    for url in ("/catalog", "/ict"):
+        body = client.get(url).text
+        assert 'data-sortable=' in body
+        assert 'data-sort="date"' in body
+        assert f'data-sort-value="{recent.isoformat()}"' in body
+        # One highlighted row: 20/750, changed via its recent amendment.
+        assert body.count(">Recent</span>") == 1
+        assert "via CSSF 26/915" in body
+

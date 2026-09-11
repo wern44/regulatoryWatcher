@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -27,6 +27,7 @@ from regwatch.services.regulations import (
     AmendmentIndex,
     RegulationFilter,
     RegulationService,
+    recent_changes_since,
 )
 from regwatch.services.runtime_limits import get_max_runtime_seconds
 from regwatch.services.sidebar_badges import SidebarBadgeService
@@ -115,7 +116,9 @@ def catalog(
             # Roll amendments up under their circular. A search is an
             # explicit lookup, so it also finds amendments.
             regs = amendments.fold(regs)
-        amendment_summaries = amendments.summaries(regs)
+        amendment_summaries = amendments.summaries(
+            regs, recent_since=recent_changes_since(date.today())
+        )
 
         # Compute per-regulation analysis status for the column.
         analysis_svc = AnalysisService(session)
@@ -171,6 +174,7 @@ def catalog(
             "effective_ict": effective_ict,
             "show_amendments": show_amendments,
             "amendment_summaries": amendment_summaries,
+            "recent_count": sum(s.is_recent for s in amendment_summaries.values()),
             "flash_message": flash_message,
             "new_ids": new_ids,
         },

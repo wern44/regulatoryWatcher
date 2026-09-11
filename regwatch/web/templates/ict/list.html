@@ -22,24 +22,28 @@
   </form>
 
   {% set new_ids_set = new_ids|default(none) %}
-  <table class="w-full bg-white border rounded shadow-sm text-sm">
+  {% include "partials/recent_legend.html" %}
+  <table class="w-full bg-white border rounded shadow-sm text-sm" data-sortable="ict">
     <thead class="bg-slate-100 text-xs uppercase text-slate-600">
       <tr>
-        <th class="text-left p-2">Reference</th>
-        <th class="text-left p-2">Title</th>
-        <th class="text-left p-2">Authority</th>
-        <th class="text-left p-2">DORA Pillar</th>
-        <th class="text-left p-2">Lifecycle</th>
-        <th class="text-left p-2" title="Publication date of the newest amendment (or of the regulation itself when it has none)">Last change</th>
-        <th class="text-left p-2">Status</th>
+        <th class="text-left p-2" data-sort="text">Reference</th>
+        <th class="text-left p-2" data-sort="text">Title</th>
+        <th class="text-left p-2" data-sort="text">Authority</th>
+        <th class="text-left p-2" data-sort="text">DORA Pillar</th>
+        <th class="text-left p-2" data-sort="text">Lifecycle</th>
+        <th class="text-left p-2" data-sort="date" title="Publication date of the newest amendment (or of the regulation itself when it has none)">Last change</th>
+        <th class="text-left p-2" data-sort="text">Status</th>
         <th class="text-left p-2">Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for r in regulations %}
       {% set is_new = new_ids_set is not none and r.regulation_id in new_ids_set %}
-      <tr class="border-t {% if r.needs_review or is_new %}bg-amber-50{% endif %}">
-        <td class="p-2 font-mono">
+      {% set summary = amendment_summaries.get(r.regulation_id) %}
+      {% set is_recent = summary is not none and summary.is_recent %}
+      <tr class="border-t {% if r.needs_review or is_new %}bg-amber-50{% elif is_recent %}bg-sky-50{% endif %}">
+        <td class="p-2 font-mono {% if is_recent %}shadow-[inset_3px_0_0_0_#0284c7]{% endif %}"
+            data-sort-value="{{ r.reference_number }}">
           {{ r.reference_number }}
           {% if is_new %}
             <span class="ml-2 px-1.5 py-0.5 bg-amber-100 text-amber-800 text-xs rounded font-semibold"

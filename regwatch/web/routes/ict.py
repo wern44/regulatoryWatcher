@@ -1,7 +1,7 @@
 """ICT / DORA route with management actions."""
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -11,6 +11,7 @@ from regwatch.services.regulations import (
     AmendmentIndex,
     RegulationFilter,
     RegulationService,
+    recent_changes_since,
 )
 from regwatch.services.sidebar_badges import SidebarBadgeService
 from regwatch.web.routes.catalog import start_catalog_refresh
@@ -33,7 +34,9 @@ def ict(request: Request, show_amendments: bool = False) -> HTMLResponse:
         amendments = AmendmentIndex(session)
         if not show_amendments:
             regs = amendments.fold(regs)
-        amendment_summaries = amendments.summaries(regs)
+        amendment_summaries = amendments.summaries(
+            regs, recent_since=recent_changes_since(date.today())
+        )
         previous_cutoff = SidebarBadgeService(session).mark_visited("ict")
         session.commit()
 
@@ -51,6 +54,7 @@ def ict(request: Request, show_amendments: bool = False) -> HTMLResponse:
             "new_ids": new_ids,
             "show_amendments": show_amendments,
             "amendment_summaries": amendment_summaries,
+            "recent_count": sum(s.is_recent for s in amendment_summaries.values()),
         },
     )
 
