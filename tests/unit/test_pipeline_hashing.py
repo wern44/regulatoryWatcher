@@ -49,17 +49,6 @@ def test_text_for_hashing_strips_whitespace() -> None:
     assert text_for_hashing(extracted) == "hello"
 
 
-def test_text_for_hashing_returns_empty_string_when_no_text() -> None:
-    extracted = ExtractedDocument(
-        raw=_raw(),
-        html_text=None,
-        pdf_path=None,
-        pdf_extracted_text=None,
-        pdf_is_protected=False,
-    )
-    assert text_for_hashing(extracted) == ""
-
-
 def test_content_hash_is_sha256_hex() -> None:
     # SHA-256 of "abc" is a known value.
     assert content_hash("abc") == (
@@ -69,3 +58,13 @@ def test_content_hash_is_sha256_hex() -> None:
 
 def test_content_hash_is_stable() -> None:
     assert content_hash("hello world") == content_hash("hello world")
+
+
+def test_text_for_hashing_without_text_uses_title_and_url() -> None:
+    """Every text-less document hashed to sha256(""), so after the first one
+    all others were skipped as "already seen"."""
+    extracted = ExtractedDocument(
+        raw=_raw(), html_text=None, pdf_path=None, pdf_extracted_text=None,
+        pdf_is_protected=False,
+    )
+    assert text_for_hashing(extracted) == "t\nhttps://example.com/x"

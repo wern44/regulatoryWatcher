@@ -15,9 +15,12 @@ def text_for_hashing(extracted: ExtractedDocument) -> str:
 
     Prefers the PDF-extracted text over the HTML body when both are
     present. Whitespace is stripped so trivial trailing-newline
-    differences do not produce different hashes.
+    differences do not produce different hashes. A document without text
+    is identified by its title and URL: hashing "" made every text-less
+    document after the first look like a duplicate.
     """
-    return (extracted.pdf_extracted_text or extracted.html_text or "").strip()
+    text = (extracted.pdf_extracted_text or extracted.html_text or "").strip()
+    return text or f"{extracted.raw.title}\n{extracted.raw.source_url}"
 
 
 def content_hash(text: str) -> str:
