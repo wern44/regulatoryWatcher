@@ -1,5 +1,5 @@
 <div id="run-status" class="space-y-3"
-     {% if run and run.status not in ('SUCCESS', 'PARTIAL', 'FAILED') %}
+     {% if run and run.status not in ('SUCCESS', 'PARTIAL', 'FAILED', 'ABORTED') %}
        hx-get="/analysis/runs/{{ run_id }}/status"
        hx-trigger="every 2s"
        hx-swap="outerHTML"
@@ -13,7 +13,7 @@
         <span class="inline-block rounded px-2 py-0.5 text-xs font-semibold
                      {% if run.status == 'SUCCESS' %}bg-green-100 text-green-800
                      {% elif run.status == 'FAILED' %}bg-red-100 text-red-800
-                     {% elif run.status == 'PARTIAL' %}bg-amber-100 text-amber-800
+                     {% elif run.status in ('PARTIAL', 'ABORTED') %}bg-amber-100 text-amber-800
                      {% else %}bg-blue-100 text-blue-800{% endif %}">
           {{ run.status }}
         </span>
@@ -28,13 +28,13 @@
         <div class="h-3 rounded-full transition-all duration-300
                     {% if run.status == 'SUCCESS' %}bg-green-500
                     {% elif run.status == 'FAILED' %}bg-red-500
-                    {% elif run.status == 'PARTIAL' %}bg-amber-500
+                    {% elif run.status in ('PARTIAL', 'ABORTED') %}bg-amber-500
                     {% else %}bg-blue-500{% endif %}"
              style="width: {{ pct }}%"></div>
       </div>
 
       {# --- Currently processing label --- #}
-      {% if run.status not in ('SUCCESS', 'PARTIAL', 'FAILED') %}
+      {% if run.status not in ('SUCCESS', 'PARTIAL', 'FAILED', 'ABORTED') %}
         {% if progress.current_label %}
           <p class="text-sm text-slate-700">
             <span class="inline-block w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mr-2 align-text-bottom"></span>
@@ -56,6 +56,8 @@
             All {{ success_count }} document(s) analysed successfully.
           {% elif run.status == 'PARTIAL' %}
             {{ success_count }} succeeded, {{ failed_count }} failed.
+          {% elif run.status == 'ABORTED' %}
+            Aborted: {{ success_count }} document(s) analysed before the run was stopped.
           {% else %}
             {% if failed_count %}
               Analysis failed for all {{ failed_count }} document(s).
@@ -72,7 +74,7 @@
     </div>
 
     {# --- Per-document results (shown when finished) --- #}
-    {% if run.status in ('SUCCESS', 'PARTIAL', 'FAILED') %}
+    {% if run.status in ('SUCCESS', 'PARTIAL', 'FAILED', 'ABORTED') %}
       <div class="rounded border border-slate-200 bg-white p-4">
         <h3 class="font-semibold mb-2">Results</h3>
         <ul class="divide-y divide-slate-100 text-sm">

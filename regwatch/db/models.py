@@ -409,6 +409,7 @@ class AnalysisRunStatus(StrEnum):
     SUCCESS = "SUCCESS"
     PARTIAL = "PARTIAL"
     FAILED = "FAILED"
+    ABORTED = "ABORTED"
 
 
 class DocumentAnalysisStatus(StrEnum):

@@ -352,6 +352,8 @@ def catalog_analyse(
 
         # Phase 1: fetch missing documents
         for i, reg_id in enumerate(needs_fetch_ids, start=1):
+            if progress.is_cancel_requested:
+                break
             with sf() as s:
                 reg = s.get(Regulation, reg_id)
                 label = reg.reference_number if reg else f"regulation {reg_id}"
@@ -375,15 +377,24 @@ def catalog_analyse(
                 s.commit()
 
         if not all_version_ids:
-            # Nothing to analyse — all fetches failed.
+            # Nothing to analyse — aborted while fetching, or all fetches failed.
+            aborted = progress.is_cancel_requested
             with sf() as s:
                 r = s.get(AnalysisRun, run_id)
                 if r is not None:
-                    r.status = AnalysisRunStatus.FAILED
+                    r.status = (
+                        AnalysisRunStatus.ABORTED if aborted else AnalysisRunStatus.FAILED
+                    )
                     r.finished_at = datetime.now(UTC)
-                    r.error_summary = "\n".join(fetch_errors)
+                    r.error_summary = (
+                        "Aborted while fetching documents." if aborted
+                        else "\n".join(fetch_errors)
+                    )
                     s.commit()
-            progress.finish("FAILED", error="All document fetches failed")
+            if aborted:
+                progress.finish("ABORTED")
+            else:
+                progress.finish("FAILED", error="All document fetches failed")
             return
 
         # Phase 2: analyse
@@ -399,6 +410,7 @@ def catalog_analyse(
                 on_progress=lambda done, total, label: progress.tick(
                     len(needs_fetch_ids) + done, new_total, label,
                 ),
+                should_stop=lambda: progress.is_cancel_requested,
             )
             runner.queue_and_run(
                 all_version_ids,

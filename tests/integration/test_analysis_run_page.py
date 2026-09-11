@@ -82,3 +82,29 @@ def test_run_page_404_for_missing(tmp_path, monkeypatch):
     assert r.status_code in (200, 404)
     if r.status_code == 200:
         assert "not found" in r.text.lower()
+
+
+def test_aborted_run_page_stops_polling(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from datetime import UTC, datetime
+
+    from regwatch.db.models import AnalysisRun, AnalysisRunStatus
+    from tests.integration.test_app_smoke import _client
+
+    client = _client(tmp_path, monkeypatch)
+    with client.app.state.session_factory() as s:
+        run = AnalysisRun(
+            status=AnalysisRunStatus.ABORTED, queued_version_ids=[],
+            started_at=datetime.now(UTC), finished_at=datetime.now(UTC),
+            llm_model="m", triggered_by="USER_UI",
+            error_summary="Aborted after 1 of 3 documents.",
+        )
+        s.add(run)
+        s.commit()
+        run_id = run.run_id
+
+    # The page polls this fragment; a finished run's fragment stops polling.
+    body = client.get(f"/analysis/runs/{run_id}/status").text
+
+    assert "ABORTED" in body
+    assert "before the run was stopped" in body
+    assert "hx-get" not in body

@@ -123,3 +123,41 @@ def test_runner_persists_coercion_errors():
         assert a.implementation_deadline is None
         assert a.coercion_errors is not None
         assert "implementation_deadline" in a.coercion_errors
+
+
+def test_runner_stops_between_documents_when_aborted():
+    """The status bar's Abort button set a flag the analysis runner never
+    checked; an Analyse run always went on to the last document."""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    sf = sessionmaker(engine, expire_on_commit=False)
+    first = _seed_one(sf)
+    with sf() as s:
+        v = s.get(DocumentVersion, first)
+        second = DocumentVersion(
+            regulation_id=v.regulation_id, version_number=2, is_current=False,
+            fetched_at=datetime.now(UTC), source_url="y", content_hash="h2",
+            pdf_extracted_text="Second text.",
+        )
+        s.add(second)
+        s.commit()
+        second_id = second.version_id
+
+    llm = MagicMock()
+    llm.chat.return_value = '{"main_points": "- x", "is_ict": false}'
+    stop = {"now": False}
+
+    def _progress(done: int, total: int, label: str) -> None:
+        stop["now"] = done >= 1  # abort requested while the first one runs
+
+    runner = AnalysisRunner(
+        session_factory=sf, llm=llm, max_document_tokens=5000,
+        on_progress=_progress, should_stop=lambda: stop["now"],
+    )
+    run_id = runner.queue_and_run([first, second_id], triggered_by="USER_UI", llm_model="t")
+
+    with sf() as s:
+        run = s.get(AnalysisRun, run_id)
+        assert run.status is AnalysisRunStatus.ABORTED
+        assert "Aborted after 1 of 2" in (run.error_summary or "")
+        assert [a.version_id for a in s.query(DocumentAnalysis).all()] == [first]

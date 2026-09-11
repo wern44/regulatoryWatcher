@@ -31,11 +31,14 @@ class AnalysisRunner:
         llm: LLMClient,
         max_document_tokens: int,
         on_progress: Callable[[int, int, str], None] | None = None,
+        should_stop: Callable[[], bool] = lambda: False,
     ) -> None:
         self._sf = session_factory
         self._llm = llm
         self._max_tokens = max_document_tokens
         self._on_progress = on_progress or (lambda *_: None)
+        # Checked between documents (the status bar's Abort button).
+        self._should_stop = should_stop
 
     def queue_and_run(
         self,
@@ -88,7 +91,12 @@ class AnalysisRunner:
         succeeded = 0
         failed = 0
         errors: list[str] = []
+        aborted = False
         for i, vid in enumerate(version_ids, start=1):
+            if self._should_stop():
+                aborted = True
+                errors.append(f"Aborted after {i - 1} of {len(version_ids)} documents.")
+                break
             self._on_progress(i, len(version_ids), version_labels[vid])
             try:
                 status = self._analyse_one(run_id, vid)
@@ -103,7 +111,9 @@ class AnalysisRunner:
 
         with self._sf() as s:
             run = s.get(AnalysisRun, run_id)
-            if succeeded == len(version_ids):
+            if aborted:
+                run.status = AnalysisRunStatus.ABORTED
+            elif succeeded == len(version_ids):
                 run.status = AnalysisRunStatus.SUCCESS
             elif succeeded == 0:
                 run.status = AnalysisRunStatus.FAILED
