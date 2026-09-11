@@ -45,13 +45,17 @@ def _add_reg(session: Session, reference: str) -> int:
 
 
 def _matched(
-    text: str, *, references: list[int], url: str = "https://example.com/a"
+    text: str,
+    *,
+    references: list[int],
+    url: str = "https://example.com/a",
+    title: str = "Circular CSSF 18/698 on investment fund managers",
 ) -> MatchedDocument:
     now = datetime.now(timezone.utc)
     raw = RawDocument(
         source="cssf_rss",
         source_url=url,
-        title="Sample",
+        title=title,
         published_at=now,
         raw_payload={},
         fetched_at=now,
@@ -138,3 +142,60 @@ def test_persist_creates_new_version_on_content_change(tmp_path: Path) -> None:
     assert versions[1].change_summary is not None
     assert "-original" in versions[1].change_summary
     assert "+revised text" in versions[1].change_summary
+
+
+def test_document_that_only_mentions_a_regulation_is_not_a_version(
+    tmp_path: Path,
+) -> None:
+    """A news item about DORA links to DORA in the Inbox but is not a new
+    text of DORA (DORA had 183 'versions', its current text a news page)."""
+    session = _session(tmp_path)
+    rid = _add_reg(session, "CSSF 18/698")
+    session.commit()
+
+    result = persist_matched(
+        session,
+        _matched(
+            "The CSSF published an FAQ on Circular CSSF 18/698.",
+            references=[rid],
+            title="FAQ on the IFM circular (Updated)",
+        ),
+    )
+    session.commit()
+
+    assert result.events_created == 1
+    assert result.versions_created == 0
+    assert session.query(UpdateEventRegulationLink).count() == 1
+    assert session.query(DocumentVersion).count() == 0
+
+
+def test_title_must_start_with_the_whole_reference(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    rid = _add_reg(session, "CSSF 18/69")
+    session.commit()
+
+    result = persist_matched(session, _matched("x", references=[rid]))
+
+    assert result.versions_created == 0
+
+
+def test_eur_lex_document_is_a_version_of_its_celex_act(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    rid = _add_reg(session, "Regulation (EU) 2022/2554")
+    session.get(Regulation, rid).celex_id = "32022R2554"
+    session.commit()
+
+    result = persist_matched(
+        session,
+        _matched(
+            "Article 1 ...",
+            references=[rid],
+            url="https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32022R2554",
+            title="Digital operational resilience for the financial sector",
+        ),
+    )
+
+    assert result.versions_created == 1
+    assert result.version_ids == [
+        session.query(DocumentVersion.version_id).scalar()
+    ]

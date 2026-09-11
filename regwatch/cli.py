@@ -201,6 +201,7 @@ def run_pipeline(
     from regwatch.llm.client import LLMClient
     from regwatch.pipeline.pipeline_factory import build_runner
     from regwatch.pipeline.sources import build_enabled_sources
+    from regwatch.rag.indexing import index_pending_versions
 
     source_instances = build_enabled_sources(cfg, only=source)
 
@@ -221,7 +222,14 @@ def run_pipeline(
         )
         run_id = runner.run_once()
         session.commit()
-    typer.echo(f"Pipeline run {run_id} completed.")
+        indexed = index_pending_versions(
+            session,
+            ollama=llm,
+            chunk_size_tokens=cfg.rag.chunk_size_tokens,
+            overlap_tokens=cfg.rag.chunk_overlap_tokens,
+            authorization_types=[a.type for a in cfg.entity.authorizations],
+        )
+    typer.echo(f"Pipeline run {run_id} completed; indexed {indexed} new version(s).")
 
 
 @app.command("reindex")
@@ -260,17 +268,11 @@ def reindex(
         total_chunks = 0
         for r in regs:
             for v in r.versions:
-                # Wipe existing chunks + virtual-table rows for this version
+                # Wipe existing chunks + vector rows for this version; the
+                # document_chunk delete trigger removes the FTS rows.
                 s.execute(
                     sa_text(
                         "DELETE FROM document_chunk_vec WHERE chunk_id IN "
-                        "(SELECT chunk_id FROM document_chunk WHERE version_id = :vid)"
-                    ),
-                    {"vid": v.version_id},
-                )
-                s.execute(
-                    sa_text(
-                        "DELETE FROM document_chunk_fts WHERE rowid IN "
                         "(SELECT chunk_id FROM document_chunk WHERE version_id = :vid)"
                     ),
                     {"vid": v.version_id},
@@ -285,9 +287,44 @@ def reindex(
                 )
                 total_versions += 1
                 total_chunks += n
+        # Earlier versions wrote every FTS row twice; rebuild from the chunks.
+        s.execute(
+            sa_text("INSERT INTO document_chunk_fts(document_chunk_fts) VALUES ('rebuild')")
+        )
         s.commit()
 
     typer.echo(f"Reindexed {total_versions} version(s), {total_chunks} chunk(s).")
+
+
+@app.command("prune-versions")
+def prune_versions_cmd(
+    apply: Annotated[
+        bool, typer.Option("--apply", help="Delete (default: only report)")
+    ] = False,
+) -> None:
+    """Remove document versions that only mention their regulation.
+
+    Earlier pipeline runs stored every matched news item as a new version
+    of each regulation it mentioned. Keeps a regulation's own texts and
+    manual uploads; renumbers the rest. Back up the database first.
+    """
+    from regwatch.services.version_cleanup import prune_versions
+
+    cfg = _get_config()
+    engine = create_app_engine(cfg.paths.db_file)
+    with Session(engine) as session:
+        report = prune_versions(session, apply=apply)
+        if apply:
+            session.commit()
+    verb = "Removed" if apply else "Would remove"
+    typer.echo(
+        f"{verb} {report.removed} version(s) and {report.analyses_removed} "
+        f"analysis result(s); {report.kept} version(s) kept."
+    )
+    for ref, count in report.by_regulation.items():
+        typer.echo(f"  {ref}: {count}")
+    if not apply and report.removed:
+        typer.echo("Run again with --apply to delete them.")
 
 
 @app.command("discover-cssf")
