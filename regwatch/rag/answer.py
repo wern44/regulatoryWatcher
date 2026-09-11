@@ -3,8 +3,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from regwatch.llm.client import LLMClient
+import httpx
+
+from regwatch.llm.client import LLMClient, context_limit_from_error
 from regwatch.rag.retrieval import RetrievedChunk
+
+# Conservative: ~4 characters per token; keep room for the system prompt,
+# the question and the answer.
+_CHARS_PER_TOKEN = 4
+_RESERVED_TOKENS = 1500
 
 _SYSTEM_PROMPT = (
     "You are a regulatory assistant for a Luxembourg fund management company. "
@@ -47,11 +54,35 @@ def generate_answer(
             cited_chunk_ids=[],
         )
 
-    context_blocks = "\n\n".join(
-        _format_context_block(c) for c in request.chunks
-    )
-    user_prompt = f"Context:\n{context_blocks}\n\nQuestion: {request.question}"
+    # The model's context window is unknown until it rejects a prompt
+    # (LM Studio: HTTP 400 naming n_ctx). Then keep the best-ranked chunks
+    # that fit and retry.
+    chunks = request.chunks
+    while True:
+        context_blocks = "\n\n".join(_format_context_block(c) for c in chunks)
+        user_prompt = f"Context:\n{context_blocks}\n\nQuestion: {request.question}"
+        try:
+            answer = ollama.chat(system=_SYSTEM_PROMPT, user=user_prompt)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code != 400 or len(chunks) == 1:
+                raise
+            n_ctx = context_limit_from_error(e.response.text)
+            fitted = _fit_to_context(chunks, n_ctx) if n_ctx else []
+            chunks = fitted if 0 < len(fitted) < len(chunks) else chunks[: len(chunks) // 2]
+            continue
+        return AnswerResponse(
+            answer=answer, cited_chunk_ids=[c.chunk_id for c in chunks]
+        )
 
-    answer = ollama.chat(system=_SYSTEM_PROMPT, user=user_prompt)
-    cited_ids = [c.chunk_id for c in request.chunks]
-    return AnswerResponse(answer=answer, cited_chunk_ids=cited_ids)
+
+def _fit_to_context(chunks: list[RetrievedChunk], n_ctx: int) -> list[RetrievedChunk]:
+    """The leading chunks whose formatted text fits a window of ``n_ctx`` tokens."""
+    budget = (n_ctx - _RESERVED_TOKENS) * _CHARS_PER_TOKEN
+    fitted: list[RetrievedChunk] = []
+    used = 0
+    for chunk in chunks:
+        used += len(_format_context_block(chunk)) + 2
+        if used > budget:
+            break
+        fitted.append(chunk)
+    return fitted or chunks[:1]

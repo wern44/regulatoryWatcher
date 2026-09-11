@@ -101,7 +101,8 @@ class ChatService:
         result = generate_answer(
             self._ollama, AnswerRequest(question=question, chunks=chunks)
         )
-        trailer = self._render_citations(chunks)
+        used = set(result.cited_chunk_ids)
+        trailer = self._render_citations([c for c in chunks if c.chunk_id in used])
         if trailer:
             return f"{result.answer}\n\n{trailer}"
         return result.answer

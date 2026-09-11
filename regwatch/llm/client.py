@@ -2,12 +2,21 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any
 
 import httpx
+
+_NCTX_RE = re.compile(r"n_ctx:\s*(\d+)")
+
+
+def context_limit_from_error(error_body: str) -> int | None:
+    """The model's context size (n_ctx) from an LM Studio / llama.cpp 400 body."""
+    m = _NCTX_RE.search(error_body)
+    return int(m.group(1)) if m else None
 
 
 class LLMError(RuntimeError):

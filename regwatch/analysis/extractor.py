@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -12,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from regwatch.analysis.fields import build_prompt_schema, coerce_value
 from regwatch.db.models import ExtractionField
-from regwatch.llm.client import LLMClient, LLMError
+from regwatch.llm.client import LLMClient, LLMError, context_limit_from_error
 from regwatch.llm.json_parser import extract_json_object
 
 logger = logging.getLogger(__name__)
@@ -30,9 +29,6 @@ _CHARS_PER_TOKEN = 4
 _OVERHEAD_TOKENS = 600
 _RESPONSE_TOKENS = 1500
 
-# Pattern to extract n_ctx from LM Studio / llama.cpp 400 error messages.
-_NCTX_RE = re.compile(r"n_ctx:\s*(\d+)")
-
 
 @dataclass
 class ExtractionResult:
@@ -49,14 +45,6 @@ def _truncate_to_budget(text: str, max_tokens: int) -> tuple[str, bool]:
     if len(text) <= budget:
         return text, False
     return text[:budget], True
-
-
-def _detect_context_limit(error_body: str) -> int | None:
-    """Try to extract the n_ctx value from a 400 error message."""
-    m = _NCTX_RE.search(error_body)
-    if m:
-        return int(m.group(1))
-    return None
 
 
 def _build_user_msg(
@@ -106,7 +94,7 @@ def extract(
                 )
             # 400 likely means context overflow. Detect the limit and retry.
             body = e.response.text
-            detected_ctx = _detect_context_limit(body)
+            detected_ctx = context_limit_from_error(body)
             if detected_ctx:
                 doc_budget = detected_ctx - prompt_overhead - _RESPONSE_TOKENS
                 logger.info(
