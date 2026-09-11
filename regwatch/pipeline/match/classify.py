@@ -3,29 +3,24 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from regwatch.llm.client import LLMClient
 
 logger = logging.getLogger(__name__)
 
-_ICT_KEYWORDS = (
-    "dora",
-    "ict",
-    "cyber",
-    "operational resilience",
-    "outsourcing",
-    "tlpt",
-    "third-party provider",
-    "third party provider",
-    "incident reporting",
-    "digital operational resilience",
+# Whole words only: "ict" used to match inside "conflicts", "restrictions"
+# and "jurisdictions". "cyber" is a prefix ("cybersecurity", "cyber-risk").
+_ICT_KEYWORDS_RE = re.compile(
+    r"\b(?:dora|ict|tlpt|outsourcing|operational resilience|incident reporting"
+    r"|third[- ]party providers?)\b|\bcyber",
+    re.IGNORECASE,
 )
 
 
 def is_ict_document(text: str, *, llm: LLMClient | None = None) -> bool:
-    lower = text.lower()
-    if any(kw in lower for kw in _ICT_KEYWORDS):
+    if _ICT_KEYWORDS_RE.search(text):
         return True
     if llm is None:
         return False
