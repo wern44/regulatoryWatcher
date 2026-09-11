@@ -31,3 +31,11 @@ def test_query_targets_the_sparql_endpoint_and_financial_subjects() -> None:
     assert '"2026-01-02"^^xsd:date' in query
     assert "jolux:isRealizedBy" in query
     assert "ls:899" in query and "rt:RCSF" in query
+
+
+def test_acts_are_downloaded_from_their_html_manifestation() -> None:
+    fixture_data = json.loads(FIXTURE.read_text())
+    with patch.object(LegiluxSparqlSource, "_run_query", return_value=fixture_data):
+        items = list(LegiluxSparqlSource().fetch(datetime(2000, 1, 1, tzinfo=UTC)))
+
+    assert items[0].document_url == items[0].source_url + "/fr/html"

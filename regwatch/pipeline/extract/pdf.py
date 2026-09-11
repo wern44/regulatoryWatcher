@@ -23,7 +23,7 @@ class PdfExtractionResult:
 def extract_pdf(raw: RawDocument, archive_root: Path | str) -> PdfExtractionResult:
     """Download the PDF, archive it under `archive_root`, and extract text if possible."""
     with httpx.Client(timeout=60.0, follow_redirects=True) as client:
-        response = client.get(raw.source_url)
+        response = client.get(raw.download_url)
         response.raise_for_status()
         data = response.content
 

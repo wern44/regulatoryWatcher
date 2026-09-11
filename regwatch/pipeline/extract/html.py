@@ -19,7 +19,7 @@ _RETRY_BACKOFF = (2, 5, 10)  # seconds between retries on 429
 
 def extract_html(raw: RawDocument) -> str | None:
     """Download the source URL, extract main text. Returns None for PDF URLs."""
-    url = raw.source_url
+    url = raw.download_url
     if url.lower().endswith(".pdf"):
         return None
 

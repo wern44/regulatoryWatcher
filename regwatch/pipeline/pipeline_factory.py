@@ -47,7 +47,7 @@ def build_runner(
                 pdf_extracted_text=None,
                 pdf_is_protected=False,
             )
-        if raw.source_url.lower().endswith(".pdf"):
+        if raw.download_url.lower().endswith(".pdf"):
             result = extract_pdf(raw, archive_root)
             return ExtractedDocument(
                 raw=raw,

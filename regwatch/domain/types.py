@@ -16,6 +16,14 @@ class RawDocument:
     published_at: datetime
     raw_payload: dict[str, Any]
     fetched_at: datetime
+    # Where to download the text when that differs from the item's identity
+    # (source_url): Legilux ELI pages are a JavaScript shell, the text is at
+    # <ELI>/fr/html.
+    document_url: str | None = None
+
+    @property
+    def download_url(self) -> str:
+        return self.document_url or self.source_url
 
 
 @dataclass

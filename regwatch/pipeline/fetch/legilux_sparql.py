@@ -62,6 +62,8 @@ class LegiluxSparqlSource:
                 published_at=published_at,
                 raw_payload={"eli": eli, "date": date_str},
                 fetched_at=now,
+                # The ELI page is a JavaScript shell, identical for every act.
+                document_url=f"{eli}/fr/html",
             )
 
     def _build_query(self, since: datetime) -> str:
