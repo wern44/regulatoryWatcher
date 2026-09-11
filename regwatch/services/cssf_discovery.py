@@ -167,6 +167,10 @@ class CssfDiscoveryService:
         # run() is called.
         self._dry_run: bool = False
         self._restrict_pub_slug: str | None = None
+        # Per-run evidence for the amendment graph: (from_ref, to_ref, relation)
+        # triples the crawled pages support, and the regulations crawled.
+        self._link_claims: set[tuple[str, str, str]] = set()
+        self._seen_ids: set[int] = set()
 
     def list_discovery_sources(self, regulation_id: int) -> list[DiscoverySourceDTO]:
         """Return all (entity, content_type) cells where this regulation was seen."""
@@ -203,6 +207,8 @@ class CssfDiscoveryService:
     ) -> int:
         self._dry_run = dry_run
         self._restrict_pub_slug = restrict_pub_slug
+        self._link_claims = set()
+        self._seen_ids = set()
 
         # Resolve the publication-type matrix for this run.
         pubs_to_use = list(self._config.publication_types)
@@ -369,6 +375,11 @@ class CssfDiscoveryService:
         # name a different document (an annex titled "Annex to Circular CSSF
         # 22/822" must not overwrite circular 22/822).
         canonical_ref = listing.reference_number
+        self._link_claims.update(
+            [(ref, canonical_ref, "AMENDS") for ref in detail.amended_by_refs]
+            + [(canonical_ref, ref, "AMENDS") for ref in detail.amends_refs]
+            + [(canonical_ref, ref, "REPEALS") for ref in detail.supersedes_refs]
+        )
 
         outcome: str
         reg_id: int | None = None
@@ -428,6 +439,8 @@ class CssfDiscoveryService:
         if self._dry_run and outcome == "NEW":
             audit_reg_id = None
             persist_provenance = False
+        elif reg_id is not None:
+            self._seen_ids.add(reg_id)
 
         self._write_item(
             run_id, audit_reg_id, canonical_ref, outcome,
@@ -571,8 +584,14 @@ class CssfDiscoveryService:
             s.flush()
 
     def _ensure_amendment_stubs(self, s: Session, detail: CircularDetail) -> None:
-        refs = set(detail.amended_by_refs) | set(detail.amends_refs) | set(detail.supersedes_refs)
-        for ref in refs:
+        """Placeholder rows for amending documents not yet in the catalog.
+
+        Only the amending side is stubbed: the stub rolls up under the
+        regulation it amends. Documents *we* amend that are missing from the
+        catalog don't apply to the configured entities (or were repealed);
+        stubbing them would surface bare IN_FORCE rows.
+        """
+        for ref in set(detail.amended_by_refs):
             if not ref:
                 continue
             existing = s.scalar(
@@ -950,3 +969,70 @@ class CssfDiscoveryService:
                 run.retired_count = 0
 
             s.commit()
+
+            if run.status == "SUCCESS" and not skip_retire and run.mode == "full":
+                removed = self._reconcile_links()
+                logger.info("Amendment graph: removed %d unsupported links", removed)
+
+    def _reconcile_links(self) -> int:
+        """Rebuild the amendment graph from this full run's evidence.
+
+        Adds every claimed link whose endpoints now exist (a target may have
+        been created later in the run than the page claiming it) and deletes
+        links that are not claimed when either
+          * both endpoints were crawled -- all the evidence was seen and
+            none supports the link; or
+          * an older document supposedly AMENDS a newer one.
+        Links touching regulations outside this crawl are otherwise kept.
+        Returns the number of links deleted.
+        """
+        with self._sf() as s:
+            regs = s.execute(
+                select(
+                    Regulation.reference_number,
+                    Regulation.regulation_id,
+                    Regulation.publication_date,
+                )
+            ).all()
+            ids = {ref: rid for ref, rid, _ in regs}
+            published = {rid: pub for _, rid, pub in regs}
+            claimed = {
+                (ids[f], ids[t], rel)
+                for f, t, rel in self._link_claims
+                if f in ids and t in ids and ids[f] != ids[t]
+            }
+            links = s.scalars(
+                select(RegulationLifecycleLink).where(
+                    RegulationLifecycleLink.relation.in_(["AMENDS", "REPEALS"])
+                )
+            ).all()
+            existing = {
+                (lk.from_regulation_id, lk.to_regulation_id, lk.relation) for lk in links
+            }
+            for from_id, to_id, rel in sorted(claimed - existing):
+                s.add(RegulationLifecycleLink(
+                    from_regulation_id=from_id, to_regulation_id=to_id, relation=rel,
+                ))
+
+            removed = 0
+            for lk in links:
+                key = (lk.from_regulation_id, lk.to_regulation_id, lk.relation)
+                if key in claimed:
+                    continue
+                both_crawled = (
+                    lk.from_regulation_id in self._seen_ids
+                    and lk.to_regulation_id in self._seen_ids
+                )
+                from_pub = published.get(lk.from_regulation_id)
+                to_pub = published.get(lk.to_regulation_id)
+                backwards = (
+                    lk.relation == "AMENDS"
+                    and from_pub is not None
+                    and to_pub is not None
+                    and from_pub < to_pub
+                )
+                if both_crawled or backwards:
+                    s.delete(lk)
+                    removed += 1
+            s.commit()
+        return removed
