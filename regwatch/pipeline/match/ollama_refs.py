@@ -10,9 +10,10 @@ _SYSTEM_PROMPT = (
     "You extract structured regulatory references from text. "
     "Output must be valid JSON and nothing else: "
     '[{"ref": "<identifier>", "context": "<surrounding phrase>"}, ...]. '
-    "Identifiers include CSSF circular numbers (e.g. CSSF 18/698), "
-    "EU regulation/directive numbers (e.g. 2022/2554, Directive (EU) 2024/927), "
-    "CELEX IDs (e.g. 32022R2554), and ELI URIs. "
+    "Identifiers include CSSF circular numbers (form: CSSF YY/NNN), "
+    "EU regulation/directive numbers (form: Regulation (EU) YYYY/N, "
+    "Directive (EU) YYYY/N), CELEX IDs and ELI URIs. "
+    "Only list identifiers that literally occur in the text. "
     "If no references are found return []."
 )
 

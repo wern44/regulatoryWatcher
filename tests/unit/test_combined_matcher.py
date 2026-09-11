@@ -64,7 +64,7 @@ def test_ollama_referenced_then_resolved(tmp_path: Path) -> None:
 
     matcher = CombinedMatcher(session, ollama=ollama)
     refs = matcher.match(
-        "Long text without a literal match but the amendment intends to touch it."
+        "No rule-matchable spelling, but the amendment touches circular n° 18.698."
     )
 
     assert len(refs) == 1
@@ -97,3 +97,41 @@ def test_ollama_http_error_degrades_gracefully(tmp_path: Path) -> None:
     # Second call must NOT hit Ollama again — the matcher latched it off.
     assert matcher.match("Another unrelated text.") == []
     assert ollama.chat.call_count == 1
+
+
+def test_llm_reference_not_in_the_text_is_ignored(tmp_path: Path) -> None:
+    """Small models parrot the examples in the prompt. A reference whose
+    number doesn't occur in the document must not become a link."""
+    session = _session(tmp_path)
+    _add_reg(session, "CSSF 18/698", r"CSSF[\s\-]?18[/\-]698")
+    session.commit()
+
+    ollama = MagicMock()
+    ollama.chat.return_value = '[{"ref": "CSSF 18/698", "context": "example"}]'
+    refs = CombinedMatcher(session, ollama=ollama).match(
+        "ESMA publishes its annual report on market data."
+    )
+
+    assert refs == []
+
+
+def test_llm_reference_found_in_the_text_in_another_spelling(tmp_path: Path) -> None:
+    session = _session(tmp_path)
+    rid = _add_reg(session, "CSSF 18/698", r"CSSF[\s\-]?18[/\-]698")
+    session.commit()
+
+    ollama = MagicMock()
+    ollama.chat.return_value = '[{"ref": "CSSF 18/698", "context": "circular 18-698"}]'
+    refs = CombinedMatcher(session, ollama=ollama).match(
+        "As required by circular 18-698, managers must ..."
+    )
+
+    assert [r.regulation_id for r in refs] == [rid]
+
+
+def test_prompt_contains_no_real_reference_numbers() -> None:
+    import re
+
+    from regwatch.pipeline.match.ollama_refs import _SYSTEM_PROMPT
+
+    assert not re.search(r"\d{2}/\d{3}|\d{4}/\d{3,4}|3\d{4}[A-Z]\d{4}", _SYSTEM_PROMPT)

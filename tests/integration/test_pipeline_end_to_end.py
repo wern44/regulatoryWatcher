@@ -102,7 +102,7 @@ def test_end_to_end_with_mock_ollama(tmp_path: Path) -> None:
         title="Note on IFM governance amendments",
         published_at=now,
         raw_payload={
-            "html_text": "This note modifies aspects of the existing IFM governance framework."
+            "html_text": "This note modifies circular n° 18.698 on IFM governance."
         },
         fetched_at=now,
     )
