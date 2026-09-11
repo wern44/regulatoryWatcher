@@ -1,6 +1,7 @@
 """Integration tests for amendment grouping on the catalog and detail pages."""
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -23,14 +24,18 @@ def _make_reg(
     session: Session,
     ref: str,
     lifecycle: LifecycleStage = LifecycleStage.IN_FORCE,
+    *,
+    is_ict: bool = False,
+    published: date | None = None,
 ) -> Regulation:
     reg = Regulation(
         type=RegulationType.CSSF_CIRCULAR,
         reference_number=ref,
         title=f"Title of {ref}",
         issuing_authority="CSSF",
+        publication_date=published,
         lifecycle_stage=lifecycle,
-        is_ict=False,
+        is_ict=is_ict,
         needs_review=False,
         url="https://example.com",
         source_of_truth="SEED",
@@ -258,3 +263,82 @@ def test_catalog_search_finds_amendments(tmp_path: Path, monkeypatch) -> None:
     resp = client.get("/catalog?search=25/900")
     assert resp.status_code == 200
     assert "CSSF 25/900" in resp.text
+
+
+def test_catalog_shows_newest_amendment_date(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
+    _seed_db(tmp_path / "app.db")
+
+    with client.app.state.session_factory() as session:
+        a = _make_reg(session, "CSSF 20/750", published=date(2020, 8, 31))
+        b = _make_reg(session, "CSSF 22/806", published=date(2022, 4, 22))
+        _amends(session, b, a)
+        _make_reg(session, "CSSF 18/698", published=date(2018, 8, 23))
+        session.commit()
+
+    body = client.get("/catalog").text
+    assert "Last change" in body
+    assert "2022-04-22" in body
+    assert "via CSSF 22/806" in body
+    # No amendments: the regulation's own publication date.
+    assert "2018-08-23" in body
+
+
+# ---------------------------------------------------------------------------
+# ICT page — same roll-up as the catalog
+# ---------------------------------------------------------------------------
+
+def test_ict_rolls_amendments_up_under_their_circular(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+    _seed_db(tmp_path / "app.db")
+
+    with client.app.state.session_factory() as session:
+        a = _make_reg(session, "CSSF 20/750", is_ict=True, published=date(2020, 8, 31))
+        b = _make_reg(session, "CSSF 22/806", is_ict=True, published=date(2022, 4, 22))
+        c = _make_reg(session, "CSSF 24/900", is_ict=False, published=date(2024, 3, 1))
+        _amends(session, b, a)
+        _amends(session, c, a)
+        session.commit()
+        a_id = a.regulation_id
+
+    body = client.get("/ict").text
+    assert "CSSF 20/750" in body
+    assert "CSSF 22/806" not in body
+    assert "+2 amendments" in body
+    assert f"/regulations/{a_id}#amendments" in body
+    assert "2024-03-01" in body
+    assert "via CSSF 24/900" in body
+
+
+def test_ict_show_amendments_toggle(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
+    _seed_db(tmp_path / "app.db")
+
+    with client.app.state.session_factory() as session:
+        a = _make_reg(session, "CSSF 20/750", is_ict=True)
+        b = _make_reg(session, "CSSF 22/806", is_ict=True)
+        _amends(session, b, a)
+        session.commit()
+
+    body = client.get("/ict?show_amendments=true").text
+    assert "CSSF 20/750" in body
+    assert "CSSF 22/806" in body
+
+
+def test_ict_keeps_amendment_of_non_ict_circular(tmp_path: Path, monkeypatch) -> None:
+    """The circular it amends is not on the ICT page, so the amendment
+    stays as its own row instead of disappearing."""
+    client = _client(tmp_path, monkeypatch)
+    _seed_db(tmp_path / "app.db")
+
+    with client.app.state.session_factory() as session:
+        a = _make_reg(session, "CSSF 18/698", is_ict=False)
+        b = _make_reg(session, "CSSF 22/811", is_ict=True)
+        _amends(session, b, a)
+        session.commit()
+
+    body = client.get("/ict").text
+    assert "CSSF 22/811" in body
+    assert "CSSF 18/698" not in body

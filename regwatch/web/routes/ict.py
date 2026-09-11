@@ -7,7 +7,11 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from regwatch.db.models import Regulation, RegulationOverride
-from regwatch.services.regulations import RegulationFilter, RegulationService
+from regwatch.services.regulations import (
+    AmendmentIndex,
+    RegulationFilter,
+    RegulationService,
+)
 from regwatch.services.sidebar_badges import SidebarBadgeService
 from regwatch.web.routes.catalog import start_catalog_refresh
 from regwatch.web.task_guard import refuse
@@ -17,7 +21,7 @@ router = APIRouter()
 
 
 @router.get("/ict", response_class=HTMLResponse)
-def ict(request: Request) -> HTMLResponse:
+def ict(request: Request, show_amendments: bool = False) -> HTMLResponse:
     with request.app.state.session_factory() as session:
         regs = RegulationService(session).list(
             RegulationFilter(
@@ -26,6 +30,10 @@ def ict(request: Request) -> HTMLResponse:
                 authorization_type=active_entity_type(request),
             )
         )
+        amendments = AmendmentIndex(session)
+        if not show_amendments:
+            regs = amendments.fold(regs)
+        amendment_summaries = amendments.summaries(regs)
         previous_cutoff = SidebarBadgeService(session).mark_visited("ict")
         session.commit()
 
@@ -37,7 +45,13 @@ def ict(request: Request) -> HTMLResponse:
     return render_page(
         request,
         "ict/list.html",
-        {"active": "ict", "regulations": regs, "new_ids": new_ids},
+        {
+            "active": "ict",
+            "regulations": regs,
+            "new_ids": new_ids,
+            "show_amendments": show_amendments,
+            "amendment_summaries": amendment_summaries,
+        },
     )
 
 

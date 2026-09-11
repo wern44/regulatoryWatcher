@@ -14,15 +14,8 @@
       <span class="ml-2 px-1.5 py-0.5 bg-amber-100 text-amber-800 text-xs rounded font-semibold"
             title="Added since your last visit">NEW</span>
     {% endif %}
-    {% if amendment_counts is defined %}
-      {% set n = amendment_counts.get(r.regulation_id, 0) %}
-      {% if n %}
-        <a href="/regulations/{{ r.regulation_id }}#amendments"
-           class="ml-2 px-1.5 py-0.5 bg-amber-100 text-amber-800 text-xs rounded hover:bg-amber-200"
-           title="View {{ n }} amendment(s) on this regulation's detail page">
-          +{{ n }} amendments
-        </a>
-      {% endif %}
+    {% if amendment_summaries is defined %}
+      {% include "partials/amendment_badge.html" %}
     {% endif %}
   </td>
   <td class="p-2">{{ r.title }}</td>
@@ -30,6 +23,9 @@
   <td class="p-2">
     <span class="px-2 py-0.5 rounded text-xs bg-slate-100">{{ r.lifecycle_stage }}</span>
   </td>
+  {% if amendment_summaries is defined %}
+    {% include "partials/last_change_cell.html" %}
+  {% endif %}
   <td class="p-2">{% if r.is_ict %}<span class="text-purple-700 font-semibold">ICT</span>{% endif %}</td>
   {% if status_by_reg is defined %}
   <td class="p-2 text-xs whitespace-nowrap">

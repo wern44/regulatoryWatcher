@@ -80,6 +80,7 @@
           <th class="text-left p-2">Title</th>
           <th class="text-left p-2">Authority</th>
           <th class="text-left p-2">Lifecycle</th>
+          <th class="text-left p-2" title="Publication date of the newest amendment (or of the regulation itself when it has none)">Last change</th>
           <th class="text-left p-2">ICT</th>
           <th class="text-left p-2">Analysis</th>
         </tr>
@@ -88,7 +89,7 @@
         {% for r in regulations %}
           {% include "partials/catalog_row.html" %}
         {% else %}
-          <tr><td colspan="7" class="p-4 text-center text-slate-500">No regulations match.</td></tr>
+          <tr><td colspan="8" class="p-4 text-center text-slate-500">No regulations match.</td></tr>
         {% endfor %}
       </tbody>
     </table>

@@ -24,9 +24,9 @@ from regwatch.services.analysis import AnalysisService
 from regwatch.services.cssf_discovery import CssfDiscoveryService
 from regwatch.services.discovery_runner import run_catalog_refresh
 from regwatch.services.regulations import (
+    AmendmentIndex,
     RegulationFilter,
     RegulationService,
-    build_amendment_indexes,
 )
 from regwatch.services.runtime_limits import get_max_runtime_seconds
 from regwatch.services.sidebar_badges import SidebarBadgeService
@@ -110,22 +110,12 @@ def catalog(
         svc = RegulationService(session)
         regs = svc.list(flt)
 
-        effective_parent_id, children_by_parent_id = build_amendment_indexes(session)
-
+        amendments = AmendmentIndex(session)
         if not show_amendments and not search:
-            # Drop any reg whose effective parent isn't itself. A search is an
+            # Roll amendments up under their circular. A search is an
             # explicit lookup, so it also finds amendments.
-            regs = [
-                r for r in regs
-                if effective_parent_id.get(r.regulation_id) == r.regulation_id
-            ]
-
-        # Count amendments per displayed reg (flattened — chain counted as all descendants)
-        amendment_counts: dict[int, int] = {}
-        for r in regs:
-            amendment_counts[r.regulation_id] = len(
-                children_by_parent_id.get(r.regulation_id, [])
-            )
+            regs = amendments.fold(regs)
+        amendment_summaries = amendments.summaries(regs)
 
         # Compute per-regulation analysis status for the column.
         analysis_svc = AnalysisService(session)
@@ -180,7 +170,7 @@ def catalog(
             "effective_lifecycle": effective_lifecycle,
             "effective_ict": effective_ict,
             "show_amendments": show_amendments,
-            "amendment_counts": amendment_counts,
+            "amendment_summaries": amendment_summaries,
             "flash_message": flash_message,
             "new_ids": new_ids,
         },

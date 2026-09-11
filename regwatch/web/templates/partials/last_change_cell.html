@@ -1,0 +1,13 @@
+{% set s = amendment_summaries.get(r.regulation_id) %}
+<td class="p-2 text-xs whitespace-nowrap">
+  {% if s and s.last_change %}
+    {% if s.last_change_reference %}
+      <span title="Publication date of the newest amendment">{{ s.last_change.strftime('%Y-%m-%d') }}</span>
+      <div class="text-slate-500">via {{ s.last_change_reference }}</div>
+    {% else %}
+      <span title="Publication date — no dated amendments">{{ s.last_change.strftime('%Y-%m-%d') }}</span>
+    {% endif %}
+  {% else %}
+    <span class="text-slate-400">&mdash;</span>
+  {% endif %}
+</td>

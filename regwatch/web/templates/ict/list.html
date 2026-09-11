@@ -11,6 +11,16 @@
   </div>
 
   {% include "partials/entity_type_pill.html" %}
+
+  <form method="get" action="/ict" class="flex gap-2 mb-4 text-sm">
+    <label class="flex items-center gap-1">
+      <input type="checkbox" name="show_amendments" value="true"
+             {% if show_amendments %}checked{% endif %}
+             onchange="this.form.submit()">
+      <span class="text-xs">Show amendments</span>
+    </label>
+  </form>
+
   {% set new_ids_set = new_ids|default(none) %}
   <table class="w-full bg-white border rounded shadow-sm text-sm">
     <thead class="bg-slate-100 text-xs uppercase text-slate-600">
@@ -20,6 +30,7 @@
         <th class="text-left p-2">Authority</th>
         <th class="text-left p-2">DORA Pillar</th>
         <th class="text-left p-2">Lifecycle</th>
+        <th class="text-left p-2" title="Publication date of the newest amendment (or of the regulation itself when it has none)">Last change</th>
         <th class="text-left p-2">Status</th>
         <th class="text-left p-2">Actions</th>
       </tr>
@@ -34,6 +45,7 @@
             <span class="ml-2 px-1.5 py-0.5 bg-amber-100 text-amber-800 text-xs rounded font-semibold"
                   title="Added since your last visit">NEW</span>
           {% endif %}
+          {% include "partials/amendment_badge.html" %}
         </td>
         <td class="p-2">
           <a href="/regulations/{{ r.regulation_id }}" class="text-blue-700 hover:underline">{{ r.title }}</a>
@@ -41,6 +53,7 @@
         <td class="p-2">{{ r.issuing_authority }}</td>
         <td class="p-2">{{ r.dora_pillar or '—' }}</td>
         <td class="p-2">{{ r.lifecycle_stage }}</td>
+        {% include "partials/last_change_cell.html" %}
         <td class="p-2">
           {% if r.needs_review %}
             <span class="px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800">Needs review</span>
@@ -57,7 +70,7 @@
         </td>
       </tr>
       {% else %}
-        <tr><td colspan="7" class="p-4 text-center text-slate-500">No ICT-flagged regulations.</td></tr>
+        <tr><td colspan="8" class="p-4 text-center text-slate-500">No ICT-flagged regulations.</td></tr>
       {% endfor %}
     </tbody>
   </table>

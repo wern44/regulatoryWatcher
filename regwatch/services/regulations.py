@@ -39,6 +39,18 @@ class RegulationDTO:
     needs_review: bool
     dora_pillar: str | None
     created_at: datetime
+    publication_date: date | None = None
+
+
+@dataclass
+class AmendmentSummary:
+    """The amendments rolled up under one listed regulation."""
+
+    count: int
+    # Newest publication date among the regulation and its amendments.
+    last_change: date | None
+    # The amendment that set last_change; None when it is the regulation's own.
+    last_change_reference: str | None
 
 
 def applies_to(authorization_type: str) -> ColumnElement[bool]:
@@ -109,7 +121,67 @@ def _to_dto(r: Regulation) -> RegulationDTO:
         needs_review=r.needs_review,
         dora_pillar=r.dora_pillar.value if r.dora_pillar else None,
         created_at=r.created_at,
+        publication_date=r.publication_date,
     )
+
+
+class AmendmentIndex:
+    """Rolls amendments up under the regulation they amend, for list pages.
+
+    Built once per request from ``build_amendment_indexes``: amendments are
+    folded out of a listing into a "+N amendments" badge on their top-level
+    regulation, and each listed regulation gets its last change date.
+    """
+
+    def __init__(self, session: Session) -> None:
+        self._effective_parent_id, self._children = build_amendment_indexes(session)
+        self._published: dict[int, tuple[str, date | None]] = {
+            rid: (ref, published)
+            for rid, ref, published in session.execute(
+                select(
+                    Regulation.regulation_id,
+                    Regulation.reference_number,
+                    Regulation.publication_date,
+                )
+            ).all()
+        }
+
+    def fold(self, regs: list[RegulationDTO]) -> list[RegulationDTO]:
+        """Drop amendments whose top-level regulation is also in ``regs``.
+
+        An amendment whose parent is filtered out of the listing (e.g. an
+        ICT amendment of a non-ICT circular) stays, so nothing disappears.
+        """
+        listed = {r.regulation_id for r in regs}
+        kept = []
+        for r in regs:
+            parent = self._effective_parent_id.get(r.regulation_id, r.regulation_id)
+            if parent == r.regulation_id or parent not in listed:
+                kept.append(r)
+        return kept
+
+    def summaries(self, regs: list[RegulationDTO]) -> dict[int, AmendmentSummary]:
+        result: dict[int, AmendmentSummary] = {}
+        for r in regs:
+            child_ids = self._children.get(r.regulation_id, [])
+            dated = [
+                (published, ref)
+                for ref, published in (self._published[c] for c in child_ids)
+                if published is not None
+            ]
+            newest = max(dated, default=None)
+            last_change: date | None = r.publication_date
+            by: str | None = None
+            if newest is not None and (
+                last_change is None or newest[0] >= last_change
+            ):
+                last_change, by = newest
+            result[r.regulation_id] = AmendmentSummary(
+                count=len(child_ids),
+                last_change=last_change,
+                last_change_reference=by,
+            )
+        return result
 
 
 def build_amendment_indexes(
